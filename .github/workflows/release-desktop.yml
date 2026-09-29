@@ -1,0 +1,165 @@
+name: Release Desktop
+
+# 触发方式：
+#   1) push 形如 v3.14.3 的 tag —— 常规发行路径
+#   2) 手动 workflow_dispatch，传入一个已存在的 tag —— 重新打包或重跑失败任务
+#
+# 产物落在 draft Release 上（draft=true），需要人工确认后再点发布。
+# 两个平台的安装包都是未签名构建，macOS 首次打开需按 README 清除 quarantine 属性。
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "已存在的 tag（例如 v3.14.3）"
+        required: true
+        type: string
+
+# 创建 Release 并上传产物需要写权限
+permissions:
+  contents: write
+
+# 同一 tag 同时只跑一条流水线；后续 tag 不受影响。不取消进行中的构建，
+# 避免半途中断留下不完整的 Release 产物。
+concurrency:
+  group: release-desktop-${{ github.event.inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+env:
+  # 发行身份的硬前提：不设置时 resolveBuiltinProviderBuildEnvironment 会 fail-safe 成 test，
+  # 产物会变成 Preview 身份、文件名带 _TEST 后缀并指向测试后端。
+  ZCODE_ENV: production
+  # Runner 在境外，改用官方源下载 Electron 与 electron-builder 辅助工具，
+  # 覆盖仓库内默认的 npmmirror。取值与 scripts/spawn 侧解析的镜像语义一致。
+  ELECTRON_MIRROR: https://github.com/electron/electron/releases/download/
+  ELECTRON_BUILDER_BINARIES_MIRROR: https://github.com/electron-userland/electron-builder-binaries/releases/download/
+  # 未签名发行：阻止 electron-builder 在 CI 上自动探测钥匙串里的证书。
+  # 需要签名时再补 APPLE_SIGNING_IDENTITY / CSC_LINK 并显式打开 ZCODE_ENABLE_MAC_SIGN。
+  CSC_IDENTITY_AUTO_DISCOVERY: "false"
+  # 根 prepare 脚本会安装 git hooks，CI 不需要
+  HUSKY: "0"
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 180
+    strategy:
+      # 一个平台失败不应连坐另一个平台，否则两个包都要重跑
+      fail-fast: false
+      matrix:
+        include:
+          - label: Windows x64 (nsis)
+            runner: windows-latest
+            targetOs: win
+            targetArch: x64
+            # Windows 安装包不依赖 mock-cdn 远程资产，跳过可省掉跨平台资源准备时间
+            skipRemoteAssets: "1"
+            distPatterns: |-
+              packages/desktop/dist/*.exe
+              packages/desktop/dist/*.exe.blockmap
+              packages/desktop/dist/latest.yml
+          - label: macOS arm64 (dmg + zip)
+            runner: macos-14
+            targetOs: mac
+            targetArch: arm64
+            # macOS 包需要远程工作区资源，保持默认的 prepare:remote-assets
+            skipRemoteAssets: "0"
+            distPatterns: |-
+              packages/desktop/dist/*.dmg
+              packages/desktop/dist/*.zip
+              packages/desktop/dist/*.dmg.blockmap
+              packages/desktop/dist/*.zip.blockmap
+              packages/desktop/dist/latest-mac.yml
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # build-metadata 会执行 git rev-parse 写入产物；完整历史便于回溯
+          fetch-depth: 0
+
+      - name: 校验 tag 与 package.json 版本一致
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        run: |
+          version="$(node -p "require('./package.json').version")"
+          echo "tag=${RELEASE_TAG} package.json=${version}"
+          if [ "${RELEASE_TAG}" != "v${version}" ]; then
+            echo "::error::tag 与 package.json 版本不一致，安装包内的版本号取自 package.json，继续打包会产出名不副实的发行物。请把 package.json 版本改成 ${RELEASE_TAG#v} 后重新打 tag。"
+            exit 1
+          fi
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24.14.0
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 初始化（准备桌面运行资源 + 构建各 workspace 包）
+        # 等价于 README 的 pnpm bootstrap：submodule 检查、依赖安装、
+        # prepare:desktop-runtime，最后跑 build:bootstrap
+        run: node scripts/bootstrap.mjs
+
+      - name: 打包 ${{ matrix.targetOs }}/${{ matrix.targetArch }}
+        # bundle:desktop 内部依次执行 prepare:runtime-assets → 桌面构建 →
+        # electron-builder → 产物依赖校验 → 体积审计，任一环节失败都会让 job 失败
+        env:
+          ZCODE_SKIP_REMOTE_ASSETS: ${{ matrix.skipRemoteAssets }}
+        run: pnpm bundle:desktop -- --os ${{ matrix.targetOs }} --arch ${{ matrix.targetArch }}
+
+      - name: 列出产物
+        shell: bash
+        run: ls -lh packages/desktop/dist/ || true
+
+      - name: 上传产物
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.targetOs }}-${{ matrix.targetArch }}
+          path: ${{ matrix.distPatterns }}
+          # 安装包是这一步的唯一目的，缺文件必须显式失败而不是静默产出空 artifact
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: 创建 Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: 下载全部平台产物
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: 列出发布文件
+        run: ls -lh release-assets/
+
+      - name: 创建 draft Release 并附加安装包
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ZCode ${{ github.event.inputs.tag || github.ref_name }}
+          # draft 让产物先落到草稿 Release，人工确认后再发布；
+          # 想直接公开发布，把 draft 改成 false。
+          draft: true
+          # 只发安装包本身。electron-builder 生成的 latest*.yml / *.blockmap 指向
+          # electron-builder.config.js 里的 generic publish 占位地址（localhost:8081），
+          # 对终端用户没有意义，因此不进入 Release。
+          files: |
+            release-assets/*.exe
+            release-assets/*.dmg
+            release-assets/*.zip
+          fail_on_unmatched_files: true
