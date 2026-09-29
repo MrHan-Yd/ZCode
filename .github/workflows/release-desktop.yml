@@ -4,8 +4,9 @@ name: Release Desktop
 #   1) push 形如 v3.14.3 的 tag —— 常规发行路径
 #   2) 手动 workflow_dispatch，传入一个已存在的 tag —— 重新打包或重跑失败任务
 #
-# 产物落在 draft Release 上（draft=true），需要人工确认后再点发布。
-# 两个平台的安装包都是未签名构建，macOS 首次打开需按 README 清除 quarantine 属性。
+# 推 tag 即公开发布 Release 并附上安装包，无需人工确认。
+# 两个平台的安装包都是未签名构建，macOS 首次打开需按 README 清除 quarantine 属性；
+# 需要先人工验证产物再公开时，把创建 Release 步骤的 draft 改回 true。
 
 on:
   push:
@@ -147,14 +148,13 @@ jobs:
       - name: 列出发布文件
         run: ls -lh release-assets/
 
-      - name: 创建 draft Release 并附加安装包
+      - name: 创建 Release 并附加安装包
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           name: ZCode ${{ github.event.inputs.tag || github.ref_name }}
-          # draft 让产物先落到草稿 Release，人工确认后再发布；
-          # 想直接公开发布，把 draft 改成 false。
-          draft: true
+          # 推 tag 直接公开。安装包未签名，若要先人工验证再公开，改回 draft: true。
+          draft: false
           # 只发安装包本身。electron-builder 生成的 latest*.yml / *.blockmap 指向
           # electron-builder.config.js 里的 generic publish 占位地址（localhost:8081），
           # 对终端用户没有意义，因此不进入 Release。
