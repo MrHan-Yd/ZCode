@@ -139,6 +139,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      # 发布 job 不继承 build job 的检出，但下面的强更标记要从仓库根读取；
+      # 少了这一步 cp force-update.json 会在空工作区里失败，两个平台的包白打一遍且不产出 Release。
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: 下载全部平台产物
         uses: actions/download-artifact@v4
         with:
