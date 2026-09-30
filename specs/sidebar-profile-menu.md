@@ -15,8 +15,9 @@
 - 设置页侧栏：`packages/ui/src/SettingsPage.tsx:1490`
 
 本次变更面向个人二开版本：账户菜单不再承担「升级」与「连接使用」两个入口，
-把菜单收敛为偏好 + 使用统计 + 退出登录。账号连接能力本身保留——设置页的
-provider OAuth 入口、WelcomeScreen 与命令面板仍能发起登录（见下方「已下线的入口」）。
+把菜单收敛为偏好 + 使用统计 + 退出登录。账号连接能力本身保留——设置页发起
+provider 连接时仍会打开 WelcomeScreen（见下方「已下线的入口」）。命令面板的登录项
+在本 spec 之后的下一次变更（[登录入口下线](./login-entry-retirement.md)）中一并删除。
 
 ## 产品规则
 
@@ -37,6 +38,11 @@ provider OAuth 入口、WelcomeScreen 与命令面板仍能发起登录（见下
 - **已登录**：保持原有「头像 + 显示名/用户名 + 套餐徽标」不变。
 - **登录态未落定**（`isRestoringOAuthSession` 且无 user）：图标位换成 loading，表达"状态确认中"。
 
+菜单入口的排版跟随侧栏行的约定：footer 默认水平内边距取列表容器的 `px-2`
+（侧栏调用方另传 `pr-3`，与任务行右侧的 12px 对齐），触发按钮不再使用 `pl-0` 与左侧专用圆角，
+保留 `size="lg"` 自带的 `px-2.5` / `rounded-lg`。原先的 `pl-0` 是配合「头像 + 姓名」让头像贴左，
+换成图标 + 菜单名后 hover 时图标和文字会压在胶囊左边缘、顶进圆角。
+
 因此 `sidebar.profile.notLoggedIn`（“连接使用”/“Connect”）与失去消费者的
 `app.login` 两条文案一并删除，新增 `sidebar.profile.menuLabel`。
 
@@ -45,20 +51,21 @@ provider OAuth 入口、WelcomeScreen 与命令面板仍能发起登录（见下
 | 下线入口 | 原行为                                                                                            | 仍然存在的等价能力                                                                                                                                                                  |
 | -------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 升级     | `WorkspaceSidebarFooterUsageSummaryContent` 的升级项 → `onUpgradeClick` → `openCodingPlanUpgrade` | 设置页模型提供商分区（`settings/model-provider-section/Detail.tsx`）、`AutomationsSection`、V4 工具栏与 `SessionPane` 的升级入口，以及 `CodingPlanUpgradeDialogProvider` 本身都保留 |
-| 连接使用 | footer 的 `app.login` 菜单项 → `WorkspaceSidebarFooter.onLogin` → `Root.handleOpenLoginEntry`     | 命令面板（仅未登录时出现）的 `login` 项、`WelcomeScreen` 引导流程保留；`Root.handleOpenLoginEntry` 仍经 `RootWorkspaceContent` → `App.onLogin` 传给命令面板                         |
+| 连接使用 | footer 的 `app.login` 菜单项 → `WorkspaceSidebarFooter.onLogin` → `Root.handleOpenLoginEntry`     | `WelcomeScreen` 引导流程保留，改由设置页 `requestLoginEntry` → `provider-request` 打开（见 [登录入口下线](./login-entry-retirement.md)）；命令面板的 `login` 项已在该次变更中删除   |
 
 因此 `onUpgradeClick` / `onLogin` 不再穿透 `WorkspaceSidebarFooter`、
 `WorkspaceSidebarFooterUsageSummary*`、`WorkspaceSidebar`、`SettingsPage`、
-`WorkspaceSettingsLayer` 与 `WorkspaceShellLayout`；`Root`、`App` 与
-`RootWorkspaceContent` 之间的 `onLogin` 因为命令面板仍在用而保留。
+`WorkspaceSettingsLayer` 与 `WorkspaceShellLayout`。`Root`、`App` 与
+`RootWorkspaceContent` 之间的 `onLogin` 当时仅为命令面板保留，现已随
+[登录入口下线](./login-entry-retirement.md) 一并删除。
 
 ## 状态所有者
 
 - **用量/套餐徽标状态**：`useWorkspaceSidebarFooterUsageSummaryState`，头像徽标仍由它驱动，
   本次只删除与升级目标 provider 相关的派生值（`upgradeTargetProviderId`）。
 - **升级弹窗状态**：`CodingPlanUpgradeDialogProvider`，本次不改动，只从账户菜单断开一个触发点。
-- **登录态**：`Root`（`handleOpenLoginEntry` → `setWelcomeScreenOpenReason`）与 auth store，
-  本次不改动。
+- **登录态**：`Root` 与 auth store，本次不改动；其登录入口开关随后在
+  [登录入口下线](./login-entry-retirement.md) 中收敛为 `isProviderLoginEntryOpen`。
 
 ## 验收场景
 
@@ -68,4 +75,5 @@ provider OAuth 入口、WelcomeScreen 与命令面板仍能发起登录（见下
 2. 登录后打开同一菜单：在「使用统计」之后多出 分隔线 / 退出登录，其余顺序不变。
 3. 设置页侧栏头像菜单与工作区侧栏完全一致（同一组件、同一解析结果）。
 4. 设置页的套餐升级入口（模型提供商分区、自动化分区）与 `CodingPlanUpgradeDialog` 仍可正常打开。
-5. 命令面板在未登录时仍能通过「登录」项打开 WelcomeScreen。
+5. 设置页发起 provider 连接时仍能打开 WelcomeScreen（命令面板的登录项已不在，见
+   [登录入口下线](./login-entry-retirement.md)）。

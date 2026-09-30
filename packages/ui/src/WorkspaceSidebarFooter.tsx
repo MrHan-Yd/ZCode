@@ -200,18 +200,22 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   const canZoomOut = desktopZoomLevel > DESKTOP_ZOOM_MIN_LEVEL;
 
   return (
-    // footer 被 Settings 复用，页面专属边距由调用方传入，避免修改共享默认样式。
-    <footer className={cn("flex shrink-0 flex-col gap-2.5 px-4 pt-2 pb-4", className)}>
+    // footer 被 Settings 复用，页面专属边距由调用方传入（侧栏传 pr-3，与任务行右侧 12px 对齐）；
+    // 默认水平内边距取侧栏列表容器的 px-2，让入口与上方列表、顶部按钮共用同一条左基准线。
+    <footer className={cn("flex shrink-0 flex-col gap-2.5 px-2 pt-2 pb-4", className)}>
       <div className="flex min-w-0 gap-2">
         <DropdownMenu open={profileMenuOpen} onOpenChange={setProfileMenuOpen}>
           <DropdownMenuTrigger asChild>
             {/* 头像和 Login 之前直接绑定到登录动作，导致用户无法从这里打开偏好设置。
               现在把这一块改成统一的设置菜单入口，登录/退出留在菜单项里，交互职责更清晰。 */}
+            {/* 之前的 pl-0 + 左侧 2xl 圆角是配合已下线的「头像 + 姓名」入口（头像贴左边更整齐）：
+              换成图标 + 菜单名后 hover 时图标和文字会压在胶囊左边缘、顶到圆角，所以去掉这两项，
+              改用与侧栏其它行一致的内边距与圆角（容器 px-2 + 行内 pl-2.5、rounded-lg）。 */}
             <Button
               type="button"
               variant="ghost"
               size={"lg"}
-              className="min-w-0 flex-1 justify-start gap-2 overflow-hidden rounded-tl-2xl rounded-bl-2xl border-0 pl-0"
+              className="min-w-0 flex-1 justify-start gap-2 overflow-hidden border-0"
               data-testid={TID_LOGIN_TRIGGER}
               aria-label={profileTriggerLabel}
             >

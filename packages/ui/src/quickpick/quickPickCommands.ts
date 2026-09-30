@@ -5,7 +5,6 @@ export type QuickPickCommandIcon =
   | "diff"
   | "feedback"
   | "folder"
-  | "login"
   | "logout"
   | "message"
   | "mcp"
@@ -55,7 +54,6 @@ interface QuickPickCommandHandlers {
   openFeedback: () => void | Promise<void>;
   openCommunity: () => void | Promise<void>;
   openProductDocs: () => void | Promise<void>;
-  login?: () => void | Promise<void>;
   logout?: () => void | Promise<void>;
   toggleSidebar: () => void;
   toggleTerminal: () => void;
@@ -268,6 +266,7 @@ export function createQuickPickCommands({
     run: handlers.openProductDocs,
   });
 
+  // 二开版本已下线 App 级登录入口，未登录时命令面板不再出现「连接」项。
   if (isLoggedIn && handlers.logout) {
     commands.push({
       id: "logout",
@@ -276,16 +275,6 @@ export function createQuickPickCommands({
       icon: "logout",
       keywords: ["disconnect", "logout", "sign out", "断开连接", "登出"],
       run: handlers.logout,
-    });
-  } else if (!isLoggedIn && handlers.login) {
-    commands.push({
-      id: "login",
-      sectionId: "app",
-      titleId: "quickPick.command.login",
-      icon: "login",
-      // 命令面板的账号动作对用户表达为“连接/断开连接”，搜索词也要同步。
-      keywords: ["connect", "login", "sign in", "连接", "登录"],
-      run: handlers.login,
     });
   }
 

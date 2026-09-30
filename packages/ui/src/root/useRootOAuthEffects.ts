@@ -23,7 +23,7 @@ import {
   refreshRestoredOAuthProviderFamilyAfterStartup,
 } from "@/root/oauthProviderFamilySelectionRefresh.js";
 import { applyCachedOAuthSessionRestoreResult } from "@/root/oauthCachedSessionRestore.js";
-import { markZcodeJwtInvalidRestart } from "@/root/zcodeJwtInvalidRestartMarker.js";
+import { retireLegacyAccountStateOnce } from "@/root/legacyAccountRetirement.js";
 import { shouldApplyOAuthPollingFailure } from "@/root/oauthLoginAttemptGuard.js";
 import { useAccountConnectionLossNotification } from "@/root/useAccountConnectionLossNotification.js";
 
@@ -103,7 +103,6 @@ export function useRootOAuthEffects({
   oauthPollingActive,
   setOAuthPollingActive,
   markOAuthSuccess,
-  onReauthenticationRequired,
 }: {
   accountIntentKey: string;
   platform: IPlatformService;
@@ -116,7 +115,6 @@ export function useRootOAuthEffects({
   oauthPollingActive: boolean;
   setOAuthPollingActive: (active: boolean) => void;
   markOAuthSuccess: (provider?: OAuthProviderId) => void;
-  onReauthenticationRequired: () => void;
 }) {
   useAccountConnectionLossNotification(services, accountIntentKey, refreshAppSettings);
   const requestAlert = useAlertDialog();
@@ -131,6 +129,13 @@ export function useRootOAuthEffects({
       logger.info("[Root] 后台启动 OAuth 本地会话恢复");
       let hasRestoredUser = false;
       try {
+        // 本版本没有账号登录入口，官方版迁移过来的凭据必须先清掉：
+        // 否则恢复链路会把残留凭据显示成「已登录」，留下无法登出的僵尸账号态。
+        await retireLegacyAccountStateOnce({ services, platform });
+        if (disposed) {
+          return;
+        }
+
         // zai / bigmodel 的 OAuth token 生命周期较短，启动时如果仍走远端校验，
         // 用户会在 token 过期后被立刻打回“未登录”，和“已完成登录但未主动退出”的产品语义冲突。
         // 这里改为只读取登录成功时缓存的 user_info，展示态由“是否主动退出”决定，而不是由短 token 决定。
@@ -144,11 +149,9 @@ export function useRootOAuthEffects({
           result,
           setUser,
           requestAlert,
-          onReauthenticationRequired,
           copy: {
             title: intl.formatMessage({ id: "login.expired.title" }),
-            description: intl.formatMessage({ id: "login.expired.description" }),
-            actionLabel: intl.formatMessage({ id: "login.expired.action" }),
+            actionLabel: intl.formatMessage({ id: "common.confirm" }),
           },
         });
       } catch (error) {
@@ -191,7 +194,7 @@ export function useRootOAuthEffects({
     };
   }, [
     intl,
-    onReauthenticationRequired,
+    platform,
     refreshAppSettings,
     refreshProviderState,
     requestAlert,
@@ -209,19 +212,14 @@ export function useRootOAuthEffects({
       void (async () => {
         const confirmed = await requestAlert({
           title: intl.formatMessage({ id: "login.expired.title" }),
-          description: intl.formatMessage({ id: "login.expired.description" }),
           actionLabel: intl.formatMessage({ id: "login.expired.restart" }),
         });
-        if (disposed) {
+        if (disposed || !confirmed) {
+          // 登录入口已下线，用户不重启时不再跳到全屏登录页，只结束本次提示。
           return;
         }
-        if (!confirmed) {
-          onReauthenticationRequired();
-          return;
-        }
-        markZcodeJwtInvalidRestart();
         if (typeof window !== "undefined" && !("zcode" in window)) {
-          // Web 没有 Electron RelaunchApp；marker 写入后立即刷新，避免停留在僵尸登录态。
+          // Web 没有 Electron RelaunchApp；直接刷新，避免停留在僵尸登录态。
           window.location.reload();
           return;
         }
@@ -232,7 +230,7 @@ export function useRootOAuthEffects({
       disposed = true;
       disposable.dispose();
     };
-  }, [intl, onReauthenticationRequired, platform, requestAlert, services.broadcastService]);
+  }, [intl, platform, requestAlert, services.broadcastService]);
 
   useEffect(() => {
     if (!oauthPollingActive) {
