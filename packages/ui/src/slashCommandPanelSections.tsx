@@ -16,6 +16,9 @@ export function useSlashCommandMentionPanelSections(
   filteredSubagentSuggestions: PromptInputSuggestionItem[],
   subagentsLoading: boolean,
   subagentsError: string | null,
+  filteredMcpSuggestions: PromptInputSuggestionItem[],
+  mcpLoading: boolean,
+  mcpEmptyText: string,
 ): MentionPanelSection[] {
   return useMemo(
     () => [
@@ -88,13 +91,38 @@ export function useSlashCommandMentionPanelSections(
         emptyText: intl.formatMessage({ id: "chat.slash.subagents.empty" }),
         errorText: subagentsError,
       },
+      {
+        id: "mcp",
+        title: intl.formatMessage({ id: "chat.slash.mcp.title" }),
+        options: filteredMcpSuggestions.map<MentionPanelOption>((suggestion) => ({
+          id: suggestion.id,
+          label: suggestion.label,
+          description: suggestion.description,
+          content: (
+            <span className="min-w-0 flex-1 flex items-center gap-2">
+              <span className="truncate text-ui-base font-medium text-foreground max-w-[40%]">
+                {suggestion.label}
+              </span>
+              <span className="truncate text-ui-base text-foreground-subtlest flex-1">
+                {suggestion.description}
+              </span>
+            </span>
+          ),
+        })),
+        loading: mcpLoading,
+        loadingText: intl.formatMessage({ id: "chat.mention.category.loading" }),
+        emptyText: mcpEmptyText,
+      },
     ],
     [
       commandsLength,
       filteredCommandSuggestions,
+      filteredMcpSuggestions,
       filteredSkillSuggestions,
       filteredSubagentSuggestions,
       intl,
+      mcpEmptyText,
+      mcpLoading,
       skillsError,
       skillsLoading,
       subagentsError,

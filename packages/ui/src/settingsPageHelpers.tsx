@@ -30,8 +30,6 @@ import { SettingsBadge, SettingsGroupCard, SettingsRow } from "@/settings/Settin
 import { DataBaseDirControl } from "@/settings/DataBaseDirControl.js";
 import { GitCommitMessageModelRow } from "@/settings/GitCommitMessageModelRow.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import { useOptionalServices } from "@/hooks/useServices.js";
-import { ProactiveSuggestionsSetting } from "@/settings/ProactiveSuggestionsSetting.js";
 import { normalizeInterfaceMode, type InterfaceMode } from "@/lib/interfaceMode.js";
 import {
   createSettingsPageConfig,
@@ -55,7 +53,6 @@ export function GeneralSectionContent({
   closeToTrayOnWindows,
   keepAwakeWhileRunning = false,
   desktopChromiumHardwareAccelerationEnabled = true,
-  receivePreviewUpdates,
   autoDownloadAndInstallUpdates,
   dataBaseDir,
   terminalInheritSystemProfile = true,
@@ -97,7 +94,6 @@ export function GeneralSectionContent({
   onCloseToTrayOnWindowsChange,
   onKeepAwakeWhileRunningChange = async () => {},
   onDesktopChromiumHardwareAccelerationChange = async () => {},
-  onReceivePreviewUpdatesChange,
   onAutoDownloadAndInstallUpdatesChange,
   onMessageStreamShowReasoningChange,
   onMessageStreamShowTodosChange,
@@ -107,7 +103,6 @@ export function GeneralSectionContent({
   onZCodeInteractionBehaviorChange,
   onAskUserQuestionAutoResolutionEnabledChange = async () => {},
   onModelIoFullRetentionEnabledChange = async () => {},
-  onOpenOnboardingDialog,
 }: {
   localePreference: LocalePreference;
   interfaceMode?: InterfaceMode;
@@ -117,7 +112,6 @@ export function GeneralSectionContent({
   closeToTrayOnWindows: boolean;
   keepAwakeWhileRunning?: boolean;
   desktopChromiumHardwareAccelerationEnabled?: boolean;
-  receivePreviewUpdates: boolean;
   autoDownloadAndInstallUpdates: boolean;
   dataBaseDir: string;
   terminalInheritSystemProfile: boolean;
@@ -160,7 +154,6 @@ export function GeneralSectionContent({
   onCloseToTrayOnWindowsChange: (enabled: boolean) => Promise<void>;
   onKeepAwakeWhileRunningChange?: (enabled: boolean) => Promise<void>;
   onDesktopChromiumHardwareAccelerationChange?: (enabled: boolean) => Promise<void>;
-  onReceivePreviewUpdatesChange: (enabled: boolean) => Promise<void>;
   onAutoDownloadAndInstallUpdatesChange: (enabled: boolean) => Promise<void>;
   onMessageStreamShowReasoningChange: (enabled: boolean) => Promise<void>;
   onMessageStreamShowTodosChange: (enabled: boolean) => Promise<void>;
@@ -170,10 +163,8 @@ export function GeneralSectionContent({
   onZCodeInteractionBehaviorChange: (behavior: ZCodeInteractionBehavior) => Promise<void>;
   onAskUserQuestionAutoResolutionEnabledChange?: (enabled: boolean) => Promise<void>;
   onModelIoFullRetentionEnabledChange?: (enabled: boolean) => Promise<void>;
-  onOpenOnboardingDialog: () => void;
 }) {
   const { intl } = useZCodeIntl();
-  const hasServices = Boolean(useOptionalServices());
   // 部分 SSR 单测会用精简 props 直接渲染本组件，新增终端设置项后旧 helper 未必同步传值。
   // 这里把运行时缺省值兜到“继承系统 profile”，避免 undefined.trim() 把无关测试打断。
   const [localTerminalFontFamily, setLocalTerminalFontFamily] = useState(terminalFontFamily);
@@ -348,7 +339,6 @@ export function GeneralSectionContent({
             </Select>
           }
         />
-        {hasServices ? <ProactiveSuggestionsSetting /> : null}
       </SettingsGroupCard>
 
       <SettingsGroupCard>
@@ -571,21 +561,6 @@ export function GeneralSectionContent({
                   checked={desktopChromiumHardwareAccelerationEnabled}
                   onCheckedChange={(checked) => {
                     void onDesktopChromiumHardwareAccelerationChange(checked);
-                  }}
-                />
-              }
-            />
-            <SettingsRow
-              label={intl.formatMessage({ id: "settings.receivePreviewUpdates" })}
-              description={intl.formatMessage({
-                id: "settings.receivePreviewUpdatesDescription",
-              })}
-              control={
-                <Switch
-                  aria-label={intl.formatMessage({ id: "settings.receivePreviewUpdates" })}
-                  checked={receivePreviewUpdates}
-                  onCheckedChange={(checked) => {
-                    void onReceivePreviewUpdatesChange(checked);
                   }}
                 />
               }
@@ -869,20 +844,6 @@ export function GeneralSectionContent({
               onDataBaseDirChange={onDataBaseDirChange}
               onSelectDataBaseDir={onSelectDataBaseDir}
             />
-          }
-        />
-      </SettingsGroupCard>
-
-      <SettingsGroupCard>
-        <SettingsRow
-          label={intl.formatMessage({ id: "settings.onboarding" })}
-          description={intl.formatMessage({
-            id: "settings.onboardingDescription",
-          })}
-          control={
-            <Button type="button" size="lg" variant="outline" onClick={onOpenOnboardingDialog}>
-              {intl.formatMessage({ id: "settings.onboardingOpen" })}
-            </Button>
           }
         />
       </SettingsGroupCard>

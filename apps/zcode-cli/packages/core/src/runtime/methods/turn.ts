@@ -551,6 +551,13 @@ export async function executeTurnCommand(
             turnTraceContext,
             options?.toolDisallowlist,
           );
+          // MCP 引用与 plugin 引用同一取材口（canonical displayInput、user 消息已落库之后）：
+          // 两者都是能力提醒，插件先、MCP 后，顺序固定以便 provider 前缀稳定。
+          await this.injectMcpReferenceReminderFromTurn(
+            displayInput,
+            turnTraceContext,
+            options?.toolDisallowlist,
+          );
         }
 
         this.messageHistory.setCacheMiss();

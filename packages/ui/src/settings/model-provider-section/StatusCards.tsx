@@ -114,6 +114,16 @@ export function ModelProviderLoadingCard({ loadingLabel }: { loadingLabel: strin
   );
 }
 
+export function ModelProviderEmptyCard() {
+  const { intl } = useZCodeIntl();
+
+  return (
+    <div className="rounded-2xl border border-border bg-surface p-6 text-center text-ui-base text-foreground-subtle">
+      {intl.formatMessage({ id: "settings.modelProvider.empty" })}
+    </div>
+  );
+}
+
 export function PresetProviderPlaceholderCard({
   displayName,
   messageId = "settings.modelProvider.presetEmpty",

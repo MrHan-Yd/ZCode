@@ -5,7 +5,8 @@ export type MentionCategory =
   | "subagents"
   | "whiteboards"
   | "sessions"
-  | "plugins";
+  | "plugins"
+  | "mcp";
 
 export interface MentionItemData {
   kind?: "file" | "directory" | "whiteboard";

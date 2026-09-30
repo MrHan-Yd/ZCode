@@ -1,5 +1,5 @@
 /* oxlint-disable eslint(max-lines) */
-import { ArrowLeft, Rocket, type LucideIcon } from "lucide-react";
+import { ArrowLeft, type LucideIcon } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -55,7 +55,6 @@ import {
 } from "@/lib/accountProviderAccess.js";
 import { buildUsageEntitlementCacheKey } from "@/lib/usageEntitlementCache.js";
 import { ModelProviderSection } from "@/settings/ModelProviderSection.js";
-import { useCodingPlanUpgradeDialog } from "@/settings/CodingPlanUpgradeDialogProvider.js";
 import { useEnterpriseCodingPlanProducts } from "@/settings/model-provider-section/useEnterpriseCodingPlanProducts.js";
 import { UsageStatsSection, type UsageStatsSectionTab } from "@/settings/UsageStatsSection.js";
 import {
@@ -277,7 +276,6 @@ export function SettingsPage({
   onCreateTask,
   onOpenWorkspace,
   allowOpenWorkspace = true,
-  onLogin,
   onLogout,
   user,
 }: {
@@ -290,7 +288,6 @@ export function SettingsPage({
   onCreateTask?: (request?: CreateTaskRequest) => void;
   onOpenWorkspace?: () => void;
   allowOpenWorkspace?: boolean;
-  onLogin?: () => void;
   onLogout?: () => void;
   user?: UserInfo | null;
 }) {
@@ -550,7 +547,6 @@ export function SettingsPage({
     usageBigmodelEnterpriseProducts.loading ||
     usageZaiEnterpriseProducts.loading;
   const [initialModelProviderTarget] = useState(() => consumePendingSettingsModelProviderTarget());
-  const { openCodingPlanUpgrade } = useCodingPlanUpgradeDialog();
   const [pendingModelProviderTarget, setPendingModelProviderTarget] = useState<
     SettingsModelProviderTarget | undefined
   >(() => initialModelProviderTarget);
@@ -589,8 +585,6 @@ export function SettingsPage({
         : "app",
     );
   }, [selectedUsageCodingPlanSource, usageActiveTab, usageCodingPlanSources]);
-  const setNewUserOnboardingOpen = useZCodeStore((state) => state.setNewUserOnboardingOpen);
-  const requestOnboardingDialog = () => setNewUserOnboardingOpen(true);
   const setActiveSettingsSection = useCallback(
     (section: SettingsSectionId, fallbackSection: SettingsSectionId = activeSection) => {
       const resolvedSection = resolveSettingsSection(section, fallbackSection);
@@ -598,18 +592,6 @@ export function SettingsPage({
       writeLastSettingsSectionPreference(resolvedSection);
     },
     [activeSection],
-  );
-  const handleOpenCodingPlanUpgradeSettings = useCallback(
-    (
-      providerId: string,
-      funnelContext?: import("@/lib/codingPlanFunnelTelemetry.js").CodingPlanFunnelContext,
-    ) => {
-      openCodingPlanUpgrade({
-        providerId,
-        funnelContext,
-      });
-    },
-    [openCodingPlanUpgrade],
   );
   const handleOpenModelProviderSettings = useCallback(() => {
     setActiveSettingsSection("modelProvider");
@@ -703,7 +685,6 @@ export function SettingsPage({
     desktopChromiumHardwareAccelerationEnabled,
     setDesktopChromiumHardwareAccelerationEnabled,
   ] = useState(true);
-  const [receivePreviewUpdates, setReceivePreviewUpdates] = useState(false);
   const [autoDownloadAndInstallUpdates, setAutoDownloadAndInstallUpdates] = useState(false);
   const [messageStreamShowReasoning, setMessageStreamShowReasoning] = useState(true);
   const [messageStreamShowTodos, setMessageStreamShowTodos] = useState(false);
@@ -787,7 +768,6 @@ export function SettingsPage({
         setDesktopChromiumHardwareAccelerationEnabled(
           settings.desktopChromiumHardwareAccelerationEnabled ?? true,
         );
-        setReceivePreviewUpdates(settings.receivePreviewUpdates ?? false);
         setAutoDownloadAndInstallUpdates(settings.autoDownloadAndInstallUpdates ?? false);
         setMessageStreamShowReasoning(settings.messageStreamShowReasoning ?? true);
         setMessageStreamShowTodos(settings.messageStreamShowTodos ?? false);
@@ -828,7 +808,6 @@ export function SettingsPage({
     setToolGroupingTerminalEnabled(sharedSettings.toolGroupingTerminalEnabled ?? true);
     setToolGroupingChangesEnabled(sharedSettings.toolGroupingChangesEnabled ?? false);
     setZCodeInteractionBehavior(sharedSettings.zcodeInteractionBehavior ?? "queue");
-    setReceivePreviewUpdates(sharedSettings.receivePreviewUpdates ?? false);
     setAutoDownloadAndInstallUpdates(sharedSettings.autoDownloadAndInstallUpdates ?? false);
   }, [sharedSettings]);
   const handleTerminalInheritSystemProfileChange = useCallback(
@@ -1138,22 +1117,6 @@ export function SettingsPage({
       );
     },
     [services.settingService, intl],
-  );
-  const handleReceivePreviewUpdatesChange = useCallback(
-    async (enabled: boolean) => {
-      await runSettingsActionAsync({
-        featureId: "settings.update",
-        action: "toggle_preview_updates",
-        trigger: "switch",
-        operation: () => updateSharedSettings({ receivePreviewUpdates: enabled }),
-        completed: {
-          resultSource: "shared_settings",
-          stateAfter: enabled ? "enabled" : "disabled",
-        },
-      });
-      setReceivePreviewUpdates(enabled);
-    },
-    [updateSharedSettings],
   );
   const handleAutoDownloadAndInstallUpdatesChange = useCallback(
     async (enabled: boolean) => {
@@ -1505,28 +1468,6 @@ export function SettingsPage({
                     );
                   })}
                 </div>
-
-                <SettingsSidebarButton
-                  icon={Rocket}
-                  label={intl.formatMessage({ id: "settings.onboarding" })}
-                  className="mt-4 border border-dashed border-border hover:border-border-hover"
-                  onClick={() => {
-                    runUserAction({
-                      input: {
-                        featureId: "settings.navigation",
-                        action: "open_onboarding",
-                        trigger: "button",
-                      },
-                      operation: requestOnboardingDialog,
-                      completed: { resultSource: "local_commit" },
-                      failureStage: "dialog_open",
-                    });
-                  }}
-                >
-                  <span className="text-ui-base text-foreground">
-                    {intl.formatMessage({ id: "settings.onboarding" })}
-                  </span>
-                </SettingsSidebarButton>
               </nav>
 
               <div className="max-lg:hidden">
@@ -1537,8 +1478,6 @@ export function SettingsPage({
                   onThemeChange={handleFooterThemeChange}
                   onSettingsButtonClick={onBack}
                   onUsageClick={handleOpenUsageSettings}
-                  onUpgradeClick={handleOpenCodingPlanUpgradeSettings}
-                  onLogin={onLogin}
                   onLogout={onLogout}
                   settingsButtonMode="back"
                   user={user}
@@ -1666,7 +1605,6 @@ export function SettingsPage({
                             desktopChromiumHardwareAccelerationEnabled={
                               desktopChromiumHardwareAccelerationEnabled
                             }
-                            receivePreviewUpdates={receivePreviewUpdates}
                             autoDownloadAndInstallUpdates={autoDownloadAndInstallUpdates}
                             dataBaseDir={dataBaseDir}
                             terminalInheritSystemProfile={terminalInheritSystemProfile}
@@ -1747,7 +1685,6 @@ export function SettingsPage({
                             onDesktopChromiumHardwareAccelerationChange={
                               handleDesktopChromiumHardwareAccelerationChange
                             }
-                            onReceivePreviewUpdatesChange={handleReceivePreviewUpdatesChange}
                             onAutoDownloadAndInstallUpdatesChange={
                               handleAutoDownloadAndInstallUpdatesChange
                             }
@@ -1767,18 +1704,6 @@ export function SettingsPage({
                             onZCodeInteractionBehaviorChange={handleZCodeInteractionBehaviorChange}
                             onAskUserQuestionAutoResolutionEnabledChange={
                               handleAskUserQuestionAutoResolutionEnabledChange
-                            }
-                            onOpenOnboardingDialog={() =>
-                              runUserAction({
-                                input: {
-                                  featureId: "settings.navigation",
-                                  action: "open_onboarding",
-                                  trigger: "button",
-                                },
-                                operation: requestOnboardingDialog,
-                                completed: { resultSource: "local_commit" },
-                                failureStage: "dialog_open",
-                              })
                             }
                           />
                         ) : activeSection === "appearance" ? (

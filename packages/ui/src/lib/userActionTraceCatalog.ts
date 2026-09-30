@@ -53,7 +53,7 @@ export const CORE_USER_ACTION_FEATURES = {
 } as const;
 
 export const SETTINGS_USER_ACTION_FEATURES = {
-  "settings.navigation": ["open_section", "back_to_workspace", "open_onboarding"],
+  "settings.navigation": ["open_section", "back_to_workspace"],
   "settings.locale": ["change_locale"],
   "settings.appearance": [
     "change_theme",
@@ -68,7 +68,7 @@ export const SETTINGS_USER_ACTION_FEATURES = {
   "settings.search": ["toggle_native_search"],
   "settings.network": ["save_http_proxy", "save_no_proxy", "save_ca_certificate"],
   "settings.desktop": ["toggle_hardware_acceleration", "toggle_close_to_tray", "toggle_keep_awake"],
-  "settings.update": ["toggle_preview_updates", "toggle_auto_update"],
+  "settings.update": ["toggle_auto_update"],
   "settings.notification": ["toggle_notification", "toggle_notification_sound"],
   "settings.conversation": [
     "change_interaction_behavior",

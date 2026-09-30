@@ -954,7 +954,7 @@ function syncImmediateAppSettings(patch: Partial<AppSettings>) {
 
   if (typeof patch.receivePreviewUpdates === "boolean") {
     // receivePreviewUpdates 由 renderer host 写入 setting.json。
-    // main 进程的自动更新器不会订阅 host 设置变化，必须借 syncAppSettings 这条即时通道刷新 manifest channel。
+    // main 进程的自动更新器不会订阅 host 设置变化，必须借 syncAppSettings 这条即时通道刷新更新通道。
     refreshAutoUpdaterReleaseChannel(
       patch.receivePreviewUpdates,
       "settings receivePreviewUpdates changed",
@@ -2023,8 +2023,6 @@ app.whenReady().then(async () => {
     },
     settingService: mainSettingService,
     locale: currentApplicationLocale,
-    deviceMid,
-    resolveEndpointOrigin: resolveCurrentZCodeEndpointOrigin,
     updateFeedSource: resolveUpdateFeedSourceFromStartupConfig({
       argv: process.argv,
       env: process.env,
@@ -2260,7 +2258,6 @@ app.whenReady().then(async () => {
       ? await maybeBlockStartupForForceUpdate({
           locale: currentApplicationLocale,
           logger,
-          endpointOrigin: await resolveCurrentZCodeEndpointOrigin(),
           onBlocked: () => {
             forceUpdateMainWindowCreationBlocked = true;
           },

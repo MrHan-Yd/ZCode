@@ -85,6 +85,9 @@ export * from "./mcp/index.js";
 // Plugin 对话引用（@ Plugin capability hint）
 export * from "./plugin-reference/index.js";
 
+// MCP 对话引用（@ MCP server capability hint）
+export * from "./mcp-reference/index.js";
+
 // Node REPL/browser-use plugin runtime primitives
 export { NodeReplSession } from "./repl/node-repl-session.js";
 export type {

@@ -45,6 +45,7 @@ export const SYSTEM_REMINDER_PER_REQUEST_SOURCES = [
   "output_style",
   "date_change",
   "referenced_session_context",
+  "mcp_reference",
   "model_anomaly",
   "prompt_attachment",
   "diagnostics",
@@ -103,6 +104,9 @@ const SYSTEM_REMINDER_DESCRIPTORS: Record<SystemReminderSource, DescriptorShape>
   // Plugin 对话引用：当轮生成后按
   // model-only synthetic notice 固化，后续只追加、不改写；冷恢复按原文重建以保持缓存前缀。
   plugin_reference: descriptor("current_turn", "per_current_turn", true, "sr.plugin_reference"),
+  // MCP 对话引用：与 `referenced_session_context` 同样是请求级附件，不落盘——
+  // MCP 能力随时可从工具列表重新得到，不需要像 plugin_reference 那样固化。
+  mcp_reference: descriptor("current_turn", "per_current_turn", true, "sr.mcp_reference"),
   todo_reminder: descriptor("current_turn", "per_current_turn", true, "sr.todo_reminder"),
   task_status: descriptor("mid_turn_event", "mid_turn_event", true, "sr.task_status"),
   // 只用于 Read 等 tool result 内容内联 warning，不作为 synthetic user notice 持久化。

@@ -19,16 +19,8 @@ const enUS: Record<string, string> = {
   "occupationOnboarding.officeMode": "Office mode",
   "occupationOnboarding.officeModeDescription":
     "I focus on task progress and results, without needing code, command output, or other technical details.",
-  "chat.officeSuggestions.setting": "Proactive task suggestions",
-  "chat.officeSuggestions.settingDescription": "Available only in Office mode.",
   "chat.plugins.browseMarketplace": "Browse plugin marketplace",
   "chat.plugins.loadError": "Could not load plugins. Reopen the menu to try again.",
-  "chat.officeSuggestions.saveError": "Could not save suggestions settings. Please try again.",
-  "chat.officeSuggestions.refresh": "Show more",
-  "chat.officeSuggestions.closeTitle": "Turn off task suggestions?",
-  "chat.officeSuggestions.closeDescription": "You can turn them on again in Settings.",
-  "chat.officeSuggestions.closeError": "Could not turn off suggestions. Please try again.",
-  "occupationOnboarding.suggestionsHeading": "Suggested tasks",
   "occupationOnboarding.infrastructure": "QA / Operations / Security",
   "occupationOnboarding.product": "Product / Project / Solutions",
   "occupationOnboarding.design": "UI / UX / Visual Design",
@@ -62,9 +54,6 @@ const enUS: Record<string, string> = {
   "occupationOnboarding.migrationDescription": "Migrate conversation history from Claude Code",
   "occupationOnboarding.memory": "Enable Workspace Memory",
   "occupationOnboarding.memoryDescription": "Let ZCode remember your preferences and work context.",
-  "occupationOnboarding.suggestions": "Enable proactive task suggestions",
-  "occupationOnboarding.suggestionsDescription":
-    "Show suggestions in new conversations. Click to fill the composer.",
   "occupationOnboarding.close": "Exit onboarding",
   "startup.global.silent": "Starting ZCode",
   "startup.global.upgrading": "Upgrading local data",
@@ -896,14 +885,9 @@ const enUS: Record<string, string> = {
   "login.apiKey.saveError": "Failed to save API key: {error}",
   "login.apiKey.skipError": "Failed to skip API key setup: {error}",
   "login.skip": "Skip for now",
-  "settings.onboarding": "Onboard",
-  "settings.onboardingDescription":
-    "Choose your role, interface mode, and preferences again. Use Migration settings to import data.",
-  "settings.onboardingOpen": "Open onboarding",
 
   // App header
   "app.currentTheme": "Current: {theme}",
-  "app.login": "Connect",
   "app.logout": "Disconnect",
   "logout.confirm.title": "Disconnect and restart ZCode?",
   "logout.confirm.descriptionWithRunningSessions":
@@ -912,7 +896,6 @@ const enUS: Record<string, string> = {
     "The app will restart after disconnecting. You will need to connect your account again.",
   "logout.confirm.ok": "Disconnect and restart",
   "logout.confirm.cancel": "Cancel",
-  "sidebar.profile.notLoggedIn": "Connect",
   "app.selectFile": "Select a file to get started",
   "app.workspace": "Workspace",
   "browser.title": "Browser",
@@ -1495,10 +1478,6 @@ const enUS: Record<string, string> = {
   "appHeader.workspaceSessionActionLoading": "Applying session changes...",
   "appHeader.copyLogPath": "Copy log path",
   "workspaceHeader.help.menu": "Help",
-  "workspaceHeader.help.issueReport": "Report an issue",
-  "workspaceHeader.help.productRequest": "Request a feature",
-  "workspaceHeader.help.productRequestDraft": "I would like to suggest: ",
-  "workspaceHeader.help.community": "User community",
   "workspaceHeader.help.docs": "Product docs",
   "titleBar.menu.file": "File",
   "titleBar.menu.view": "View",
@@ -2202,9 +2181,6 @@ const enUS: Record<string, string> = {
     "Turn this off to work around blank windows, crashes, or rendering issues caused by some GPUs or drivers. Restart the app to take effect.",
   "settings.desktopChromiumHardwareAccelerationSavedHint":
     "Chrome hardware acceleration setting saved. Restart the app to take effect.",
-  "settings.receivePreviewUpdates": "Receive preview updates early",
-  "settings.receivePreviewUpdatesDescription":
-    "When enabled, you will get the earliest access to new features and improvements. When disabled, you will receive update pushes according to the regular release schedule.",
   "settings.autoDownloadAndInstallUpdates": "Automatically download and install updates",
   "settings.autoDownloadAndInstallUpdatesDescription":
     "When enabled, updates start downloading as soon as they are found. Restart still requires confirmation when tasks are running.",
@@ -2290,6 +2266,8 @@ const enUS: Record<string, string> = {
   "sidebar.settings.locale.en-US": "English",
   "sidebar.settings.locale.zh-CN": "中文简体",
   "sidebar.settings.interfaceZoom": "Interface zoom",
+  // Entry name of the sidebar preferences menu; no account avatar or user name is shown when signed out.
+  "sidebar.profile.menuLabel": "Preferences",
   "sidebar.settings.theme.light": "Light theme",
   "sidebar.settings.theme.zai-light": "Light theme",
   "sidebar.settings.theme.zai-dark": "Dark theme",
@@ -3420,7 +3398,6 @@ const enUS: Record<string, string> = {
   "settings.modelProvider.newProviderName": "New provider",
   "settings.modelProvider.modelsPlaceholder": "One model name per line",
   "settings.modelProvider.modelsCount": "{count} models",
-  "settings.modelProvider.presetTitle": "Providers",
   "settings.usage.sectionTitle": "Usage stats",
   "settings.usage.sectionDescription": "Built from local app session history.",
   "settings.usage.tab.appUsage": "App usage",
@@ -3680,8 +3657,6 @@ const enUS: Record<string, string> = {
   "settings.usage.dayLabel.mon": "Mon",
   "settings.usage.dayLabel.wed": "Wed",
   "settings.usage.dayLabel.fri": "Fri",
-  "settings.modelProvider.presetDescription":
-    "Built-in Z.ai and BigModel providers with OAuth-assisted configuration.",
   "settings.modelProvider.presetEmpty": "Not synced yet. Complete OAuth login first.",
   "settings.modelProvider.customTitle": "Custom providers",
   "settings.modelProvider.refresh": "Refresh",
@@ -4520,30 +4495,6 @@ const enUS: Record<string, string> = {
   "chat.empty.greeting.afternoon": "Good afternoon! Leave the rest to me.",
   "chat.empty.greeting.evening": "Evening, nice work today",
   "chat.empty.greeting.lateNight": "It's late—remember to take care of yourself.",
-  "chat.draft.suggestedPrompt.recentCommits": "Review commits from the last 7 days",
-  "chat.draft.suggestedPrompt.recentCommits.prompt":
-    "Review Git commits from the last 7 days in this workspace, summarize the main changes, and identify potential risks.",
-  "chat.draft.suggestedPrompt.createPdf": "Create a PDF",
-  "chat.draft.suggestedPrompt.createPdf.prompt":
-    "Create a PDF document based on the contents of the current workspace.",
-  "chat.draft.suggestedPrompt.plugin.documentSkills": "Document Skills",
-  "chat.draft.suggestedPrompt.plugin.github": "Github",
-  "chat.draft.suggestedPrompt.pluginUnavailable":
-    "{pluginLabel} plugin is not enabled or installed",
-  "chat.draft.suggestedPrompt.pluginFlow.installing": "Installing the plugin…",
-  "chat.draft.suggestedPrompt.pluginFlow.enabling": "Enabling the plugin…",
-  "chat.draft.suggestedPrompt.pluginFlow.checking": "Checking plugin status…",
-  "chat.draft.suggestedPrompt.pluginFlow.installConfirmation": "Install {pluginLabel} Plugin",
-  "chat.draft.suggestedPrompt.pluginFlow.enableConfirmation": "Enable {pluginLabel} Plugin",
-  "chat.draft.suggestedPrompt.pluginFlow.confirm": "Confirm",
-  "chat.draft.suggestedPrompt.pluginFlow.installSucceeded": "Installation successful",
-  "chat.draft.suggestedPrompt.pluginFlow.installFailed": "Plugin installation failed",
-  "chat.draft.suggestedPrompt.pluginFlow.installFailureToast":
-    "Could not install {pluginLabel}: {error}",
-  "chat.draft.suggestedPrompt.pluginFlow.installTimedOut": "Installation timed out",
-  "chat.draft.suggestedPrompt.pluginFlow.installReturnedEmpty": "No installed plugin was returned",
-  "chat.draft.suggestedPrompt.pluginFlow.enableSucceeded": "Plugin enabled successfully",
-  "chat.draft.suggestedPrompt.pluginFlow.enableFailed": "Plugin enable failed",
   "chat.empty.workspaceMenu": "Choose workspace",
   "chat.empty.selectProject": "Select project",
   "chat.empty.workOutsideProject": "Work outside a project",
@@ -5742,6 +5693,13 @@ const enUS: Record<string, string> = {
   "chat.slash.skills.empty": "No matching skills",
   "chat.slash.subagents.title": "Agents",
   "chat.slash.subagents.empty": "No matching agents",
+  "chat.slash.mcp.title": "MCP",
+  "chat.slash.mcp.empty": "No MCP servers available",
+  "chat.slash.mcp.emptyAllUnselectable":
+    "Every local MCP server is disabled or has a name this reference cannot carry",
+  "chat.slash.mcp.scope.project": "Project",
+  "chat.slash.mcp.scope.global": "Global",
+  "chat.slash.mcp.toolCount": "{count} tools",
   "chat.slash.emptyUnavailable":
     "No slash commands have been broadcast for the current ZCode Agent session",
   "chat.slash.emptyResults": "No matching slash commands",

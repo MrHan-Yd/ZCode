@@ -91,6 +91,13 @@ export function buildPluginMentionMarkdown(label: string, pluginId: string): str
   return `[${escapeMarkdownLabel(`@${label}`)}](plugin://${escapeMarkdownDestination(pluginId)})`;
 }
 
+// MCP 引用的 canonical 持久化载体：`[@Label](mcp://serverName)`。
+// 与 Plugin 同一契约：身份只在 destination，且必须与运行时 MCP 配置的 record key 完全一致；
+// label 仅用于展示。CLI 侧解析见 apps/zcode-cli/packages/core/src/mcp-reference/references.ts。
+export function buildMcpMentionMarkdown(label: string, serverName: string): string {
+  return `[${escapeMarkdownLabel(`@${label}`)}](mcp://${escapeMarkdownDestination(serverName)})`;
+}
+
 type MentionTextPart =
   | { type: "text"; text: string }
   | { type: "file"; label: string }

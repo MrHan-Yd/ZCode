@@ -269,6 +269,11 @@ export interface AgentRuntimeCoreMethods {
     traceContext: TraceContext,
     toolDisallowlist?: readonly string[],
   ): Promise<void>;
+  injectMcpReferenceReminderFromTurn(
+    userInput: string,
+    traceContext: TraceContext,
+    toolDisallowlist?: readonly string[],
+  ): Promise<void>;
   startMcpStartup(traceContext: TraceContext): Promise<McpConnectionSnapshot> | undefined;
   initializeMcp(traceContext: TraceContext): Promise<void>;
   discoverSkillsForContext(traceContext: TraceContext): Promise<SkillLoadOutcome | undefined>;

@@ -93,6 +93,24 @@ export const PLUGIN_MENTION_ICON_NODE = [
   ["path", { d: "M7 5V3" }],
 ] as const satisfies MentionLucideIconNode;
 
+// MCP 服务器图标（lucide `server` 形状：两个机身 + 两个指示灯）。
+export const MCP_MENTION_ICON_NODE = [
+  [
+    "path",
+    {
+      d: "M4 2h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Z",
+    },
+  ],
+  [
+    "path",
+    {
+      d: "M4 14h16a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2Z",
+    },
+  ],
+  ["circle", { cx: "6", cy: "6", r: "1" }],
+  ["circle", { cx: "6", cy: "18", r: "1" }],
+] as const satisfies MentionLucideIconNode;
+
 export function createMentionSvgIcon(iconNode: MentionLucideIconNode): SVGSVGElement {
   const svg = document.createElementNS(SVG_NAMESPACE, "svg");
   svg.setAttribute("viewBox", "0 0 24 24");

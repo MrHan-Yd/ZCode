@@ -67,8 +67,6 @@ export function OccupationOnboarding({
   const requestOnboardingDialog = useZCodeStore((state) => state.requestOnboardingDialog);
   const [migration, setMigration] = useState(false);
   const [memory, setMemory] = useState(savedInterfaceMode === "office");
-  const [suggestions, setSuggestions] = useState(savedInterfaceMode === "office");
-  const suggestionsEditedRef = useRef(false);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
   const [error, setError] = useState(false);
@@ -92,7 +90,6 @@ export function OccupationOnboarding({
     occupation,
     mode,
     memory,
-    suggestions,
     migration,
   });
   const closeOnboarding = useCallback(() => {
@@ -122,7 +119,6 @@ export function OccupationOnboarding({
         setMode(nextMode);
         if (nextMode !== mode) {
           setMemory(nextMode === "office");
-          if (nextMode === "office" && !suggestionsEditedRef.current) setSuggestions(true);
         }
         return;
       }
@@ -195,14 +191,12 @@ export function OccupationOnboarding({
     setMode(initialMode);
     // 编程模式默认关闭主动工作记忆；办公模式才恢复该用户之前的勾选。
     setMemory(initialMode === "office" && (entry?.memoryEnabled ?? true));
-    setSuggestions(entry?.proactiveSuggestionsEnabled ?? initialMode === "office");
     setMigration(false);
     setError(false);
   };
   useEffect(() => {
     if (!requested) return;
     userEditedRef.current = false;
-    suggestionsEditedRef.current = false;
     applyLatestEntry();
     // latestEntry 异步到达时若引导已打开，重新预填一次（用户未交互前覆盖默认值）。
   }, [requested]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -231,7 +225,6 @@ export function OccupationOnboarding({
         // "跳过也算答案"的区分度只体现在 onboarding-record.json 里。
         onboardingOccupation: occupation ?? "other",
         memoryEnabled: skip ? false : memory,
-        proactiveSuggestionsEnabled: !skip && mode === "office" && suggestions,
       });
       reportEnd();
       // 保存成功就是本次引导的终点；本地记录失败不应留下可再次上报的引导页面。
@@ -250,7 +243,9 @@ export function OccupationOnboarding({
             occupation,
             interfaceMode: mode,
             memoryEnabled: skip ? null : memory,
-            proactiveSuggestionsEnabled: skip ? null : mode === "office" && suggestions,
+            // 主动任务推荐已下线（见 specs/draft-suggested-prompts-retirement.md）：
+            // 该偏好不再询问，记录按“未表态”写 null，字段本身保留以兼容协议。
+            proactiveSuggestionsEnabled: null,
             completedAt: new Date().toISOString(),
           });
           markOnboarded();
@@ -314,10 +309,6 @@ export function OccupationOnboarding({
                         markUserEdited();
                         // 重选当前编程模式也应清除旧记录带来的默认勾选。
                         setMemory(value === "office");
-                        if (value !== mode) {
-                          if (value === "office" && !suggestionsEditedRef.current)
-                            setSuggestions(true);
-                        }
                         setMode(value);
                       }}
                       label={t("modeTitle")}
@@ -325,38 +316,26 @@ export function OccupationOnboarding({
                     />
                   ) : preferences ? (
                     <div className="mt-8 space-y-3">
-                      {(["suggestions", "memory", "migration"] as const)
-                        .filter((key) => key !== "suggestions" || mode === "office")
-                        .map((key) => (
-                          <label
-                            key={key}
-                            className="grid cursor-pointer grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 rounded-xl border border-card-border bg-card dark:bg-surface/40 p-5 text-ui-base transition-colors hover:bg-surface-hover"
-                          >
-                            <Checkbox
-                              checked={
-                                key === "migration"
-                                  ? migration
-                                  : key === "memory"
-                                    ? memory
-                                    : suggestions
-                              }
-                              disabled={saving}
-                              onCheckedChange={(checked) => {
-                                markUserEdited();
-                                if (key === "migration") setMigration(checked === true);
-                                else if (key === "memory") setMemory(checked === true);
-                                else {
-                                  suggestionsEditedRef.current = true;
-                                  setSuggestions(checked === true);
-                                }
-                              }}
-                            />
-                            <span className="font-medium">{t(key)}</span>
-                            <span className="col-start-2 text-ui-sm font-normal text-foreground-subtle">
-                              {t(`${key}Description`)}
-                            </span>
-                          </label>
-                        ))}
+                      {(["memory", "migration"] as const).map((key) => (
+                        <label
+                          key={key}
+                          className="grid cursor-pointer grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 rounded-xl border border-card-border bg-card dark:bg-surface/40 p-5 text-ui-base transition-colors hover:bg-surface-hover"
+                        >
+                          <Checkbox
+                            checked={key === "migration" ? migration : memory}
+                            disabled={saving}
+                            onCheckedChange={(checked) => {
+                              markUserEdited();
+                              if (key === "migration") setMigration(checked === true);
+                              else setMemory(checked === true);
+                            }}
+                          />
+                          <span className="font-medium">{t(key)}</span>
+                          <span className="col-start-2 text-ui-sm font-normal text-foreground-subtle">
+                            {t(`${key}Description`)}
+                          </span>
+                        </label>
+                      ))}
                     </div>
                   ) : (
                     <OnboardingOccupationGrid

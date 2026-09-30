@@ -2,8 +2,17 @@
  * slashCommandHelpers — 纯函数辅助工具，供 SlashCommandPlugin.tsx 使用
  */
 import { $getRoot, $getSelection, $isRangeSelection, $isTextNode } from "lexical";
-import type { AgentSummary, Locale, SkillSummary, ZCodeSlashCommand } from "@zcode/shared";
+import {
+  isMcpReferenceName,
+  type AgentSummary,
+  type Locale,
+  type SkillSummary,
+  type ZCodeMcpServer,
+  type ZCodeSlashCommand,
+} from "@zcode/shared";
+import type { IntlInstance } from "@/i18n/IntlProvider.js";
 import type { MentionItem } from "@/mentions/mentionTypes.js";
+import { filterLocalMcpServers } from "@/settings/pluginManagedResourceGroups.js";
 import { mapSubagentsToMentionItemsForTest } from "@/mentions/providers/subagentsMentionProvider.js";
 import { mapSkillsToMentionItemsForTest } from "@/mentions/providers/skillsMentionProvider.js";
 import type { PromptInputSuggestionItem } from "./lib/promptInputTriggers.js";
@@ -36,6 +45,9 @@ export interface AppSlashCommand {
 }
 
 const APP_SLASH_SUGGESTION_ID_PREFIX = "app-slash:";
+
+/** `/` 面板里 MCP 建议的 id 前缀；与 `buildSlashApplyMentionPayload` 的分支判定共用。 */
+export const MCP_SUGGESTION_ID_PREFIX = "mcp:";
 
 export function buildAppSlashCommandSuggestions(
   commands: readonly AppSlashCommand[],
@@ -133,6 +145,64 @@ export function buildSkillSuggestions(
     keywords: [...new Set([...(item.keywords ?? []), "skill", "skills", item.value])],
     data: item.data,
   }));
+}
+
+/**
+ * MCP 服务器建议。只列可引用的本地服务器（复用 `filterLocalMcpServers`：项目级 + 全局），
+ * 已禁用或名称含引用不支持字符的服务器不进列表——UI 不能生成一个 CLI 必然拒绝的引用。
+ * 运行时 MCP 配置以服务器名为键，同名在运行时无法区分：这里按名去重，项目级优先。
+ */
+export function buildMcpSuggestions(
+  servers: readonly ZCodeMcpServer[],
+  intl: IntlInstance,
+): PromptInputSuggestionItem[] {
+  const byName = new Map<string, ZCodeMcpServer>();
+  for (const server of filterLocalMcpServers([...servers], "")) {
+    const existing = byName.get(server.name);
+    if (!existing || (existing.scope !== "workspace" && server.scope === "workspace")) {
+      byName.set(server.name, server);
+    }
+  }
+
+  return [...byName.values()]
+    .filter((server) => server.enabled !== false && isMcpReferenceName(server.name))
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((server) => ({
+      id: `${MCP_SUGGESTION_ID_PREFIX}${server.name}`,
+      trigger: "/" as const,
+      value: server.name,
+      label: `@${server.name}`,
+      description: describeMcpSuggestion(server, intl),
+      keywords: [
+        ...new Set(
+          [server.name, "mcp", server.config.command, server.config.url].filter(
+            (entry): entry is string => typeof entry === "string" && entry.length > 0,
+          ),
+        ),
+      ],
+      data: {
+        scope: server.scope === "workspace" ? ("workspace" as const) : ("user" as const),
+        source: "user" as const,
+      },
+    }));
+}
+
+/** 候选行副标题：作用域 · 传输方式 · 工具数；缺项不占位。 */
+function describeMcpSuggestion(server: ZCodeMcpServer, intl: IntlInstance): string {
+  const scope = intl.formatMessage({
+    id:
+      server.scope === "workspace" ? "chat.slash.mcp.scope.project" : "chat.slash.mcp.scope.global",
+  });
+  const transport =
+    server.config.command !== undefined && server.config.command.length > 0
+      ? "stdio"
+      : (server.config.type ?? (server.config.url ? "http" : "")).trim();
+  const tools =
+    typeof server.toolCount === "number" && server.toolCount > 0
+      ? intl.formatMessage({ id: "chat.slash.mcp.toolCount" }, { count: server.toolCount })
+      : "";
+
+  return [scope, transport, tools].filter((part) => part.length > 0).join(" · ");
 }
 
 function mapSubagentMentionItemToSuggestion(item: MentionItem): PromptInputSuggestionItem {

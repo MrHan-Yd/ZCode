@@ -148,6 +148,12 @@ jobs:
       - name: 列出发布文件
         run: ls -lh release-assets/
 
+      - name: 准备强制升级标记
+        # 客户端的启动强更门禁读 /releases/latest/download/force-update.json。
+        # 声明放在仓库根 force-update.json，这里复制一份进 Release，
+        # 保证每个正式版都带着当前声明，不会因为某次发版漏传而让门禁静默失效。
+        run: cp force-update.json release-assets/force-update.json
+
       - name: 创建 Release 并附加安装包
         uses: softprops/action-gh-release@v2
         with:
@@ -155,11 +161,15 @@ jobs:
           name: ZCode ${{ github.event.inputs.tag || github.ref_name }}
           # 推 tag 直接公开。安装包未签名，若要先人工验证再公开，改回 draft: true。
           draft: false
-          # 只发安装包本身。electron-builder 生成的 latest*.yml / *.blockmap 指向
-          # electron-builder.config.js 里的 generic publish 占位地址（localhost:8081），
-          # 对终端用户没有意义，因此不进入 Release。
+          # 客户端的「检查更新」直接读 Release 里的 latest*.yml，*.blockmap 供差分下载。
+          # 漏发 latest*.yml 会让更新检查报 ERR_UPDATER_CHANNEL_FILE_NOT_FOUND。
+          # latest*.yml 里的下载地址由客户端按 tag + 文件名重建，与发版地址无关。
           files: |
             release-assets/*.exe
             release-assets/*.dmg
             release-assets/*.zip
+            release-assets/latest.yml
+            release-assets/latest-mac.yml
+            release-assets/*.blockmap
+            release-assets/force-update.json
           fail_on_unmatched_files: true

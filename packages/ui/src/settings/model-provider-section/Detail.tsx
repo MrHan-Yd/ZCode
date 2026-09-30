@@ -27,6 +27,7 @@ import {
 } from "./constants.js";
 import { InlineEditableProviderCard } from "./InlineEditableProviderCard.js";
 import {
+  ModelProviderEmptyCard,
   ModelProviderLoadingCard,
   PresetProviderPlaceholderCard,
   CodingPlanStatusPanel,
@@ -228,6 +229,7 @@ export function ModelProviderSectionDetail({
   selectedNavItem,
   navigationItems = selectedNavItem ? [selectedNavItem] : [],
   connectionSettingsFailed = false,
+  sideNavigationEmpty = false,
   connectionSelections,
   startPlanSubscriptionCount = 0,
   presetLoading,
@@ -256,6 +258,8 @@ export function ModelProviderSectionDetail({
   selectedNavItem: ModelProviderNavItem | null;
   navigationItems?: ModelProviderNavItem[];
   connectionSettingsFailed?: boolean;
+  /** 侧栏没有任何供应商入口。用于区分"还在加载"和"确实没有可展示内容"。 */
+  sideNavigationEmpty?: boolean;
   connectionSelections?: ProviderFamilyConnectionSelectionSettings;
   startPlanSubscriptionCount?: number;
   presetLoading: boolean;
@@ -391,6 +395,12 @@ export function ModelProviderSectionDetail({
   }, [selectedItemKey]);
 
   if (!selectedNavItem) {
+    // 内置预置入口下线后，侧栏只剩自定义供应商；一条都没有时不能停在加载态，
+    // 否则首次进入设置页会一直转圈，用户会误以为页面坏了。
+    if (sideNavigationEmpty && !presetLoading) {
+      return <ModelProviderEmptyCard />;
+    }
+
     return <ModelProviderLoadingCard loadingLabel={loadingLabel} />;
   }
 

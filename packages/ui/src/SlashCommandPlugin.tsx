@@ -41,6 +41,7 @@ import {
 import { MentionPanel } from "./mentions/components/MentionPanel.js";
 import {
   buildAppSlashCommandSuggestions,
+  buildMcpSuggestions,
   buildSkillSuggestions,
   buildSubagentSuggestions,
   buildSlashSuggestions,
@@ -50,6 +51,8 @@ import {
   type SlashCommandPluginProps,
 } from "./slashCommandHelpers.js";
 import { useSlashCommandMentionPanelSections } from "./slashCommandPanelSections.js";
+import { filterLocalMcpServers } from "@/settings/pluginManagedResourceGroups.js";
+import { useMcpStore } from "@/store/mcpStore.js";
 import { getCurrentTextNodeSelection } from "./mentions/mentionHelpers.js";
 import {
   getActivePromptInputTokenReplacementRange,
@@ -126,13 +129,40 @@ export function SlashCommandPlugin({
     () => filterPromptInputSuggestions(skillSuggestions, activeTrigger?.query ?? null),
     [skillSuggestions, activeTrigger?.query],
   );
+  // MCP 目录由 App 层 useEnsureWorkspaceMcpLoaded 统一加载，这里只读当前 workspace 的服务器。
+  const mcpServers = useMcpStore((state) => state.servers);
+  const mcpConfigLoaded = useMcpStore((state) => state.isConfigLoaded);
+  const mcpLoading = !mcpConfigLoaded;
+  const mcpSuggestions = useMemo(() => buildMcpSuggestions(mcpServers, intl), [intl, mcpServers]);
+  const filteredMcpSuggestions = useMemo(
+    () => filterPromptInputSuggestions(mcpSuggestions, activeTrigger?.query ?? null),
+    [activeTrigger?.query, mcpSuggestions],
+  );
+  // 空态要区分「本地没有 MCP」和「有但都不可引用（已禁用/名称含不支持字符）」，
+  // 否则用户看到空列表不知道是自己的配置问题还是这里不支持。
+  const mcpEmptyText = useMemo(
+    () =>
+      intl.formatMessage({
+        id:
+          filterLocalMcpServers([...mcpServers], "").length > 0
+            ? "chat.slash.mcp.emptyAllUnselectable"
+            : "chat.slash.mcp.empty",
+      }),
+    [intl, mcpServers],
+  );
   const filteredSuggestions = useMemo(
     () => [
       ...filteredCommandSuggestions,
       ...filteredSkillSuggestions,
       ...filteredSubagentSuggestions,
+      ...filteredMcpSuggestions,
     ],
-    [filteredCommandSuggestions, filteredSkillSuggestions, filteredSubagentSuggestions],
+    [
+      filteredCommandSuggestions,
+      filteredMcpSuggestions,
+      filteredSkillSuggestions,
+      filteredSubagentSuggestions,
+    ],
   );
   const activeSignature = useMemo(
     () => getPromptInputTriggerSignature(activeTrigger),
@@ -439,6 +469,9 @@ export function SlashCommandPlugin({
     filteredSubagentSuggestions,
     subagentsLoading,
     subagentsError,
+    filteredMcpSuggestions,
+    mcpLoading,
+    mcpEmptyText,
   );
 
   if (!isOpen || !container) {

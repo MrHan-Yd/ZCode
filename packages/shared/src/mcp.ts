@@ -20,6 +20,22 @@ export type CliMcpSource = Exclude<McpSource, "mcp">;
 export type McpScope = "common" | "user" | "workspace";
 export type McpFileFormat = "json";
 
+// MCP 对话引用的 canonical 载体：`[@标签](mcp://<服务器名>)`。
+// 身份只来自 link destination，且必须与运行时 MCP 配置的 record key 完全一致；协议名大小写敏感。
+export const MCP_REFERENCE_SCHEME = "mcp://";
+
+// 服务器名是用户自由输入的，字母表刻意宽松：只排除空白、控制字符（`\p{Cc}`），以及会破坏
+// Markdown 链接结构或触发转义的字符。`%` 一并排除，解析器不做隐式 percent-decoding。
+const MCP_REFERENCE_NAME_PATTERN = /^[^\s\p{Cc}%()<>"'`\\]{1,128}$/u;
+
+/**
+ * 引用 destination 允许的服务器名。CLI 解析器与 UI 可选性判断共用这一个判据，
+ * 避免 UI 生成一个 CLI 必然拒绝的引用。
+ */
+export function isMcpReferenceName(candidate: string): boolean {
+  return MCP_REFERENCE_NAME_PATTERN.test(candidate);
+}
+
 // Single MCP server configuration
 export interface McpServerConfig {
   type?: string; // Supports stdio, http, sse, streamableHttp, etc.

@@ -15,7 +15,6 @@ import {
   type ProviderFamilyConnectionSelectionSettings,
   type ProviderFamilyDomain,
   type OAuthProviderId,
-  resolveModelProviderFamilyIdByProviderId,
   resolveModelProviderFamilySpecByProviderId,
   resolveProviderFamilyDomainFromOAuthProvider,
   ZAI_PROVIDER_ID,
@@ -30,7 +29,6 @@ import { useServices } from "@/hooks/useServices.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
 import { logger } from "@/logger.js";
 import {
-  PRESET_PROVIDER_SPECS,
   PRESET_SUBSCRIPTION_TIMEOUT_MS,
   BIGMODEL_REGISTRATION_URL,
   type CodingPlanStatus,
@@ -144,37 +142,6 @@ function shouldRefreshCodingPlanEntitlementsAfterSave(
     (previousProvider ? getProviderFormApiKey(previousProvider).trim() : "") !==
     getProviderFormApiKey(nextProvider).trim()
   );
-}
-
-function resolveBuiltinPresetOAuthProvider(
-  presetId: BuiltinModelProviderId,
-): OAuthProviderId | null {
-  if (
-    presetId === BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan ||
-    presetId === BUILTIN_MODEL_PROVIDER_IDS.zaiTeamCodingPlan ||
-    presetId === BUILTIN_MODEL_PROVIDER_IDS.zaiStartPlan
-  ) {
-    return ZAI_PROVIDER_ID;
-  }
-  if (
-    presetId === BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan ||
-    presetId === BUILTIN_MODEL_PROVIDER_IDS.bigmodelTeamCodingPlan ||
-    presetId === BUILTIN_MODEL_PROVIDER_IDS.bigmodelStartPlan
-  ) {
-    return BIGMODEL_PROVIDER_ID;
-  }
-  return null;
-}
-
-function shouldShowPresetProviderForActiveOAuth(
-  presetId: BuiltinModelProviderId,
-  providerFamilyDomain: ProviderFamilyDomain | null | undefined,
-): boolean {
-  const presetOAuthProvider = resolveBuiltinPresetOAuthProvider(presetId);
-  if (!providerFamilyDomain || !presetOAuthProvider) {
-    return true;
-  }
-  return resolveModelProviderFamilyIdByProviderId(presetId) === providerFamilyDomain;
 }
 
 function clearPendingProviderFamilyConnectionSelection(
@@ -605,17 +572,6 @@ export function ModelProviderSection({
     };
   }, [providerConnectionRefreshSignal, refreshCodingPlanPurchaseTokenState]);
 
-  const presetProviders = useMemo(
-    () =>
-      PRESET_PROVIDER_SPECS.filter((preset) =>
-        shouldShowPresetProviderForActiveOAuth(preset.id, effectiveProviderFamilyDomain),
-      ).map((preset) => ({
-        ...preset,
-        provider: modelProviders.find((provider) => provider.providerId === preset.id) ?? null,
-      })),
-    [effectiveProviderFamilyDomain, modelProviders],
-  );
-
   useEffect(() => {
     if (!presetSubscriptionProviderId) {
       return;
@@ -681,7 +637,6 @@ export function ModelProviderSection({
 
   const { navigationGroups, navigationItems, selectedNavItem, navigationUnavailable } =
     useModelProviderNavigation({
-      presetProviders,
       modelProviders,
       entitledAccountProviderIds,
       modelProvidersLoading: loading,
@@ -1038,6 +993,8 @@ export function ModelProviderSection({
   // 这里改为始终先渲染布局壳子，再按分组展示 loading，避免用户误以为页面坏了。
   const presetLoading = loading || modelProvidersRefreshing;
   const customLoading = loading || modelProvidersRefreshing;
+  // 侧栏分组为空即设置页没有任何供应商入口，详情区据此渲染空态而不是一直转圈。
+  const sideNavigationEmpty = navigationGroups.every((group) => group.items.length === 0);
 
   if (loadError) {
     return (
@@ -1102,6 +1059,7 @@ export function ModelProviderSection({
           selectedNavItem={selectedNavItem}
           navigationItems={navigationItems}
           connectionSettingsFailed={familyConnectionSettingsFailed}
+          sideNavigationEmpty={sideNavigationEmpty}
           startPlanSubscriptionCount={(() => {
             const providerId =
               selectedNavItem && "presetId" in selectedNavItem ? selectedNavItem.presetId : null;

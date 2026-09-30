@@ -111,9 +111,16 @@ function readDraft(value: unknown): V4ComposerDraft | null {
     ["id", "category", "label", "value", "markdown"].every(
       (key) => typeof mention[key] === "string",
     ) &&
-    ["files", "skills", "commands", "subagents", "whiteboards", "sessions", "plugins"].includes(
-      String(mention.category),
-    );
+    [
+      "files",
+      "skills",
+      "commands",
+      "subagents",
+      "whiteboards",
+      "sessions",
+      "plugins",
+      "mcp",
+    ].includes(String(mention.category));
   return {
     text: value.text,
     ...(typeof value.editorStateJson === "string"
