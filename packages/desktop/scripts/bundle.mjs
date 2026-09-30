@@ -708,6 +708,12 @@ async function main() {
     "electron-builder",
     "--config",
     "electron-builder.config.js",
+    // 未显式指定时 electron-builder 会在 CI 打 tag 的构建里隐式启用发布
+    // （日志里的 "Implicit publishing triggered by git tag"），publish provider 换成 github 后
+    // 这条隐式发布会在打包末尾因为缺少 GH_TOKEN 失败，两个平台都白打一遍。
+    // 本仓库的产物上传由 release-desktop.yml 完成，所以这里必须显式关掉。
+    "--publish",
+    "never",
     osBuilderFlagMap[os],
     archBuilderFlagMap[arch],
   ];
