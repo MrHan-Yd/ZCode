@@ -3,6 +3,7 @@ import type {
   GitDiffResult,
   GitFileChange,
   Locale,
+  ModelSelection,
   ZCodeWorkspaceGenerateTextParams,
 } from "@zcode/shared";
 import type { ServiceLogger } from "#src/logger/serviceLogger.js";
@@ -65,8 +66,11 @@ export class GitCommitMessageGenerator {
     files: readonly GitFileChange[];
     diffs: readonly GitDiffResult[];
     conversationContext?: GitCommitMessageConversationContext;
+    /** 调用方（当前会话）的模型选择；缺省时退回 Host 的 preferredSelection。 */
+    selection?: ModelSelection;
   }): Promise<{ message: string; providerId: string; model: string }> {
-    const selection = await this.resolveCurrentModel(params);
+    const resolved = await this.resolveSelection(params);
+    const selection = resolved.selection;
     const prompt = buildGitCommitMessageGenerationPrompt({
       branchName: params.branchName,
       locale: params.locale,
@@ -80,6 +84,8 @@ export class GitCommitMessageGenerator {
       workspaceIdentity: params.workspaceIdentity,
       providerId: selection.providerId,
       model: selection.modelId,
+      // 会话模型与 Host 默认模型会打到完全不同的 provider；排障必须能区分来源。
+      selectionSource: resolved.source,
       fileCount: params.files.length,
       diffCount: params.diffs.length,
       conversationMessageCount: params.conversationContext?.messages.length ?? 0,
@@ -114,6 +120,40 @@ export class GitCommitMessageGenerator {
       message: validation.message,
       providerId: selection.providerId,
       model: selection.modelId,
+    };
+  }
+
+  /**
+   * 模型来源按调用方传入优先：UI 传入的是当前会话正在用的模型，比 Host 的默认偏好更贴近
+   * 用户此刻的意图。只有没有会话上下文的调用方（脚本、自动化）才退回 preferredSelection。
+   */
+  private async resolveSelection(params: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    selection?: ModelSelection;
+  }): Promise<{
+    selection: ZCodeWorkspaceGenerateTextParams["selection"];
+    source: "session" | "preferred";
+  }> {
+    const requested = params.selection;
+    if (!requested) {
+      return { selection: await this.resolveCurrentModel(params), source: "preferred" };
+    }
+
+    const providerId = requested.providerId?.trim();
+    const modelId = requested.modelId?.trim();
+    if (!providerId || !modelId) {
+      // 不完整的传入选择不能静默换成别的模型：那会让用户以为用的是自己选的那个。
+      throw new GitCommitMessageGenerationError("提交消息模型选择不完整。", "model-unavailable");
+    }
+    const reasoningLevel = requested.options?.reasoningLevel?.trim();
+    return {
+      selection: {
+        providerId,
+        modelId,
+        ...(reasoningLevel ? { options: { reasoningLevel } } : {}),
+      },
+      source: "session",
     };
   }
 

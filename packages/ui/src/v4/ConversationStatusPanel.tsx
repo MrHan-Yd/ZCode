@@ -44,6 +44,7 @@ import {
 import type {
   GitChangeSourceId,
   GitRepositorySummary,
+  ModelSelection,
   ZCodeSessionRunningSubagent,
   ZCodeTaskChangeSummary,
 } from "@zcode/shared";
@@ -109,6 +110,8 @@ interface ConversationStatusPanelProps {
   gitWorktreeReviewSourceId?: GitChangeSourceId | null;
   gitWorktreeChangeSummary?: { added: number; removed: number } | null;
   activeTaskChangeSummary?: ZCodeTaskChangeSummary | null;
+  /** 当前会话正在使用的模型；提交消息生成缺省继承它。 */
+  commitMessageModelSelection?: ModelSelection | null;
   goal?: GoalState | null;
   sessionPlans?: readonly ToolCallRow[];
   plan?: PlanState | null;
@@ -356,6 +359,7 @@ function StatusSection({
 
 function GitStatusSection({
   activeTaskChangeSummary,
+  commitMessageModelSelection = null,
   gitSummary,
   gitWorktreeReviewSourceId,
   model,
@@ -367,6 +371,7 @@ function GitStatusSection({
   useVerticalFloatingPanels,
 }: {
   activeTaskChangeSummary?: ZCodeTaskChangeSummary | null;
+  commitMessageModelSelection?: ModelSelection | null;
   gitSummary: GitRepositorySummary | null | undefined;
   gitWorktreeReviewSourceId?: GitChangeSourceId | null;
   model: ConversationStatusPanelModel;
@@ -445,6 +450,7 @@ function GitStatusSection({
           workspaceIdentity={workspaceIdentity}
           gitSummary={gitSummary}
           activeTaskChangeSummary={activeTaskChangeSummary ?? null}
+          commitMessageModelSelection={commitMessageModelSelection}
           onRefreshGit={onRefreshGit}
           triggerLayout="status-row"
           className="w-full"
@@ -1711,6 +1717,7 @@ function ConversationStatusPanelImpl({
   gitWorktreeReviewSourceId,
   gitWorktreeChangeSummary,
   activeTaskChangeSummary,
+  commitMessageModelSelection = null,
   goal,
   sessionPlans,
   plan,
@@ -1971,6 +1978,7 @@ function ConversationStatusPanelImpl({
                 workspacePath={workspacePath}
                 workspaceIdentity={workspaceIdentity}
                 activeTaskChangeSummary={activeTaskChangeSummary}
+                commitMessageModelSelection={commitMessageModelSelection}
                 onRefreshGit={onRefreshGit}
                 onOpenGitReview={onOpenGitReview}
                 separated={false}

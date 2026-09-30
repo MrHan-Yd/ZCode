@@ -36,6 +36,7 @@ import type { IMemoryService } from "./memory/memory.js";
 import type { ISettingsSyncService } from "./settings-sync/settingsSync.js";
 import type { IFeedbackService } from "./feedback/feedback.js";
 import type { IPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransfer.js";
+import type { IPromptEnhanceService } from "./prompt/promptEnhance.js";
 import type { IWindowControllerService } from "./window-controller/windowController.js";
 import type { IOnboardingRecordService } from "./onboarding/onboardingRecord.js";
 import type { IConversationShareService } from "./conversation-share/conversationShare.js";
@@ -88,4 +89,6 @@ export interface IServiceAccessor {
   readonly settingsSyncService: ISettingsSyncService;
   readonly feedbackService: IFeedbackService;
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
+  /** Composer 草稿的提示词增强；旧测试 double / 不支持的 host 可不提供，此时 UI 不渲染入口。 */
+  readonly promptEnhanceService?: IPromptEnhanceService;
 }

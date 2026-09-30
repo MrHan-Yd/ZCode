@@ -28,6 +28,7 @@ import { Input } from "@/components/ui/input.js";
 import { Button } from "@/components/ui/button.js";
 import { SettingsBadge, SettingsGroupCard, SettingsRow } from "@/settings/SettingsPageParts.js";
 import { DataBaseDirControl } from "@/settings/DataBaseDirControl.js";
+import { GitCommitMessageModelRow } from "@/settings/GitCommitMessageModelRow.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useOptionalServices } from "@/hooks/useServices.js";
 import { ProactiveSuggestionsSetting } from "@/settings/ProactiveSuggestionsSetting.js";
@@ -807,6 +808,7 @@ export function GeneralSectionContent({
             />
           }
         />
+        <GitCommitMessageModelRow />
       </SettingsGroupCard>
 
       <SettingsGroupCard>

@@ -1,5 +1,6 @@
 import type { RemoteAssetInstallMode } from "./remoteAssetInstallMode.js";
 import type { RemoteResourcePackageSelection } from "./remoteResourcePackages.js";
+import type { ModelSelection } from "./model-selection.js";
 import type { ProviderFamilyDomain } from "./model-provider-family.js";
 import type { ProviderFamilyConnectionSelectionSettings } from "./provider-family-connection-selection.js";
 import type { ZCodeProvider } from "./zcode-task-types-core.js";
@@ -311,6 +312,11 @@ export interface AppSettings {
   askUserQuestionAutoResolutionEnabled?: boolean;
   /** 是否完整保留 Model I/O；开启后不轮转、不限额重置、不压缩或裁剪，鉴权信息仍会脱敏。 */
   modelIoFullRetentionEnabled?: boolean;
+  /**
+   * 生成 Git 提交消息使用的固定模型；null 或缺省表示跟随当前会话模型。
+   * 用 null 而不是 undefined 表达「清除覆盖」：RPC 传输会吞掉 undefined。
+   */
+  gitCommitMessageModelSelection?: ModelSelection | null;
   /** 设置页中每个 Provider Family 当前唯一的结构化连接选择。 */
   providerFamilyConnectionSelections?: ProviderFamilyConnectionSelectionSettings;
   /** 用户通过 WelcomeScreen 成功连接后确认的 ZAI / BigModel provider family 运行域。 */

@@ -328,11 +328,13 @@ import { IMemoryService } from "./memory/memory.js";
 import { ISettingsSyncService } from "./settings-sync/settingsSync.js";
 import { IFeedbackService } from "./feedback/feedback.js";
 import { IPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransfer.js";
+import { IPromptEnhanceService } from "./prompt/promptEnhance.js";
 import { createFileService } from "./file/fileService.js";
 import { createMediaPreviewService } from "./media-preview/mediaPreview.js";
 import type { WorkspaceFileSearchFilter } from "./file/workspaceFileMentionFilter.js";
 import { createGitService } from "./git/gitService.js";
 import { GitCommitMessageGenerator } from "./git/gitCommitMessageGenerator.js";
+import { createPromptEnhanceService } from "./prompt/promptEnhance.js";
 import { createGitCheckpointService } from "./git/gitCheckpointService.js";
 import { createSystemService } from "./system/systemService.js";
 import { createTerminalService } from "./terminal/terminalService.js";
@@ -2327,6 +2329,25 @@ export function createLocalServices(options: {
   const gitService = createGitService({
     commitMessageGenerator: gitCommitMessageGenerator,
   });
+  const promptEnhanceService = createPromptEnhanceService({
+    textGenerator: {
+      // 与 Git sidecar 共用同一条一次性文本生成通道；草稿模型由调用方传入，
+      // 不读 preferredSelection，保证「用当前草稿选中的模型润色」的语义。
+      async generateText(params) {
+        return await zcodeAgentService.generateWorkspaceText({
+          workspacePath: params.workspacePath,
+          ...(params.workspaceIdentity ? { workspaceIdentity: params.workspaceIdentity } : {}),
+          ...(params.remoteSessionId ? { remoteSessionId: params.remoteSessionId } : {}),
+          selection: params.selection,
+          messages: params.messages,
+          querySource: params.querySource,
+          ...(params.maxOutputTokens ? { maxOutputTokens: params.maxOutputTokens } : {}),
+          ...(params.signal ? { signal: params.signal } : {}),
+        });
+      },
+    },
+    logger: createServiceLogger("prompt-enhance"),
+  });
   // task wrapper 由 ZCode task service adapter 提供；核心 session 状态由 ZCode agent server 维护。
   const zcodeTaskService = createZCodeTaskServiceAdapter({
     zcodeAgentService,
@@ -2596,7 +2617,8 @@ export function createLocalServices(options: {
         oauthService,
       }),
     )
-    .register(IPromptAttachmentTransferService, createLocalPromptAttachmentTransferService());
+    .register(IPromptAttachmentTransferService, createLocalPromptAttachmentTransferService())
+    .register(IPromptEnhanceService, promptEnhanceService);
 
   // 即使初始配置关闭也必须登记 lifecycle disposer：terminal fence 需要早于任意延迟 setting/acquire
   // 恢复，不能把"当前还没有 Helper"误当成"不需要生命周期所有者"。dispose 时串行 stop host。

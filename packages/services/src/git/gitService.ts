@@ -294,6 +294,7 @@ export function createGitService(options?: {
         branchName: status.summary.branchName,
         files,
         diffs,
+        ...(params.selection ? { selection: params.selection } : {}),
         ...(params.conversationContext ? { conversationContext: params.conversationContext } : {}),
       });
     },

@@ -13,6 +13,7 @@ import type {
   GitCommitMessageConversationContext,
   GitIdentity,
   GitRepositorySummary,
+  ModelSelection,
   ZCodeTaskChangeSummary,
 } from "@zcode/shared";
 import { cn } from "@/components/lib/utils.js";
@@ -46,6 +47,7 @@ import {
   getCurrentSessionFilePaths,
 } from "@/git-action-menu/currentSessionFileScope.js";
 import { useServices } from "@/hooks/useServices.js";
+import { useSettings } from "@/hooks/useSettingService.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { getErrorMessage } from "@/lib/errorMessage.js";
 import { runUserAction } from "@/lib/userActionTelemetry.js";
@@ -68,6 +70,8 @@ interface GitActionMenuProps {
   gitSummary: GitRepositorySummary;
   activeTaskChangeSummary?: ZCodeTaskChangeSummary | null;
   commitMessageConversationContext?: GitCommitMessageConversationContext | null;
+  /** 当前会话正在使用的模型；生成提交消息缺省继承它。 */
+  commitMessageModelSelection?: ModelSelection | null;
   onRefreshGit: () => void;
   className?: string;
   triggerIconOnly?: boolean;
@@ -825,6 +829,7 @@ export function GitActionMenu({
   gitSummary,
   activeTaskChangeSummary = null,
   commitMessageConversationContext = null,
+  commitMessageModelSelection = null,
   onRefreshGit,
   className,
   triggerIconOnly = false,
@@ -832,6 +837,7 @@ export function GitActionMenu({
 }: GitActionMenuProps) {
   const { gitService } = useServices();
   const { intl, locale } = useZCodeIntl();
+  const { settings } = useSettings();
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
   const [commitDialogLoading, setCommitDialogLoading] = useState(false);
   const [commitDialogState, setCommitDialogState] = useState<GitCommitDialogState | null>(null);
@@ -986,10 +992,30 @@ export function GitActionMenu({
     void loadCommitDialogState({ resetMessage: true });
   }, [loadCommitDialogState, onRefreshGit]);
 
+  /**
+   * 提交消息用哪个模型：设置里指定了固定模型就用它，否则跟随当前会话的模型，都没有才交给
+   * 服务层退回 Host 的 preferredSelection。只有这一处读这两个事实源，服务层不再自行选模型。
+   */
+  const resolveCommitMessageSelection = useCallback((): {
+    selection: ModelSelection | null;
+    source: "configured" | "session" | "host-default";
+  } => {
+    const configured = settings?.gitCommitMessageModelSelection ?? null;
+    if (configured) {
+      return { selection: configured, source: "configured" };
+    }
+    if (commitMessageModelSelection) {
+      return { selection: commitMessageModelSelection, source: "session" };
+    }
+    return { selection: null, source: "host-default" };
+  }, [commitMessageModelSelection, settings]);
+
   const generateCommitMessage = useCallback(
     async (state: GitCommitDialogState, includeUnstaged: boolean): Promise<string> => {
       const files = getCommitDialogFiles(state, includeUnstaged);
       const currentSessionFilePaths = getCurrentSessionFilePaths(state.activeTaskChangeSummary);
+      const { selection: modelSelection, source: selectionSource } =
+        resolveCommitMessageSelection();
       logger.info("[GitActionMenu] 开始生成提交消息", {
         workspacePath,
         branchName: gitSummary.branchName,
@@ -997,6 +1023,10 @@ export function GitActionMenu({
         currentSessionFileCount: currentSessionFilePaths?.length ?? 0,
         includeUnstaged,
         conversationMessageCount: commitMessageConversationContext?.messages.length ?? 0,
+        selectionSource,
+        modelSelection: modelSelection
+          ? `${modelSelection.providerId}/${modelSelection.modelId}`
+          : null,
       });
 
       const result = await gitService.generateCommitMessage({
@@ -1005,6 +1035,7 @@ export function GitActionMenu({
         locale,
         includeUnstaged,
         ...(currentSessionFilePaths ? { currentSessionFilePaths } : {}),
+        ...(modelSelection ? { selection: modelSelection } : {}),
         ...(commitMessageConversationContext
           ? { conversationContext: commitMessageConversationContext }
           : {}),
@@ -1023,6 +1054,7 @@ export function GitActionMenu({
       gitService,
       gitSummary.branchName,
       locale,
+      resolveCommitMessageSelection,
       workspaceIdentity,
       workspacePath,
     ],

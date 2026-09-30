@@ -285,6 +285,12 @@ export { ISettingsSyncService } from "./settings-sync/settingsSync.js";
 export { IFeedbackService } from "./feedback/feedback.js";
 export type { FeedbackUploadProgress } from "./feedback/feedback.js";
 export { IPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransfer.js";
+export { IPromptEnhanceService } from "./prompt/promptEnhance.js";
+export type {
+  PromptEnhanceFailureReason,
+  PromptEnhanceParams,
+  PromptEnhanceResult,
+} from "./prompt/promptEnhance.js";
 export type {
   PromptAttachmentStageParams,
   PromptAttachmentStageResult,

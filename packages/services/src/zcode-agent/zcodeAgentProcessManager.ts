@@ -377,12 +377,33 @@ function resolveBundledWorkspaceZCodeAgentCommand(
   }
 
   const sourceEntrypoint = findUpward("apps/zcode-cli/packages/cli/src/main.ts");
-  const tsxEntrypoint = findUpward("node_modules/.bin/tsx");
-  if (!sourceEntrypoint || !tsxEntrypoint) {
+  if (!sourceEntrypoint) {
+    return null;
+  }
+
+  // 源码兜底必须由 Node 直接跑 tsx 的 bin 入口（tsx 的 package.json bin 就是 dist/cli.mjs），
+  // 不能 spawn node_modules/.bin/tsx：那是 POSIX shell 脚本，Windows 上同目录只有 tsx.CMD，
+  // 而这里的 spawn 不带 shell，CreateProcess 起不了无扩展名脚本，只会得到 ENOENT ——
+  // 偏偏 preflight 的 existsSync 仍然报 commandExists: true，现场只剩一个自相矛盾的报错。
+  const tsxCliEntrypoint = findUpward("node_modules/tsx/dist/cli.mjs");
+  if (tsxCliEntrypoint) {
+    return {
+      command: process.execPath,
+      args: [tsxCliEntrypoint, sourceEntrypoint, "app-server", "--stdio"],
+      cwd: context.workspacePath,
+      // 桌面 dev host 的 process.execPath 是 Electron Helper；不显式进入 Node 模式会像
+      // dist/zcode.cjs 分支一样被当成 Electron 子进程启动并卡在 GPU 初始化。
+      env: { ELECTRON_RUN_AS_NODE: "1" },
+    };
+  }
+
+  // tsx 布局变化（bin 入口改名/移位）时的兜底，保持旧 shim 形态；注意它只在 POSIX 可执行。
+  const tsxShimEntrypoint = findUpward("node_modules/.bin/tsx");
+  if (!tsxShimEntrypoint) {
     return null;
   }
   return {
-    command: tsxEntrypoint,
+    command: tsxShimEntrypoint,
     args: [sourceEntrypoint, "app-server", "--stdio"],
     cwd: context.workspacePath,
   };

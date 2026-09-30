@@ -152,6 +152,7 @@ import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import { useConversationSelectionReferences } from "@/v4/composer/useConversationSelectionReferences.js";
 import { ConversationBackgroundWorkTrigger } from "@/v4/composer/ConversationBackgroundWorkTrigger.js";
 import { V4ComposerCuaEntry } from "@/v4/composer/V4ComposerCuaEntry.js";
+import { V4ComposerPromptEnhanceButton } from "@/v4/composer/V4ComposerPromptEnhanceButton.js";
 import {
   V4ComposerModeSwitch,
   V4ComposerModelControls,
@@ -2035,9 +2036,38 @@ function ConversationComposerImpl({
       }),
     [onSelectModel],
   );
+  // 提示词增强结果整体替换草稿。走与外部插入相同的写回路径：只 setText 不 updateText 会让
+  // textRef 与编辑器内容分叉，草稿也会在下一次防抖持久化时被旧文本覆盖。
+  const readComposerDraft = useCallback(() => textRef.current, []);
+  const handlePromptEnhanced = useCallback(
+    (next: string) => {
+      const inputApi = inputApiRef.current;
+      if (!inputApi) return;
+      // 模型可能原样保留了 @提及的 markdown；按插件提及重建节点，避免退化成纯文本。
+      if (next.includes("](plugin://")) {
+        inputApi.setTextWithPluginMentions(next);
+      } else {
+        inputApi.setText(next);
+      }
+      updateText(next);
+      scheduleDraftPersist();
+      requestComposerFocus();
+    },
+    [requestComposerFocus, scheduleDraftPersist, updateText],
+  );
+
   const submitControlNode = useMemo(
     () => (
       <div className="flex min-w-0 items-center gap-1">
+        <V4ComposerPromptEnhanceButton
+          workspacePath={workspacePath}
+          workspaceIdentity={workspaceIdentity}
+          remoteSessionId={remoteSessionId}
+          selection={draftConfig?.modelSelection}
+          readDraft={readComposerDraft}
+          disabled={disabled}
+          onEnhanced={handlePromptEnhanced}
+        />
         <span className="flex min-w-0 shrink items-center gap-1 overflow-hidden empty:hidden">
           <V4ComposerModelControls
             workspacePath={workspacePath}
@@ -2108,6 +2138,9 @@ function ConversationComposerImpl({
       draftMode,
       handleStopClick,
       handleSendButtonClick,
+      handlePromptEnhanced,
+      readComposerDraft,
+      remoteSessionId,
       handleConfigPickerOpenChange,
       mode,
       handleSelectModelTrace,

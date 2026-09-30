@@ -1,3 +1,4 @@
+import type { ModelSelection } from "./model-selection.js";
 import type { Locale } from "./protocol.js";
 
 export type GitHeadRefType = "branch" | "detached";
@@ -218,6 +219,11 @@ export interface GitGenerateCommitMessageRequest extends GitRepositoryRequest {
   includeUnstaged?: boolean;
   currentSessionFilePaths?: string[];
   conversationContext?: GitCommitMessageConversationContext;
+  /**
+   * 调用方当前会话正在使用的模型。缺省时服务退回 Host 的 preferredSelection，
+   * 供没有 UI 会话上下文的调用方沿用旧行为。
+   */
+  selection?: ModelSelection;
 }
 
 export interface GitCommitMessageConversationContext {

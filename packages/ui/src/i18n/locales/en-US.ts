@@ -2256,6 +2256,10 @@ const enUS: Record<string, string> = {
   "settings.modelIoFullRetention": "Keep complete model I/O",
   "settings.modelIoFullRetentionDescription":
     "Keep complete model requests and responses without compression, size limits, or automatic deletion.",
+  "settings.gitCommitMessageModel": "Commit message model",
+  "settings.gitCommitMessageModelDescription":
+    "Model used to generate Git commit messages. Defaults to the model of the current session.",
+  "settings.gitCommitMessageModel.followSession": "Follow current session",
   "settings.performanceMode": "Performance mode",
   "settings.performanceModeDescription": "Simplify rendered output to improve performance.",
   "settings.taskAutoArchive": "Auto-archive old tasks",
@@ -4628,13 +4632,13 @@ const enUS: Record<string, string> = {
   "chat.stop.short": "Stop",
   "chat.promptEnhance.title": "Enhance prompt",
   "chat.promptEnhance.description":
-    "Refine the current draft with the selected model configuration.",
+    "Rewrite the prompt in the input box into something clearer and more complete, using the current model.",
   "chat.promptEnhance.cancel": "Cancel enhance",
   "chat.promptEnhance.cancelDescription": "Click again to cancel the current prompt enhancement.",
   "chat.promptEnhance.cancelled": "Cancelled prompt enhancement",
   "chat.promptEnhance.empty": "Type a prompt before enhancing it",
   "chat.promptEnhance.unsupported":
-    "The selected model does not currently expose a direct enhancement configuration.",
+    "The current model is unavailable, so the prompt cannot be enhanced.",
   "chat.promptEnhance.error": "Prompt enhancement failed. Please try again.",
   "chat.promptEnhance.errorWithDetail": "Prompt enhancement failed: {error}",
   "chat.queue.enqueue": "Queue message",

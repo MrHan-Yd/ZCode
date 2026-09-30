@@ -66,6 +66,8 @@ export const TID_GIT_COMMIT_DIALOG = "git-commit-dialog";
 export const TID_GIT_COMMIT_MESSAGE_INPUT = "git-commit-message-input";
 /** Git 提交信息生成按钮 */
 export const TID_GIT_COMMIT_GENERATE_BUTTON = "git-commit-generate-button";
+/** 设置页「提交消息模型」选择器 */
+export const TID_GIT_COMMIT_MESSAGE_MODEL_TRIGGER = "settings-git-commit-message-model";
 /** Git 提交弹窗包含未暂存更改开关 */
 export const TID_GIT_COMMIT_INCLUDE_UNSTAGED = "git-commit-include-unstaged";
 /** Git 提交弹窗底部 Command 动作列表 */
@@ -537,6 +539,8 @@ export const TID_V4_COMPOSER_BACKGROUND_WORK_TRIGGER = "v4-composer-background-w
 export const TID_V4_COMPOSER_CUA_ENTRY = "v4-composer-cua-entry";
 /** v4 composer 发送按钮 */
 export const TID_V4_COMPOSER_SEND = "v4-composer-send";
+/** v4 composer 提示词增强按钮 */
+export const TID_V4_COMPOSER_PROMPT_ENHANCE = "v4-composer-prompt-enhance";
 /** v4 暂停队列发送确认：清空队列并发送 */
 export const TID_V4_COMPOSER_CLEAR_QUEUE_SEND = "v4-composer-clear-queue-send";
 /** v4 暂停队列发送确认：保留队列并发送 */
