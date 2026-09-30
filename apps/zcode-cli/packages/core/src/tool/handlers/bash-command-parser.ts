@@ -37,18 +37,41 @@ export interface BashCommandInvocation {
 }
 
 export interface BashCommandAnalysis {
-  readonly commands: BashCommandInvocation[];
+  readonly commands: readonly BashCommandInvocation[];
   readonly hasDynamicWords: boolean;
   readonly hasParseErrors: boolean;
   readonly hasRedirects: boolean;
   readonly hasUnsupportedSyntax: boolean;
-  readonly unsupportedNodeTypes: string[];
+  readonly unsupportedNodeTypes: readonly string[];
 }
 
 const MAX_BASH_PARSE_LENGTH = 10_000;
 const SUPPORTED_CONTAINER_NODES = new Set(["AndOr", "Pipeline", "Statement"]);
+const NO_COMMANDS: readonly BashCommandInvocation[] = Object.freeze([]);
+const NO_UNSUPPORTED_NODE_TYPES: readonly string[] = Object.freeze([]);
+
+// 同一条命令在一次 Bash 工具调用里会被权限策略、read-file-sources、bash-semantics 的多个判定
+// 与遥测各解析一遍（5~7 次），输入完全相同。解析是 command 的纯函数，因此缓存结果复用。
+// 上限 256 条并在超出时整表清空：命令集合有界且只在本进程内使用，不需要淘汰精度。
+const BASH_ANALYSIS_CACHE_MAX_ENTRIES = 256;
+const bashAnalysisCache = new Map<string, BashCommandAnalysis>();
 
 export function analyzeBashCommand(command: string): BashCommandAnalysis {
+  const cached = bashAnalysisCache.get(command);
+  if (cached) {
+    return cached;
+  }
+
+  const analysis = parseBashCommand(command);
+  if (bashAnalysisCache.size >= BASH_ANALYSIS_CACHE_MAX_ENTRIES) {
+    bashAnalysisCache.clear();
+  }
+  bashAnalysisCache.set(command, analysis);
+  return analysis;
+}
+
+// 返回值会被缓存并在多个调用点之间共享，调用方只能读取；unsupportedNodeTypes 已冻结。
+function parseBashCommand(command: string): BashCommandAnalysis {
   const trimmed = command.trim();
   if (trimmed.length === 0) {
     return emptyAnalysis();
@@ -251,12 +274,12 @@ function isWord(word: Word | undefined): word is Word {
 
 function emptyAnalysis(): BashCommandAnalysis {
   return {
-    commands: [],
+    commands: NO_COMMANDS,
     hasDynamicWords: false,
     hasParseErrors: false,
     hasRedirects: false,
     hasUnsupportedSyntax: false,
-    unsupportedNodeTypes: [],
+    unsupportedNodeTypes: NO_UNSUPPORTED_NODE_TYPES,
   };
 }
 
@@ -266,11 +289,11 @@ function freezeAnalysis(analysis: MutableBashCommandAnalysis): BashCommandAnalys
   );
 
   return {
-    commands: analysis.commands,
+    commands: Object.freeze(analysis.commands),
     hasDynamicWords: analysis.hasDynamicWords,
     hasParseErrors: analysis.hasParseErrors,
     hasRedirects: analysis.hasRedirects,
     hasUnsupportedSyntax: unsupportedNodeTypes.length > 0,
-    unsupportedNodeTypes,
+    unsupportedNodeTypes: Object.freeze(unsupportedNodeTypes),
   };
 }

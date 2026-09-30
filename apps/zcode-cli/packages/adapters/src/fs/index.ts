@@ -420,11 +420,11 @@ export class NodeFileSystemAdapter implements FileSystemPort {
       const matcher = createGlobMatcher(pattern);
       const matches: Array<{ path: string; mtimeMs: number }> = [];
 
-      await walkFiles(path, options?.signal, async (filePath, info) => {
+      await walkFiles(path, options?.signal, async (filePath) => {
         const relativePath = toPosixRelative(path, filePath);
-        if (matcher(relativePath, basename(filePath))) {
-          matches.push({ path: filePath, mtimeMs: Number(info.mtimeMs) });
-        }
+        if (!matcher(relativePath, basename(filePath))) return;
+        const info = await stat(filePath);
+        matches.push({ path: filePath, mtimeMs: Number(info.mtimeMs) });
       });
 
       matches.sort((left, right) => {
@@ -1405,11 +1405,16 @@ async function collectTextSearchCandidates(
   const globMatcher = request.glob ? createGlobMatcher(request.glob) : undefined;
   const root = rootInfo.isDirectory() ? path : dirname(path);
 
-  const addIfCandidate = async (filePath: string, info: Awaited<ReturnType<typeof stat>>) => {
-    if (!info.isFile()) return;
+  const addIfCandidate = async (
+    filePath: string,
+    knownInfo?: Awaited<ReturnType<typeof stat>>,
+  ) => {
     const relativePath = toPosixRelative(root, filePath);
     if (globMatcher && !globMatcher(relativePath, basename(filePath))) return;
     if (request.type && !matchesFileType(filePath, request.type)) return;
+    // stat 推迟到筛选之后：未命中的文件不再产生系统调用。文件根节点已有 stat 结果可直接复用。
+    const info = knownInfo ?? (await stat(filePath));
+    if (!info.isFile()) return;
     candidates.push({ path: filePath, mtimeMs: Number(info.mtimeMs) });
   };
 
@@ -1708,7 +1713,7 @@ function lineNumberForIndex(content: string, index: number): number {
 async function walkFiles(
   current: string,
   signal: AbortSignal | undefined,
-  visitor: (path: string, info: Awaited<ReturnType<typeof stat>>) => Promise<void> | void,
+  visitor: (path: string) => Promise<void> | void,
 ): Promise<void> {
   throwIfAborted(signal);
   const entries = await readdir(current, { withFileTypes: true });
@@ -1725,8 +1730,9 @@ async function walkFiles(
 
     if (!entry.isFile()) continue;
 
-    const info = await stat(childPath);
-    await visitor(childPath, info);
+    // stat 下放给 visitor：两个调用方都只在文件命中 pattern/type 之后才需要 mtimeMs，
+    // 在遍历阶段无条件 stat 会让 Glob/Grep 在 node_modules 上多付十几万次系统调用。
+    await visitor(childPath);
   }
 }
 
