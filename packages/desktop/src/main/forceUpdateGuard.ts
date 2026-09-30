@@ -7,7 +7,11 @@ import {
 } from "./forceUpdateMarker.js";
 import { showForceUpdatePrompt } from "./forceUpdatePrompt.js";
 
-const FORCE_UPDATE_MARKER_REQUEST_TIMEOUT_MS = 10_000;
+// 强更标记请求落在主窗口创建之前，最坏会让启动路径多等一个完整超时；而且它要过
+// github.com 与 objects.githubusercontent.com 两跳（releases/latest/download 会 302），
+// 坏网络下必然打满。门禁自身 fail-open，超时与「没检查」结果相同，所以把预算收紧到 3s：
+// 足以覆盖冷 DNS + 两次 TLS 的「慢但可用」连接，同时把最坏情况从 10s 压到 3s。
+const FORCE_UPDATE_MARKER_REQUEST_TIMEOUT_MS = 3_000;
 const FORCE_UPDATE_MARKER_MAX_RESPONSE_BYTES = 64 * 1024;
 
 export interface ForceUpdateDialogText {
@@ -109,6 +113,37 @@ async function requestForceUpdateMarker(fetchMarker?: () => Promise<unknown>): P
       fail(error instanceof Error ? error : new Error(String(error)));
     });
     request.end();
+  });
+}
+
+export type ForceUpdateMarkerRequestOutcome =
+  | { ok: true; value: unknown }
+  | { ok: false; error: unknown };
+
+/**
+ * 提前发起标记请求，并把失败固化成结果值。
+ *
+ * 启动路径上这个请求最坏要等一个网络超时，所以希望它在 App ready 后立刻发出去，
+ * 与原生菜单安装、Chromium 策略、release notes、ARMS 初始化重叠。但「提前发起」意味着
+ * 在门禁 await 之前它就可能有结论：main 进程里没有 handler 的 rejection 会终止进程，
+ * 因此这里在发起处就把失败接住（settled 值），再交给 `forceUpdateMarkerOutcomeToPromise`
+ * 还原成「成功返回值 / 失败抛出」，让门禁原有的 try/catch 语义完全不变。
+ */
+export function startForceUpdateMarkerRequest(): Promise<ForceUpdateMarkerRequestOutcome> {
+  return requestForceUpdateMarker().then(
+    (value): ForceUpdateMarkerRequestOutcome => ({ ok: true, value }),
+    (error: unknown): ForceUpdateMarkerRequestOutcome => ({ ok: false, error }),
+  );
+}
+
+export function forceUpdateMarkerOutcomeToPromise(
+  outcome: Promise<ForceUpdateMarkerRequestOutcome>,
+): Promise<unknown> {
+  return outcome.then((settled) => {
+    if (settled.ok) {
+      return settled.value;
+    }
+    throw settled.error;
   });
 }
 

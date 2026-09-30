@@ -132,7 +132,11 @@ import { applyAppIcon } from "./desktopWindowChrome.js";
 import { resolveWindowsAppUserModelIdForFlavor } from "../../scripts/desktop-product-identity.mjs";
 import type { DesktopWindowSize } from "./desktopWindowSize.js";
 import { maybeWarnArchitectureMismatch } from "./desktopArchitectureGuard.js";
-import { maybeBlockStartupForForceUpdate } from "./forceUpdateGuard.js";
+import {
+  forceUpdateMarkerOutcomeToPromise,
+  maybeBlockStartupForForceUpdate,
+  startForceUpdateMarkerRequest,
+} from "./forceUpdateGuard.js";
 import { createWindowsDesktopTray, updateWindowsDesktopTrayMenu } from "./desktopTray.js";
 import { createWindowsCuaOperationIndicator } from "./windowsCuaOperationIndicator.js";
 import {
@@ -1925,6 +1929,26 @@ app.on("second-instance", (_event, argv, _workingDirectory, additionalData) => {
 
 app.whenReady().then(async () => {
   markMainLaunchAppReady();
+
+  // 强更门禁（下方 forceUpdateGuardResult）最坏要等一个网络超时，而它落在主窗口创建之前。
+  // 这里在 App ready 后立刻把请求发出去，让它与原生菜单安装、Chromium 策略、release notes、
+  // ARMS 初始化重叠；门禁仍在原位置 await 同一个 promise，判定语义与执行顺序不变。
+  // net.request 要求 app ready，此处已在 whenReady 内。
+  //
+  // 本地未打包 dev 构建（app.isPackaged === false）必须跳过远端强制升级 gate。
+  // 原因：force-update gate 只看 ZCODE_ENV === "production"，但 dev 构建（如 dev:desktop:cua
+  // 连真实后端测 computer use）虽指向 production 后端，版本号却滞后于线上 release（feature
+  // 分支不 bump 版本），会被 release minimalVersion 误判为"需强制升级"而启动秒退。force-update
+  // 是面向打包发布客户端的安全门，对未打包 dev 运行时无意义。打包版 app.isPackaged === true，
+  // gate 照常生效，对真实用户零影响。
+  // 这两个常量提到这里，是为了让「是否发起请求」和「是否执行门禁」共用同一个真值来源。
+  const skipForceUpdateForLocalDevRuntime = !app.isPackaged;
+  const shouldRunForceUpdateGate =
+    ZCODE_PRODUCT_FLAVOR === "production" && !skipForceUpdateForLocalDevRuntime;
+  const forceUpdateMarkerOutcome = shouldRunForceUpdateGate
+    ? startForceUpdateMarkerRequest()
+    : undefined;
+
   installLocalMediaPreviewProtocol(session.defaultSession.protocol, {
     isPathAuthorized: localMediaPreviewPathRegistry.isAuthorized,
   });
@@ -2246,23 +2270,20 @@ app.whenReady().then(async () => {
   });
   registerDesktopNetworkTelemetry(logger);
 
-  // 本地未打包 dev 构建（app.isPackaged === false）必须跳过远端强制升级 gate。
-  // 原因：force-update gate 只看 ZCODE_ENV === "production"，但 dev 构建（如 dev:desktop:cua
-  // 连真实后端测 computer use）虽指向 production 后端，版本号却滞后于线上 release（feature
-  // 分支不 bump 版本），会被 release minimalVersion 误判为"需强制升级"而启动秒退。force-update
-  // 是面向打包发布客户端的安全门，对未打包 dev 运行时无意义。打包版 app.isPackaged === true，
-  // gate 照常生效，对真实用户零影响。
-  const skipForceUpdateForLocalDevRuntime = !app.isPackaged;
-  const forceUpdateGuardResult =
-    ZCODE_PRODUCT_FLAVOR === "production" && !skipForceUpdateForLocalDevRuntime
-      ? await maybeBlockStartupForForceUpdate({
-          locale: currentApplicationLocale,
-          logger,
-          onBlocked: () => {
-            forceUpdateMainWindowCreationBlocked = true;
-          },
-        })
-      : { blocked: false };
+  // 条件与跳过的理由见 whenReady 开头处的 skipForceUpdateForLocalDevRuntime 与注释。
+  const forceUpdateGuardResult = shouldRunForceUpdateGate
+    ? await maybeBlockStartupForForceUpdate({
+        locale: currentApplicationLocale,
+        logger,
+        // 请求已在启动开始时发出，这里只把它还原成「成功返回值 / 失败抛出」交给门禁。
+        fetchForceUpdateMarker: forceUpdateMarkerOutcome
+          ? () => forceUpdateMarkerOutcomeToPromise(forceUpdateMarkerOutcome)
+          : undefined,
+        onBlocked: () => {
+          forceUpdateMainWindowCreationBlocked = true;
+        },
+      })
+    : { blocked: false };
   if (ZCODE_PRODUCT_FLAVOR !== "production") {
     logger.info("[force-update] Preview 跳过远端强制升级检查");
   } else if (skipForceUpdateForLocalDevRuntime) {

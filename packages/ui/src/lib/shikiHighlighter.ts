@@ -53,17 +53,26 @@ function normalizeCodeLanguage(language: string): BundledLanguage {
   return FALLBACK_CODE_LANGUAGE;
 }
 
-const highlighterCache = new Map<
-  string,
-  Promise<HighlighterGeneric<BundledLanguage, BundledTheme>>
->();
+type ShikiHighlighter = HighlighterGeneric<BundledLanguage, BundledTheme>;
+
+// tokensCache 上限：单条目持有整段代码的完整 token 数组，无界时流式代码块与历史恢复会持续累积
+// （实测一个 20k 字符代码块按 200 次增量更新会写入 200 条 / 16 万个 token 对象）。
+const TOKENS_CACHE_MAX_ENTRIES = 128;
+
+// shiki 的 createHighlighter 每次调用都会新建一个 oniguruma WASM 引擎，按 (theme, language)
+// 各建实例会让同一份语法随主题数重复加载，且库自身会打印
+// "Shiki is supposed to be used as a singleton" 警告。这里只保留一个实例，
+// 语言与主题改为按需 load 到它上面；load 结果只取决于 (语法, 主题, 文本)，与载入方式无关。
+let sharedHighlighter: Promise<ShikiHighlighter> | undefined;
+const pendingLanguageLoads = new Map<BundledLanguage, Promise<void>>();
+const pendingThemeLoads = new Map<BundledTheme, Promise<void>>();
+
 const tokensCache = new Map<string, TokenizedCode>();
 const subscribers = new Map<string, Set<(result: TokenizedCode) => void>>();
-// 内存诊断计数器：tokensCache 目前无淘汰，是审计里
-// renderer 最可疑的增长点，先把条数落到日志里。
+// 内存诊断计数器：tokensCache 受 TOKENS_CACHE_MAX_ENTRIES 约束，highlighters 恒为 0 或 1。
 uiMemoryDiagnosticsRegistry.register("shiki", () => ({
   tokensCache: tokensCache.size,
-  highlighters: highlighterCache.size,
+  highlighters: sharedHighlighter ? 1 : 0,
 }));
 
 const getResolvedCodeTheme = (theme?: BundledTheme): BundledTheme => {
@@ -78,28 +87,76 @@ const getResolvedCodeTheme = (theme?: BundledTheme): BundledTheme => {
   return "github-light";
 };
 
+/**
+ * 缓存 key 沿用改动前的形态（长度 + 前 100 + 后 100 字符），刻意不改成精确 key：
+ * 精确 key 会让「长度相同、首尾相同、中段不同」的两段代码从「共用一份高亮」变成「各自高亮」，
+ * 那是可观察的行为变化。本次只做内存与实例数的优化，不做行为变更。
+ * 已知代价与理由记录在 specs/shiki-highlight-performance.md。
+ */
 const getCodeTokensCacheKey = (code: string, language: BundledLanguage, theme: BundledTheme) => {
   const start = code.slice(0, 100);
   const end = code.length > 100 ? code.slice(-100) : "";
   return `${theme}:${language}:${code.length}:${start}:${end}`;
 };
-const getHighlighter = (
+
+/** Map 保持插入序：先删再插即可把条目提升为最近使用。 */
+const cacheTokens = (cacheKey: string, tokenized: TokenizedCode): void => {
+  tokensCache.delete(cacheKey);
+  tokensCache.set(cacheKey, tokenized);
+  while (tokensCache.size > TOKENS_CACHE_MAX_ENTRIES) {
+    const oldestKey = tokensCache.keys().next().value;
+    if (oldestKey === undefined) {
+      break;
+    }
+    tokensCache.delete(oldestKey);
+  }
+};
+
+const getSharedHighlighter = (): Promise<ShikiHighlighter> => {
+  if (!sharedHighlighter) {
+    // 引擎创建失败时清掉缓存，让下一次请求可以重试。改动前每个 (theme, language) 各自缓存
+    // reject 的 promise，一次瞬时失败会永久关掉那个组合的高亮；现在是共享实例，
+    // 一旦失败影响面覆盖全部高亮，必须能恢复。
+    sharedHighlighter = createHighlighter({ langs: [], themes: [] }).catch((error: unknown) => {
+      sharedHighlighter = undefined;
+      throw error;
+    });
+  }
+  return sharedHighlighter;
+};
+
+/** 同一语言/主题可能被多个调用方同时请求，复用进行中的加载而不是重复 load。 */
+const ensureLanguageLoaded = (
+  highlighter: ShikiHighlighter,
+  language: BundledLanguage,
+): Promise<void> => {
+  let pending = pendingLanguageLoads.get(language);
+  if (!pending) {
+    pending = highlighter.loadLanguage(language);
+    pendingLanguageLoads.set(language, pending);
+  }
+  return pending;
+};
+
+const ensureThemeLoaded = (highlighter: ShikiHighlighter, theme: BundledTheme): Promise<void> => {
+  let pending = pendingThemeLoads.get(theme);
+  if (!pending) {
+    pending = highlighter.loadTheme(theme);
+    pendingThemeLoads.set(theme, pending);
+  }
+  return pending;
+};
+
+const getHighlighter = async (
   language: BundledLanguage,
   theme: BundledTheme,
-): Promise<HighlighterGeneric<BundledLanguage, BundledTheme>> => {
-  const cacheKey = `${theme}:${language}`;
-  const cached = highlighterCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  const highlighterPromise = createHighlighter({
-    langs: [language],
-    themes: [theme],
-  });
-
-  highlighterCache.set(cacheKey, highlighterPromise);
-  return highlighterPromise;
+): Promise<ShikiHighlighter> => {
+  const highlighter = await getSharedHighlighter();
+  await Promise.all([
+    ensureLanguageLoaded(highlighter, language),
+    ensureThemeLoaded(highlighter, theme),
+  ]);
+  return highlighter;
 };
 
 const createRawCodeTokens = (code: string): TokenizedCode => ({
@@ -138,6 +195,8 @@ export const highlightCode = (
 
   const cached = tokensCache.get(tokensCacheKey);
   if (cached) {
+    // 命中即提升为最近使用，避免当前可见的工作集被后续请求挤掉。
+    cacheTokens(tokensCacheKey, cached);
     // 缓存命中时也需要通知 effect，但不能同步触发 setState。
     // 历史消息恢复时大量代码块会在同一次提交后挂载；同步 callback 会把 cache-hit 变成嵌套更新，
     // 和 Streamdown 的重渲染叠在一起时容易触发 React #185。推迟到微任务后再交给幂等 setter。
@@ -173,7 +232,7 @@ export const highlightCode = (
         tokens: result.tokens,
       };
 
-      tokensCache.set(tokensCacheKey, tokenized);
+      cacheTokens(tokensCacheKey, tokenized);
 
       const subs = subscribers.get(tokensCacheKey);
       if (subs) {

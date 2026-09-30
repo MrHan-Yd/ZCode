@@ -23,7 +23,20 @@
 4. 触发条件不变：仅 `ZCODE_PRODUCT_FLAVOR === "production"` 且 `app.isPackaged` 时检查；
    当前版本 semver 低于 `minimalVersion` 才阻止启动（`resolveForceUpdateRequirement`）。
 5. 「手动升级」按钮改为打开 `https://github.com/<owner>/<repo>/releases/latest`，不再按语言区分站点。
-6. 请求超时保持 10s，响应体上限收紧到 64KB（标记文件只有一行 JSON）。
+6. 请求超时为 **3s**（原 10s），响应体上限 64KB（标记文件只有一行 JSON）。
+   - 超时收紧的原因：该请求落在**主窗口创建之前**，最坏会让启动路径多等一个完整超时；而且
+     `releases/latest/download` 会 302 到 `objects.githubusercontent.com`，等于要过两跳域名
+     （两轮 DNS + 两次 TLS），坏网络下必然打满。门禁自身 fail-open（规则 3），超时与
+     「没检查」的结果完全相同，所以把预算收到 3s：覆盖「冷 DNS + 两次 TLS 的慢但可用连接」，
+     同时把最坏启动等待从 10s 压到 3s。
+   - 请求在 `app.whenReady()` 一开始就发出（`startForceUpdateMarkerRequest`），与原生菜单安装、
+     Chromium 策略、release notes、ARMS 初始化重叠；门禁仍在原位置 await **同一个** promise。
+     判定语义、执行顺序、请求自身的超时预算都不变，只是等待被其它启动步骤覆盖掉一部分。
+     提前发起要求在同一处接住失败（否则 main 进程会出现无 handler 的 rejection），
+     因此该入口把结果固化成 settled 值，再由 `forceUpdateMarkerOutcomeToPromise` 还原成
+     「成功返回值 / 失败抛出」，门禁的 try/catch 分支保持原样。
+   - 发起条件与门禁条件共用同一对常量（`skipForceUpdateForLocalDevRuntime` /
+     `shouldRunForceUpdateGate`），不产生第二个真值来源；非 production 或未打包时不发请求。
 7. 标记的**声明**放在仓库根 `force-update.json`（唯一人工编辑点）；发版流水线在 release job 里
    把它复制进 Release 资产，因此标记的投递媒介是 Release，语义仍是「一直声明着」而不是「每次发版
    重新声明」。
@@ -42,7 +55,10 @@
 
 ```
 打包版 production 启动
-  → GET /releases/latest/download/force-update.json（10s 超时，64KB 上限）
+  → app.whenReady() 开始：立即发出 GET /releases/latest/download/force-update.json
+      （3s 超时，64KB 上限；请求在此期间与其它启动步骤并行）
+  → 依次 await 原生菜单 / Chromium 策略 / release notes / ARMS 初始化
+  → 门禁 await 同一个请求（此刻通常已有结论）
       404 / 超时 / 解析失败 → warn，「读不到标记」放行
       200 → {"forceUpdate":{"minimalVersion":"..."}}
   → resolveForceUpdateRequirement(currentVersion=ZCODE_VERSION)
@@ -64,3 +80,6 @@
   （例如不走流水线手工发版），门禁会静默失效，直到下一版补上。
 - 预发布 Release 不参与 `releases/latest` 解析，因此预览版用户不会被正式渠道的标记拦下。
 - 每次启动都会多一次对 github.com 的请求；失败只影响门禁本身，不影响启动。
+- 超时从 10s 收到 3s 的代价：如果标记请求在 3–10s 之间才成功（极慢但可用的网络），
+  门禁会按「读不到标记」放行，该用户不会被强更拦住。这是既有 fail-open 取舍的边界外扩
+  （规则 3 本就规定读不到标记就不拦），但要意识到：极慢网络上的客户端可能长期不受强更门禁约束。
