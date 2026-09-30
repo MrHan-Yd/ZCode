@@ -2,6 +2,7 @@ import { requestPluginReferenceCatalog } from "#src/zcode-agent/pluginReferenceC
 import {
   localTtftFactsSchema,
   sessionDebugSnapshotSchema,
+  sessionPerformanceSnapshotSchema,
   type LocalTtftFacts,
 } from "@zcode/shared";
 /* oxlint-disable eslint(max-lines) -- ZCode Protocol transport、通知 wiring 和 app-facing session 方法必须共享同一个 client/emitter 上下文。 */
@@ -3719,6 +3720,16 @@ export function createZCodeAgentService(
         zcodeProtocolMethods.sessionDebug,
         { sessionId: params.sessionId },
         sessionDebugSnapshotSchema,
+      );
+    },
+
+    /** 会话统计的只读入口：与 readSessionDebug 同一 target 解析与只读客户端。 */
+    async readSessionPerformance(params) {
+      const client = await getReadOnlyClient(params, "existing-only");
+      return client.request(
+        zcodeProtocolMethods.sessionPerformance,
+        { sessionId: params.sessionId },
+        sessionPerformanceSnapshotSchema,
       );
     },
 

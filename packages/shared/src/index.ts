@@ -305,4 +305,5 @@ export * from "./pluginStoreOrder.js";
 export * from "./clientConfig.js";
 export * from "./pluginStoreOrdering.js";
 export * from "./session-debug.js";
+export * from "./session-performance.js";
 export { redactFeedbackText } from "./feedbackPrivacy.js";

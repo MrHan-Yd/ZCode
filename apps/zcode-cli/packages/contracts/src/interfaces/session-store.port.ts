@@ -1067,6 +1067,30 @@ export interface TaskUsageQueryResult {
   inputBaselineBySource: Record<string, number>;
 }
 
+/**
+ * 会话性能聚合的原始计量。这里只做求和，平均与速率由协议层用共享口径换算，
+ * 避免"平均"和"生成时长"两套除法散落在适配器里。
+ */
+export interface SessionPerformanceQueryInput {
+  sessionID: SessionId;
+}
+
+export interface SessionPerformanceQueryResult {
+  sessionID: SessionId;
+  /** 主链模型请求总时长（含首 token 等待）。 */
+  modelMs: number;
+  /** 该会话工具调用执行时长之和（不含权限等待）。 */
+  toolMs: number;
+  modelRequestCount: number;
+  toolCallCount: number;
+  /** TTFT 求和与样本数；样本数为 0 时平均值不可用。 */
+  ttftSumMs: number;
+  ttftCount: number;
+  /** TPS 分子分母取同一批请求：两者都缺任一计量的请求不参与。 */
+  tpsOutputTokens: number;
+  generationMs: number;
+}
+
 export interface UsageStorePort {
   recordModelUsage(input: ModelUsageRecord): Promise<void>;
   upsertTurnUsage(input: TurnUsageRecord): Promise<void>;
@@ -1074,6 +1098,9 @@ export interface UsageStorePort {
   pruneUsage(input?: { beforeTime?: number }): Promise<void>;
   queryAppUsage(input: AppUsageQueryInput): Promise<AppUsageQueryResult>;
   queryTaskUsage(input: TaskUsageQueryInput): Promise<TaskUsageQueryResult>;
+  querySessionPerformance(
+    input: SessionPerformanceQueryInput,
+  ): Promise<SessionPerformanceQueryResult>;
 }
 
 export interface LocalSettingStorePort {

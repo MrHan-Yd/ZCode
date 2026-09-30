@@ -37,3 +37,20 @@ export function formatConversationWorkDuration(
 
   return parts.slice(0, 2).join(" ");
 }
+
+/**
+ * 秒级精度时长，用于 TTFT、工具耗时这类通常只有几秒的读数：取整会把 6.4 秒读成 6 秒。
+ * 单位与空格规则沿用上方同一函数，不另立一套时长文案。
+ */
+export function formatPreciseDuration(
+  durationMs: number,
+  intl: IntlInstance,
+  locale: Locale,
+): string {
+  return formatDurationUnit(
+    Number((durationMs / 1000).toFixed(1)),
+    "chat.history.duration.second",
+    intl,
+    locale,
+  );
+}

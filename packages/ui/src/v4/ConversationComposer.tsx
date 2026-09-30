@@ -134,6 +134,7 @@ import {
 } from "@/v4/composer/followupModeSettings.js";
 import { isAppleKeyboardPlatform } from "@/lib/keyboardShortcuts.js";
 import { usePrimaryFollowupModifier } from "@/v4/composer/usePrimaryFollowupModifier.js";
+import { countStreamingOutputTokens } from "@/v4/composer/streamingOutputTokens.js";
 import { consumeV4ComposerDraftWorkspaceTransferRequest } from "@/v4/composer/composerDraftWorkspaceTransfer.js";
 import { useComposerAttachments } from "@/v4/composer/useComposerAttachments.js";
 import type { ConversationDropTargetController } from "@/v4/composer/conversationDropTarget.js";
@@ -2022,6 +2023,17 @@ function ConversationComposerImpl({
   // 避免每个 token 批次都重建 Tooltip/Select 子树。
   const composerUsage = snapshot?.usage ?? null;
   const composerPhase = snapshot?.control.phase ?? null;
+  // 会话统计入口的实时读数：这里只把每帧的估算 token 写进 ref，工具条按 1 秒时钟采样。
+  // 不把数值直接传下去——composer 随流式每帧重渲染，传值会让整条控制簇逐 token 重建。
+  const liveOutputTokensRef = useRef(0);
+  const readLiveOutputTokens = useCallback(() => liveOutputTokensRef.current, []);
+  const streamingOutputTokens = useMemo(
+    () => (composerPhase === "running" ? countStreamingOutputTokens(snapshot) : 0),
+    [composerPhase, snapshot],
+  );
+  useEffect(() => {
+    liveOutputTokensRef.current = streamingOutputTokens;
+  }, [streamingOutputTokens]);
   const handleSelectModelTrace = useCallback(
     (nextProvider: string, nextModel: string, sourceModel: ModelSelectionSource | null) =>
       runUserAction({
@@ -2089,6 +2101,7 @@ function ConversationComposerImpl({
             onSwitchMode={onSwitchMode}
             onRecoverCustomModelSelection={onRecoverCustomModelSelection}
             onSendCompressionCommand={onSendCompressionCommand}
+            readLiveOutputTokens={readLiveOutputTokens}
           />
         </span>
         {showStopControl ? (
@@ -2132,6 +2145,7 @@ function ConversationComposerImpl({
       canSend,
       activeConfigPicker,
       composerPhase,
+      readLiveOutputTokens,
       composerUsage,
       disabled,
       draftConfig,

@@ -8,6 +8,8 @@ import type {
   AppUsageToolRow,
   TaskUsageQueryInput,
   TaskUsageQueryResult,
+  SessionPerformanceQueryInput,
+  SessionPerformanceQueryResult,
   ModelUsageRecord,
   ToolUsageRecord,
   TurnUsageRecord,
@@ -670,6 +672,64 @@ export async function queryTaskUsage(
     modelRequestCount: rows.length,
     modelErrorCount,
     inputBaselineBySource,
+  };
+}
+
+/**
+ * 会话性能累计：只读聚合 `model_usage` / `tool_usage` 的既有列，不引入新的写入路径。
+ * 模型侧只取成功完成的主链请求——失败/取消的请求可能带着残缺的 usage 与时间计量，
+ * 混进 TPS 会同时污染分子与分母。工具侧按已落库调用累加，重叠并发的工具各算各的时长。
+ */
+export async function querySessionPerformance(
+  db: DatabaseSync,
+  input: SessionPerformanceQueryInput,
+): Promise<SessionPerformanceQueryResult> {
+  const model = db
+    .prepare(
+      `select
+         coalesce(sum(case when duration_ms is not null then duration_ms else 0 end), 0) as modelMs,
+         count(*) as modelRequestCount,
+         coalesce(sum(case when time_to_first_token_ms is not null then time_to_first_token_ms else 0 end), 0) as ttftSumMs,
+         coalesce(sum(case when time_to_first_token_ms is not null then 1 else 0 end), 0) as ttftCount,
+         coalesce(sum(case
+           when duration_ms is not null and time_to_first_token_ms is not null
+             and duration_ms > time_to_first_token_ms
+           then output_tokens else 0 end), 0) as tpsOutputTokens,
+         coalesce(sum(case
+           when duration_ms is not null and time_to_first_token_ms is not null
+             and duration_ms > time_to_first_token_ms
+           then duration_ms - time_to_first_token_ms else 0 end), 0) as generationMs
+       from model_usage
+       where session_id = ? and query_source = ? and status = 'completed'`,
+    )
+    .get(input.sessionID, "main_turn") as {
+    modelMs: number;
+    modelRequestCount: number;
+    ttftSumMs: number;
+    ttftCount: number;
+    tpsOutputTokens: number;
+    generationMs: number;
+  };
+  const tool = db
+    .prepare(
+      `select
+         coalesce(sum(case when duration_ms is not null then duration_ms else 0 end), 0) as toolMs,
+         count(*) as toolCallCount
+       from tool_usage
+       where session_id = ?`,
+    )
+    .get(input.sessionID) as { toolMs: number; toolCallCount: number };
+
+  return {
+    sessionID: input.sessionID,
+    modelMs: Number(model.modelMs),
+    toolMs: Number(tool.toolMs),
+    modelRequestCount: Number(model.modelRequestCount),
+    toolCallCount: Number(tool.toolCallCount),
+    ttftSumMs: Number(model.ttftSumMs),
+    ttftCount: Number(model.ttftCount),
+    tpsOutputTokens: Number(model.tpsOutputTokens),
+    generationMs: Number(model.generationMs),
   };
 }
 
