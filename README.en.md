@@ -15,6 +15,7 @@ ZCode is an AI coding workspace with desktop, browser, and terminal interfaces. 
 
 ## Updates
 
+- 2026-9-30: Updated to ZCode v3.15.0, adding a session stats entry to the chat composer (model time, tool call time, average TTFT, output speed).
 - 2026-9-23: Updated to ZCode v3.14.3.
 
 ## Setup
