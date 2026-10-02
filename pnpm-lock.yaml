@@ -18,6 +18,9 @@ patchedDependencies:
   '@arms/rum-electron@0.0.3':
     hash: 36855354851ea495bc47a03340b0484ff62836b739cad56904b8a69f18e2ae97
     path: patches/@arms__rum-electron@0.0.3.patch
+  '@streamdown/code@1.1.1':
+    hash: bae67fc64f45938cdd2d253d7eda32cd2408e28e92095b1127ec45c66eae6ee9
+    path: patches/@streamdown__code@1.1.1.patch
 
 importers:
 
@@ -1074,7 +1077,7 @@ importers:
         version: 1.0.3(@types/mdast@4.0.4)(micromark-util-types@2.0.2)(micromark@4.0.2)(react@19.2.7)(unified@11.0.5)
       '@streamdown/code':
         specifier: ^1.1.1
-        version: 1.1.1(react@19.2.7)
+        version: 1.1.1(patch_hash=bae67fc64f45938cdd2d253d7eda32cd2408e28e92095b1127ec45c66eae6ee9)(react@19.2.7)
       '@streamdown/math':
         specifier: ^1.0.2
         version: 1.0.2(react@19.2.7)
@@ -13178,7 +13181,7 @@ snapshots:
       - micromark-util-types
       - unified
 
-  '@streamdown/code@1.1.1(react@19.2.7)':
+  '@streamdown/code@1.1.1(patch_hash=bae67fc64f45938cdd2d253d7eda32cd2408e28e92095b1127ec45c66eae6ee9)(react@19.2.7)':
     dependencies:
       react: 19.2.7
       shiki: 3.23.0
@@ -16172,11 +16175,11 @@ snapshots:
 
   lodash.merge@4.6.2: {}
 
+  lodash.pickby@4.6.0: {}
+
   lodash.uniqby@4.7.0: {}
 
   lodash@4.18.1: {}
-
-  lodash.pickby@4.6.0: {}
 
   log-symbols@4.1.0:
     dependencies:
