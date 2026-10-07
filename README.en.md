@@ -15,6 +15,7 @@ ZCode is an AI coding workspace with desktop, browser, and terminal interfaces. 
 
 ## Updates
 
+- 2026-10-7: Updated to ZCode v3.15.3 — fixed the update dialog flashing away on macOS before "Restart to update" could be clicked; unsigned builds now offer "Open download page" and link to the Release page for a manual install.
 - 2026-10-2: Updated to ZCode v3.15.2 — reduced file-walk and Bash-parse overhead, tightened code-highlighting memory, and shortened the startup wait for the force-update check.
 - 2026-9-30: Updated to ZCode v3.15.1 — the auto-update source and the startup force-update gate now use GitHub Releases, MCP conversation references were added to the `/` panel, and account, upgrade, suggested-prompt, and built-in provider entries were removed.
 - 2026-9-30: Updated to ZCode v3.15.0, adding a session stats entry to the chat composer (model time, tool call time, average TTFT, output speed).
