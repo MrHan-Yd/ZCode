@@ -184,6 +184,7 @@ export function UpdateStatusButton({
         updateState={updateState}
         open={dialogOpen}
         onOpenChange={setDialogOpen}
+        isMacDesktop={isMacDesktop}
       />
     </>
   );

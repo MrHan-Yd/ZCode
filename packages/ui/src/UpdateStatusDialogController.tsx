@@ -18,6 +18,7 @@ export function UpdateStatusDialogController({
   open,
   onOpenChange,
   edgeToEdge = false,
+  isMacDesktop = false,
   showOverlay = true,
 }: {
   platform: IPlatformService;
@@ -26,6 +27,8 @@ export function UpdateStatusDialogController({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   edgeToEdge?: boolean;
+  /** macOS 未签名发行下应用内安装不可用，主操作降级为「打开下载页」。 */
+  isMacDesktop?: boolean;
   showOverlay?: boolean;
 }) {
   const { intl, locale } = useZCodeIntl();
@@ -144,6 +147,11 @@ export function UpdateStatusDialogController({
     (url: string) => platform.openExternal(url),
     [platform],
   );
+  // macOS 未签名发行下没有应用内安装路径，主操作改为在系统浏览器打开下载页。
+  // 旧版 renderer / 非桌面端没有该能力时不传下去，弹窗保持原有按钮。
+  const handleOpenDownloadPage = useCallback(async () => {
+    await platform.openUpdateDownloadPage?.();
+  }, [platform]);
   const handleDownloadUpdate = useCallback(async () => {
     if (updateActionInFlightRef.current) {
       return;
@@ -286,11 +294,13 @@ export function UpdateStatusDialogController({
       displayVersion={displayVersion}
       edgeToEdge={edgeToEdge}
       intl={intl}
+      isMacDesktop={isMacDesktop}
       isUpdateActionPending={updateActionInFlight !== null}
       localizedUpdateReleaseNotes={visibleUpdateReleaseNotes}
       onAutoDownloadAndInstallUpdatesChange={handleAutoDownloadAndInstallUpdatesChange}
       onCancelDownload={handleCancelDownload}
       onDownloadUpdate={handleDownloadUpdate}
+      onOpenDownloadPage={platform.openUpdateDownloadPage ? handleOpenDownloadPage : undefined}
       onOpenChange={onOpenChange}
       onOpenReleaseNotesExternalUrl={handleOpenReleaseNotesExternalUrl}
       onRestartUpdate={handleRestartUpdate}

@@ -7,10 +7,13 @@ import { ConfirmDialogHost } from "@/ConfirmDialog.js";
 export function UpdateStatusWindowRoot({
   platform,
   initialLocale,
+  isMacDesktop = false,
   onRequestClose,
 }: {
   platform: IPlatformService;
   initialLocale: Locale;
+  /** macOS 未签名发行下应用内安装不可用，弹窗主操作降级为「打开下载页」。 */
+  isMacDesktop?: boolean;
   onRequestClose: () => void;
 }) {
   const [open, setOpen] = useState(true);
@@ -81,6 +84,7 @@ export function UpdateStatusWindowRoot({
           open={open}
           onOpenChange={handleOpenChange}
           edgeToEdge
+          isMacDesktop={isMacDesktop}
           showOverlay={false}
         />
         <ConfirmDialogHost />

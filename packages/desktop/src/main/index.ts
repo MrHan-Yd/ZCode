@@ -41,6 +41,7 @@ import {
   net,
   protocol,
   session,
+  shell,
   webContents,
 } from "electron";
 import type { UtilityProcess as ElectronUtilityProcess } from "electron";
@@ -137,6 +138,7 @@ import {
   maybeBlockStartupForForceUpdate,
   startForceUpdateMarkerRequest,
 } from "./forceUpdateGuard.js";
+import { resolveForceUpdateManualUpdateUrl } from "./forceUpdateMarker.js";
 import { createWindowsDesktopTray, updateWindowsDesktopTrayMenu } from "./desktopTray.js";
 import { createWindowsCuaOperationIndicator } from "./windowsCuaOperationIndicator.js";
 import {
@@ -2170,6 +2172,9 @@ app.whenReady().then(async () => {
     },
     getUpdateState: getAutoUpdaterState,
     openUpdateStatusWindow,
+    // macOS 未签名发行下 Squirrel 校验必然失败（ad-hoc 签名绑定 cdhash），应用内安装不可用。
+    // 这里只负责在系统浏览器打开 Release 页，由用户自行下载安装包；不改动更新状态机。
+    openUpdateDownloadPage: () => shell.openExternal(resolveForceUpdateManualUpdateUrl()),
     getAutoUpdatePreferences,
     setAutoDownloadAndInstallUpdates,
     getDesktopSessionActivity: () => ({

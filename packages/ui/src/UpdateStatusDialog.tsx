@@ -24,11 +24,13 @@ export function UpdateStatusDialog({
   displayVersion,
   edgeToEdge = false,
   intl,
+  isMacDesktop = false,
   isUpdateActionPending,
   autoDownloadAndInstallUpdates,
   onAutoDownloadAndInstallUpdatesChange,
   onCancelDownload,
   onDownloadUpdate,
+  onOpenDownloadPage,
   onOpenChange,
   onRestartUpdate,
   onSkipUpdate,
@@ -43,12 +45,14 @@ export function UpdateStatusDialog({
   displayVersion: string;
   edgeToEdge?: boolean;
   intl: IntlInstance;
+  isMacDesktop?: boolean;
   isUpdateActionPending: boolean;
   autoDownloadAndInstallUpdates: boolean;
   localizedUpdateReleaseNotes: LocalizedUpdateReleaseNotes | null;
   onAutoDownloadAndInstallUpdatesChange: (enabled: boolean) => Promise<void>;
   onCancelDownload: () => Promise<void>;
   onDownloadUpdate: () => Promise<void>;
+  onOpenDownloadPage?: () => Promise<void> | void;
   onOpenChange: (open: boolean) => void;
   onOpenReleaseNotesExternalUrl: (url: string) => void;
   onRestartUpdate: () => Promise<void>;
@@ -64,11 +68,17 @@ export function UpdateStatusDialog({
   const isBeforeDownload = phase === "before-download";
   const isDownloading = phase === "downloading";
   const isDownloaded = phase === "downloaded";
-  const dialogTitleId = isDownloaded
-    ? "updateDialog.readyTitle"
-    : isDownloading
-      ? "updateDialog.downloadingTitle"
-      : "updateDialog.availableTitle";
+  // macOS 未签名发行下 Squirrel 校验必然失败（ad-hoc 签名绑定 cdhash），应用内「下载更新 /
+  // 重启以更新」永远无法成功。这里把主操作换成「打开下载页」，不再让用户点一个必然失败的按钮。
+  // Windows/Linux 不满足该条件，流程与改动前完全一致。
+  const useManualDownloadPage = isMacDesktop && Boolean(onOpenDownloadPage);
+  const dialogTitleId = useManualDownloadPage
+    ? "updateDialog.availableTitle"
+    : isDownloaded
+      ? "updateDialog.readyTitle"
+      : isDownloading
+        ? "updateDialog.downloadingTitle"
+        : "updateDialog.availableTitle";
   const titleParts = getDialogTitleParts({
     displayVersion,
     intl,
@@ -218,17 +228,7 @@ export function UpdateStatusDialog({
                 {intl.formatMessage({ id: "updateDialog.later" })}
               </Button>
             ) : null}
-            {isDownloaded ? (
-              <Button
-                type="button"
-                size="lg"
-                className="h-9 px-4"
-                disabled={isUpdateActionPending}
-                onClick={() => void onRestartUpdate()}
-              >
-                {intl.formatMessage({ id: "updateDialog.restartToUpdate" })}
-              </Button>
-            ) : isDownloading ? (
+            {isDownloading ? (
               <Button
                 type="button"
                 variant="secondary"
@@ -238,6 +238,26 @@ export function UpdateStatusDialog({
                 onClick={() => void onCancelDownload()}
               >
                 {intl.formatMessage({ id: "updateDialog.cancelDownload" })}
+              </Button>
+            ) : useManualDownloadPage ? (
+              <Button
+                type="button"
+                size="lg"
+                className="h-9 px-4"
+                disabled={isUpdateActionPending}
+                onClick={() => void onOpenDownloadPage?.()}
+              >
+                {intl.formatMessage({ id: "updateDialog.openDownloadPage" })}
+              </Button>
+            ) : isDownloaded ? (
+              <Button
+                type="button"
+                size="lg"
+                className="h-9 px-4"
+                disabled={isUpdateActionPending}
+                onClick={() => void onRestartUpdate()}
+              >
+                {intl.formatMessage({ id: "updateDialog.restartToUpdate" })}
               </Button>
             ) : (
               <Button

@@ -1534,6 +1534,7 @@ const enUS: Record<string, string> = {
   "updateDialog.downloadingAction": "Downloading",
   "updateDialog.downloadProgress": "Download progress",
   "updateDialog.restartToUpdate": "Restart to update",
+  "updateDialog.openDownloadPage": "Open download page",
   "updateDialog.skipVersion": "Skip this version",
   "updateDialog.later": "Later",
   "update.toast.upToDate": "You're on the latest version (v{version})",

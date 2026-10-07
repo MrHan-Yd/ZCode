@@ -130,6 +130,7 @@ export function createDesktopPlatform(options: {
     downloadUpdate: () => window.zcode.downloadUpdate?.() ?? Promise.resolve(),
     cancelUpdateDownload: () => window.zcode.cancelUpdateDownload?.() ?? Promise.resolve(),
     openUpdateStatusWindow: () => window.zcode.openUpdateStatusWindow?.() ?? Promise.resolve(),
+    openUpdateDownloadPage: () => window.zcode.openUpdateDownloadPage?.() ?? Promise.resolve(),
     getAutoUpdatePreferences: () =>
       window.zcode.getAutoUpdatePreferences?.() ??
       Promise.resolve({ autoDownloadAndInstallUpdates: false }),

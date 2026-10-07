@@ -911,6 +911,13 @@ export interface IPlatformService {
   /** 打开桌面端独立更新窗口；非桌面端可不实现并回退到内嵌弹窗 */
   openUpdateStatusWindow?(): Promise<void>;
 
+  /**
+   * 在系统浏览器打开更新下载页。
+   * macOS 未签名发行下 Squirrel 校验必然失败（ad-hoc 签名绑定 cdhash），应用内安装不可用，
+   * 由该动作替代；Windows/Linux 的自动更新不受影响，仍走应用内下载安装。
+   */
+  openUpdateDownloadPage?(): Promise<void>;
+
   /** 读取桌面端自动更新偏好；非桌面端可返回默认值 */
   getAutoUpdatePreferences?(): Promise<{
     autoDownloadAndInstallUpdates: boolean;

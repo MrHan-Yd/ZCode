@@ -364,6 +364,7 @@ if (windowKind === "update-status") {
       <UpdateStatusWindowRoot
         platform={desktopPlatform}
         initialLocale={initialLocale}
+        isMacDesktop={isMacDesktop}
         onRequestClose={() => window.close()}
       />
     </AppErrorBoundary>,

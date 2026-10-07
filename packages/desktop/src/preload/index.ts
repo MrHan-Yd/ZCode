@@ -748,6 +748,8 @@ contextBridge.exposeInMainWorld("zcode", {
   cancelUpdateDownload: () => ipcRenderer.invoke(PlatformChannels.CancelUpdateDownload),
   /** 打开独立更新窗口 */
   openUpdateStatusWindow: () => ipcRenderer.invoke(PlatformChannels.OpenUpdateStatusWindow),
+  /** 在系统浏览器打开更新下载页 */
+  openUpdateDownloadPage: () => ipcRenderer.invoke(PlatformChannels.OpenUpdateDownloadPage),
   /** 读取自动更新偏好 */
   getAutoUpdatePreferences: () => ipcRenderer.invoke(PlatformChannels.GetAutoUpdatePreferences),
   /** 写入“自动下载并安装更新”偏好 */

@@ -386,6 +386,8 @@ export const PlatformChannels = {
   CancelUpdateDownload: "zcode:cancel-update-download",
   /** Renderer → Main：打开独立自动更新窗口 */
   OpenUpdateStatusWindow: "zcode:open-update-status-window",
+  /** Renderer → Main：在系统浏览器打开更新下载页（macOS 未签名发行下替代应用内安装） */
+  OpenUpdateDownloadPage: "zcode:open-update-download-page",
   /** Renderer → Main：读取自动更新偏好 */
   GetAutoUpdatePreferences: "zcode:get-auto-update-preferences",
   /** Renderer → Main：写入“自动下载并安装更新”偏好 */
@@ -1084,6 +1086,10 @@ export interface PlatformChannelMap {
     response: void;
   };
   [PlatformChannels.OpenUpdateStatusWindow]: {
+    request: void;
+    response: void;
+  };
+  [PlatformChannels.OpenUpdateDownloadPage]: {
     request: void;
     response: void;
   };

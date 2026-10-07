@@ -80,6 +80,7 @@ export function registerPlatformIpcHandlers(options: {
   syncTaskRealtimeWorkspaceKeys: (windowId: number, workspaceKeys: Iterable<string>) => void;
   getUpdateState: () => UpdateStatePayload;
   openUpdateStatusWindow: () => void;
+  openUpdateDownloadPage: () => Promise<void> | void;
   getDesktopSessionActivity: () => {
     runningAgentSessionCount: number;
   };
@@ -350,6 +351,10 @@ export function registerPlatformIpcHandlers(options: {
   ipcMain.handle(PlatformChannels.OpenUpdateStatusWindow, () => {
     options.openUpdateStatusWindow();
   });
+  ipcMain.handle(PlatformChannels.OpenUpdateDownloadPage, () =>
+    // macOS 未签名发行下应用内安装不可用，这里在系统浏览器打开 Release 页由用户手动下载。
+    options.openUpdateDownloadPage(),
+  );
   ipcMain.handle(PlatformChannels.GetAutoUpdatePreferences, () =>
     options.getAutoUpdatePreferences(),
   );
