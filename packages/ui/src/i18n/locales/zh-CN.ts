@@ -4467,6 +4467,8 @@ const zhCN: Record<string, string> = {
   "chat.summaryPanel.todoSessionGroup": "整个会话",
   "chat.statusPanel.environment": "Git 工具",
   "chat.statusPanel.changes": "更改",
+  "chat.statusPanel.unpushedCommits": "未推送提交",
+  "chat.statusPanel.behindRemote": "落后远端",
   "chat.statusPanel.branch": "分支",
   "chat.statusPanel.commitPush": "提交 / 推送",
   "chat.statusPanel.clean": "干净",

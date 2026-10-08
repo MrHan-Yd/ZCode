@@ -8,6 +8,8 @@ import type {
   WorkflowRunState,
 } from "@zcode/shared/zcode-protocol-v4";
 import { workflowRunStepCounts } from "@zcode/shared/zcode-protocol-v4";
+import { canPushGitBranch } from "@/git-action-menu/display.js";
+import { shouldShowGitToolsEntry } from "@/v4/gitToolsEntryVisibility.js";
 import { extractPlanToolCallContent, getPlanDirectoryTitle } from "@/lib/planToolCall.js";
 
 export interface ConversationStatusPanelGitModel {
@@ -18,6 +20,8 @@ export interface ConversationStatusPanelGitModel {
   removed: number;
   ahead: number;
   behind: number;
+  /** 是否还有可推送的提交（与「推送」项的启用条件同一判据）。 */
+  hasPushableCommits: boolean;
   isClean: boolean;
 }
 
@@ -144,9 +148,19 @@ function buildGitModel({
   }
   const added = gitWorktreeChangeSummary?.added ?? 0;
   const removed = gitWorktreeChangeSummary?.removed ?? 0;
-  // v4 之前只要是 Git repository 就创建 Git model，导致 clean repo
-  // 也挂出右上角状态卡；旧 ChatView 只在 worktree 有行级变化时展示 Git Tools。
-  if (added + removed <= 0) {
+  // 隐藏条件必须是「真的无事可做」：过去只看 worktree 的行级增减，提交之后工作区一干净，
+  // 整块 Git 工具（含「推送」）就消失了，而这是全 UI 唯一的提交/推送入口。
+  // 现在把「可推送/待拉取的提交」和「有文件数但行数为 0 的改动（二进制等）」也算进去。
+  const hasPushableCommits = canPushGitBranch(gitSummary);
+  const shouldShow = shouldShowGitToolsEntry({
+    gitSummary,
+    dirtyFileCount: gitDirtyFileCount,
+    added,
+    removed,
+    hasPushableCommits,
+    behind: gitSummary.behind,
+  });
+  if (!shouldShow) {
     return null;
   }
   const isClean =
@@ -164,6 +178,7 @@ function buildGitModel({
     removed,
     ahead: gitSummary.ahead,
     behind: gitSummary.behind,
+    hasPushableCommits,
     isClean,
   };
 }

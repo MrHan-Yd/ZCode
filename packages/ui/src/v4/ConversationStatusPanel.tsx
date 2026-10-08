@@ -16,6 +16,7 @@ import {
 import {
   ActivityIcon,
   ArrowRightIcon,
+  ArrowUpFromLineIcon,
   BotIcon,
   CheckCircle2Icon,
   ChevronDownIcon,
@@ -97,6 +98,7 @@ import {
 } from "@/v4/conversationStatusPanelModel.js";
 import type { ConversationStatusPanelWorkflowRunTarget } from "@/v4/conversationStatusPanelModel.js";
 import { workflowRunOpenTarget } from "@/v4/conversationStatusPanelModel.js";
+import { shouldShowGitRemoteSummary } from "@/v4/gitToolsEntryVisibility.js";
 import {
   buildConversationGoalIterationSummaries,
   getConversationGoalElapsedSeconds,
@@ -1594,6 +1596,23 @@ function StatusSummaryRow({
   const added = gitWorktreeChangeSummary?.added ?? 0;
   const removed = gitWorktreeChangeSummary?.removed ?? 0;
   const hasGitMiniSummary = Boolean(model.git && added + removed > 0);
+  // 工作区没有行级增减、但还有未推送提交（或落后远端）时，胶囊也要给出可点内容：
+  // auto 形态在容器不足 1280px 时只显示胶囊，点开才是唯一能按「推送」的地方。
+  const gitRemoteSummary =
+    model.git &&
+    shouldShowGitRemoteSummary({
+      added,
+      removed,
+      hasPushableCommits: model.git.hasPushableCommits,
+      behind: model.git.behind,
+    })
+      ? model.git
+      : null;
+  const gitRemoteSummaryCount = gitRemoteSummary
+    ? gitRemoteSummary.hasPushableCommits
+      ? gitRemoteSummary.ahead
+      : gitRemoteSummary.behind
+    : 0;
 
   // 胶囊摘要过去把所有后台任务都写死成 Activity，纯 Subagent 因而没有复用
   // Running 明细的 Bot 语义。规则现在是三类的：**恰好一类**沿用该类图标，混合才是 Activity
@@ -1633,6 +1652,23 @@ function StatusSummaryRow({
       </span>
       <span className="shrink-0 text-[var(--color-diff-added)]">+{added}</span>
       <span className="shrink-0 text-[var(--color-diff-removed)]">-{removed}</span>
+    </StatusSummaryMetric>
+  ) : gitRemoteSummary ? (
+    <StatusSummaryMetric
+      icon={<ArrowUpFromLineIcon className="size-4 text-[var(--color-foreground)]" />}
+    >
+      <span className="min-w-0 truncate">
+        {intl.formatMessage({
+          id: gitRemoteSummary.hasPushableCommits
+            ? "chat.statusPanel.unpushedCommits"
+            : "chat.statusPanel.behindRemote",
+        })}
+      </span>
+      {gitRemoteSummaryCount > 0 ? (
+        <span className="shrink-0 text-[var(--color-foreground-subtle)]">
+          {gitRemoteSummaryCount}
+        </span>
+      ) : null}
     </StatusSummaryMetric>
   ) : goalTitle && isDoneGoal ? (
     <StatusSummaryMetric icon={<GoalIcon className="size-4 text-[var(--color-foreground)]" />}>

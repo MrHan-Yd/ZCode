@@ -4763,6 +4763,8 @@ const enUS: Record<string, string> = {
   "chat.summaryPanel.todoSessionGroup": "Session",
   "chat.statusPanel.environment": "Git tools",
   "chat.statusPanel.changes": "Changes",
+  "chat.statusPanel.unpushedCommits": "Unpushed commits",
+  "chat.statusPanel.behindRemote": "Behind remote",
   "chat.statusPanel.branch": "Branch",
   "chat.statusPanel.commitPush": "Commit / Push",
   "chat.statusPanel.clean": "Clean",
