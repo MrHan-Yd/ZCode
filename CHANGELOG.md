@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.16.0](https://github.com/MrHan-Yd/ZCode/compare/v3.15.3...v3.16.0) (2026-10-08)
+
+### Features
+
+* 支持提交文件勾选并改进记忆根管理 ([b08756b](https://github.com/MrHan-Yd/ZCode/commit/b08756b8b3a731d4abfee71bbcbaff466709b37e))
+  * Git 提交弹窗增加可提交文件清单与全选，按勾选子集生成提交消息，并排除未提交路径。
+  * 记忆服务支持描述生效/非生效数据根，删除记忆文件并清理 MEMORY.md 索引行。
+  * 设置页展示非生效根提示并支持删除记忆文件，补充相关文案与测试。
+
+
+### Documentation
+
+* 补充 README 的 v3.16.0 更新说明 ([70ebc89](https://github.com/MrHan-Yd/ZCode/commit/70ebc8935f89354fee370bda1dee9be6111d2a11))
+
 ## [3.15.3](https://github.com/MrHan-Yd/ZCode/compare/v3.15.2...v3.15.3) (2026-10-07)
 
 ### Bug Fixes
