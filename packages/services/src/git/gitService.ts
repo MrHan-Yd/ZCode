@@ -266,6 +266,7 @@ export function createGitService(options?: {
         repoRoot: status.resolution.repoRoot,
         workspaceInRepoPath: status.resolution.workspaceInRepoPath,
         currentSessionFilePaths: params.currentSessionFilePaths,
+        excludePaths: params.excludePaths,
       });
       if (files.length === 0) {
         throw new Error("There are no changes available to commit.");

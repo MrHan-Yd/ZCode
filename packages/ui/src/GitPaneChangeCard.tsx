@@ -1,6 +1,14 @@
 import { useMemo } from "react";
 import type { GitDiffResult } from "@zcode/shared";
-import { ChevronDownIcon, CopyIcon, FolderOpenIcon, ListTreeIcon } from "lucide-react";
+import {
+  ChevronDownIcon,
+  CopyIcon,
+  FolderOpenIcon,
+  ListTreeIcon,
+  MinusIcon,
+  PlusIcon,
+  UndoIcon,
+} from "lucide-react";
 import { DiffViewer } from "@/components/ui/diff-viewer.js";
 import { cn } from "@/components/lib/utils.js";
 import {
@@ -25,32 +33,47 @@ export function GitPaneChangeCard({
   isDiffLoading,
   isExpanded,
   canRevealInFileManager,
+  canStage,
+  canUnstage,
+  canDiscard,
   codePreviewSettings,
   resolvedTheme,
   onCopyAbsolutePath,
   onCopyRelativePath,
+  onDiscard,
   onOpenChange,
   onRevealInFileManager,
   onRevealInFileTree,
+  onStage,
+  onUnstage,
 }: {
   change: GitPaneFileChange;
   contextMenuLabels: {
     copyAbsolutePath: string;
     copyRelativePath: string;
+    discard: string;
     revealInFileManager: string;
     revealInFileTree: string;
+    stage: string;
+    unstage: string;
   };
   diffState: GitDiffResult | null;
   isDiffLoading: boolean;
   isExpanded: boolean;
   canRevealInFileManager: boolean;
+  canStage: boolean;
+  canUnstage: boolean;
+  canDiscard: boolean;
   codePreviewSettings: CodePreviewSettings;
   resolvedTheme: ResolvedTheme;
   onCopyAbsolutePath: (change: GitPaneFileChange) => void;
   onCopyRelativePath: (change: GitPaneFileChange) => void;
+  onDiscard: (change: GitPaneFileChange) => void;
   onOpenChange: (change: GitPaneFileChange, nextOpen: boolean) => void;
   onRevealInFileManager: (change: GitPaneFileChange) => void;
   onRevealInFileTree?: (change: GitPaneFileChange) => void;
+  onStage: (change: GitPaneFileChange) => void;
+  onUnstage: (change: GitPaneFileChange) => void;
 }) {
   const { intl } = useZCodeIntl();
   const diffPreviewPlan = useMemo(() => getGitPaneDiffPreviewPlan(diffState), [diffState]);
@@ -125,6 +148,25 @@ export function GitPaneChangeCard({
           </button>
         </ContextMenuTrigger>
         <ContextMenuContent className="w-56">
+          {/* 写操作组放在最前：审阅一个文件后最可能的下一步就是暂存或撤销它。
+              只读来源（与分支比较 / 某轮快照）三项全禁用，但仍渲染，避免菜单结构随来源跳变。 */}
+          <ContextMenuItem disabled={!canStage} onSelect={() => onStage(change)}>
+            <PlusIcon className="size-4" />
+            {contextMenuLabels.stage}
+          </ContextMenuItem>
+          <ContextMenuItem disabled={!canUnstage} onSelect={() => onUnstage(change)}>
+            <MinusIcon className="size-4" />
+            {contextMenuLabels.unstage}
+          </ContextMenuItem>
+          <ContextMenuItem
+            disabled={!canDiscard}
+            variant="destructive"
+            onSelect={() => onDiscard(change)}
+          >
+            <UndoIcon className="size-4" />
+            {contextMenuLabels.discard}
+          </ContextMenuItem>
+          <ContextMenuSeparator />
           <ContextMenuItem
             disabled={!canRevealInFileManager}
             onSelect={() => onRevealInFileManager(change)}

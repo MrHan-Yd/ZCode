@@ -86,6 +86,7 @@ export function filterCommitMessageFilesByCurrentSession(params: {
   repoRoot: string;
   workspaceInRepoPath: string;
   currentSessionFilePaths?: readonly string[];
+  excludePaths?: readonly string[];
 }): GitFileChange[] {
   const scope = buildCommitMessageFileScope({
     workspacePath: params.workspacePath,
@@ -93,5 +94,19 @@ export function filterCommitMessageFilesByCurrentSession(params: {
     workspaceInRepoPath: params.workspaceInRepoPath,
     currentSessionFilePaths: params.currentSessionFilePaths,
   });
-  return params.files.filter((file) => isCommitMessageFileInScope(file, scope));
+  // 用户取消勾选的文件不参与提交，也不能出现在提交消息里。复用同一套路径归一化，
+  // 因此调用方传绝对路径或 workspace / repo 相对路径都能命中；scope 为 null 表示不排除任何文件。
+  const excludedScope = buildCommitMessageFileScope({
+    workspacePath: params.workspacePath,
+    repoRoot: params.repoRoot,
+    workspaceInRepoPath: params.workspaceInRepoPath,
+    currentSessionFilePaths: params.excludePaths,
+  });
+
+  return params.files.filter((file) => {
+    if (!isCommitMessageFileInScope(file, scope)) {
+      return false;
+    }
+    return excludedScope === null || !isCommitMessageFileInScope(file, excludedScope);
+  });
 }

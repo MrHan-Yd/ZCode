@@ -15,9 +15,11 @@ import {
 } from "@/components/ui/select.js";
 import { type GitPaneFileChange, type GitPaneRepositoryState } from "@/hooks/useGitRepository.js";
 import { useServices } from "@/hooks/useServices.js";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { useFileContextActions } from "@/hooks/useFileContextActions.js";
 import { useWorkspaceOpenInEditorTarget } from "@/hooks/useWorkspaceOpenInEditorTarget.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { toast } from "@/components/ui/toast.js";
 import { joinFilePath, isAbsoluteFilePath } from "@/lib/path.js";
 import {
   getDiffCacheKey,
@@ -25,6 +27,7 @@ import {
   getGitPaneDiffFindContent,
   getSourceMessageId,
 } from "@/GitPane/helpers.js";
+import { resolveGitPaneFileActions } from "@/GitPane/fileActions.js";
 import { GitPaneChangeCard } from "@/GitPaneChangeCard.js";
 import { getFileChangeFindState } from "@/GitPane/fileChangeFindSearch.js";
 import { logger } from "@/logger.js";
@@ -88,8 +91,11 @@ export function GitPane({
     remoteTarget: workspaceOpenTarget.remoteTarget,
     workspaceIdentity,
   });
+  const confirmDialog = useConfirmDialog();
   const resolvedTheme = resolveTheme(theme);
   const [expandedPath, setExpandedPath] = useState<string | null>(null);
+  // 只用于禁用"正在执行"的那个文件的写操作，避免同一文件并发提交两次动作。
+  const [pendingChangePath, setPendingChangePath] = useState<string | null>(null);
   const [diffStateByKey, setDiffStateByKey] = useState<Record<string, GitDiffLoadState>>({});
   const diffGenerationRef = useRef(0);
   const pendingDiffKeysRef = useRef(new Set<string>());
@@ -437,12 +443,91 @@ export function GitPane({
     [onRevealFileInTree, resolveChangePath],
   );
 
+  const runChangeMutation = useCallback(
+    async (
+      change: GitPaneFileChange,
+      action: "stage" | "unstage" | "discard",
+      operation: () => Promise<void>,
+    ) => {
+      setPendingChangePath(change.path);
+      try {
+        await operation();
+        logger.info("[GitPane] 单文件 Git 操作成功", {
+          workspacePath,
+          action,
+          path: change.path,
+        });
+        // 数据集由 useGitRepository 拥有：刷新后 revision 变化会顺带清掉 diff 缓存。
+        onRefresh();
+      } catch (error: unknown) {
+        const message = getErrorMessage(error);
+        logger.warn("[GitPane] 单文件 Git 操作失败", {
+          workspacePath,
+          action,
+          path: change.path,
+          error: message,
+        });
+        toast(intl.formatMessage({ id: "git.changeContext.mutationFailed" }, { message }));
+      } finally {
+        setPendingChangePath(null);
+      }
+    },
+    [intl, onRefresh, workspacePath],
+  );
+
+  const handleStageChange = useCallback(
+    (change: GitPaneFileChange) => {
+      void runChangeMutation(change, "stage", () =>
+        gitService.stagePaths({ workspacePath, paths: [change.path] }),
+      );
+    },
+    [gitService, runChangeMutation, workspacePath],
+  );
+
+  const handleUnstageChange = useCallback(
+    (change: GitPaneFileChange) => {
+      void runChangeMutation(change, "unstage", () =>
+        gitService.unstagePaths({ workspacePath, paths: [change.path] }),
+      );
+    },
+    [gitService, runChangeMutation, workspacePath],
+  );
+
+  const handleDiscardChange = useCallback(
+    (change: GitPaneFileChange) => {
+      void (async () => {
+        // 撤销会丢弃工作区改动且不可恢复，必须二次确认；暂存/取消暂存可逆，因此不确认。
+        const confirmed = await confirmDialog({
+          title: intl.formatMessage({ id: "git.changeContext.discardConfirmTitle" }),
+          description: intl.formatMessage(
+            { id: "git.changeContext.discardConfirmDescription" },
+            { path: change.workspaceRelativePath },
+          ),
+          confirmLabel: intl.formatMessage({ id: "git.changeContext.discard" }),
+          cancelLabel: intl.formatMessage({ id: "common.cancel" }),
+          confirmVariant: "destructive",
+        });
+        if (!confirmed) {
+          return;
+        }
+
+        await runChangeMutation(change, "discard", () =>
+          gitService.discardPaths({ workspacePath, paths: [change.path] }),
+        );
+      })();
+    },
+    [confirmDialog, gitService, intl, runChangeMutation, workspacePath],
+  );
+
   const contextMenuLabels = useMemo(
     () => ({
       copyAbsolutePath: intl.formatMessage({ id: "fileActions.copyAbsolutePath" }),
       copyRelativePath: intl.formatMessage({ id: "fileActions.copyRelativePath" }),
+      discard: intl.formatMessage({ id: "git.changeContext.discard" }),
       revealInFileManager: intl.formatMessage({ id: "git.changeContext.revealInFileManager" }),
       revealInFileTree: intl.formatMessage({ id: "git.changeContext.revealInFileTree" }),
+      stage: intl.formatMessage({ id: "git.changeContext.stage" }),
+      unstage: intl.formatMessage({ id: "git.changeContext.unstage" }),
     }),
     [intl],
   );
@@ -496,6 +581,13 @@ export function GitPane({
                 const diffState = change.diff ?? cachedDiffState?.diff ?? null;
                 const isDiffLoading =
                   isExpanded && !change.diff && (!cachedDiffState || cachedDiffState.loading);
+                const writeActions = resolveGitPaneFileActions({
+                  readonly: currentDataset.readonly,
+                  kind: change.kind,
+                  isStaged: change.isStaged,
+                  isUntracked: change.isUntracked,
+                  pending: pendingChangePath === change.path,
+                });
 
                 return (
                   <div
@@ -518,15 +610,21 @@ export function GitPane({
                         path: resolveChangePath(change),
                         deleted: change.kind === "deleted",
                       })}
+                      canStage={writeActions.stage}
+                      canUnstage={writeActions.unstage}
+                      canDiscard={writeActions.discard}
                       codePreviewSettings={codePreviewSettings}
                       resolvedTheme={resolvedTheme}
                       onCopyAbsolutePath={handleCopyAbsolutePath}
                       onCopyRelativePath={handleCopyRelativePath}
+                      onDiscard={handleDiscardChange}
                       onOpenChange={handleExpandChange}
                       onRevealInFileManager={handleRevealChangeInFileManager}
                       onRevealInFileTree={
                         onRevealFileInTree ? handleRevealChangeInFileTree : undefined
                       }
+                      onStage={handleStageChange}
+                      onUnstage={handleUnstageChange}
                     />
                   </div>
                 );

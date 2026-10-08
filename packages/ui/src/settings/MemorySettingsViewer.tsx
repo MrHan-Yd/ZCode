@@ -1,7 +1,9 @@
 import { Fragment, useEffect, useMemo, useState } from "react";
-import type { ProjectMemoryWorkspaceSummary } from "@zcode/services";
+import type { ProjectMemoryFileSummary, ProjectMemoryWorkspaceSummary } from "@zcode/services";
+import { Trash2Icon } from "lucide-react";
 import {
   TID_SETTINGS_MEMORY_COUNT,
+  TID_SETTINGS_MEMORY_DELETE,
   TID_SETTINGS_MEMORY_FILE,
   TID_SETTINGS_MEMORY_FILE_EDITOR_ACTIONS,
   TID_SETTINGS_MEMORY_FILE_ICON,
@@ -18,6 +20,9 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { FileDisplayIcon, resolveFileDisplayDescriptor } from "@/lib/fileDisplay.js";
+import { Button } from "@/components/ui/button.js";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.js";
+import { MemoryFilePreviewDialog } from "@/settings/MemoryFilePreviewDialog.js";
 import { PluginScopeMenu } from "@/settings/PluginScopeMenu.js";
 import { PluginSearchEmptyState } from "@/settings/PluginInstallEmptyState.js";
 import { SettingsSearchInput } from "@/settings/SettingsSearchInput.js";
@@ -32,6 +37,9 @@ export function MemorySettingsViewer({
   catalogState,
   selectedWorkspace,
   workspaces,
+  deletingFileName,
+  onDeleteMemoryFile,
+  onReadMemoryFile,
   onRefresh,
   onScopeKeyChange,
 }: {
@@ -39,11 +47,17 @@ export function MemorySettingsViewer({
   catalogState: MemoryViewerLoadingState;
   selectedWorkspace: ProjectMemoryWorkspaceSummary | undefined;
   workspaces: ProjectMemoryWorkspaceSummary[];
+  /** 正在删除的文件名；用于禁用该行的按钮，避免重复提交。 */
+  deletingFileName: string | null;
+  onDeleteMemoryFile: (file: ProjectMemoryFileSummary) => void;
+  /** 已绑定当前选中工作区，只读正文。 */
+  onReadMemoryFile: (fileName: string) => Promise<{ content: string; updatedAt: number }>;
   onRefresh: () => Promise<void>;
   onScopeKeyChange: (workspaceId: string) => void;
 }) {
   const { intl, locale } = useZCodeIntl();
   const [searchQuery, setSearchQuery] = useState("");
+  const [previewFile, setPreviewFile] = useState<ProjectMemoryFileSummary | null>(null);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 60_000);
@@ -64,6 +78,16 @@ export function MemorySettingsViewer({
       ) ?? [],
     [normalizedSearchQuery, selectedWorkspace],
   );
+
+  // 文件从目录里消失（被删除、或被外部清理）就关闭预览，避免继续展示已不存在的记忆正文。
+  useEffect(() => {
+    if (!previewFile) {
+      return;
+    }
+    if (!(selectedWorkspace?.files ?? []).some((file) => file.name === previewFile.name)) {
+      setPreviewFile(null);
+    }
+  }, [previewFile, selectedWorkspace]);
 
   if (catalogError) {
     return (
@@ -154,10 +178,14 @@ export function MemorySettingsViewer({
             {visibleFiles.map((file, index) => (
               <Fragment key={file.name}>
                 {index > 0 ? <div className="h-px bg-border/50" aria-hidden="true" /> : null}
-                <div className="flex min-w-0 items-center hover:bg-hover">
-                  <div
+                <div className="group/memory-row flex min-w-0 items-center hover:bg-hover">
+                  {/* 名称区域可点击打开正文预览；删除与外部编辑器按钮是它的兄弟节点，
+                      不能嵌在 button 里（嵌套交互元素无效）。 */}
+                  <button
+                    type="button"
                     data-testid={testId(TID_SETTINGS_MEMORY_FILE, file.name)}
-                    className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3 text-left"
+                    onClick={() => setPreviewFile(file)}
+                    className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 px-4 py-3 text-left"
                   >
                     <span
                       data-testid={testId(TID_SETTINGS_MEMORY_FILE_ICON, file.name)}
@@ -188,7 +216,33 @@ export function MemorySettingsViewer({
                         })}
                       </span>
                     </span>
-                  </div>
+                  </button>
+                  {/* 删除是破坏性且低频的操作：默认隐藏，悬停或键盘聚焦到按钮时出现，
+                      避免与"预览/外部编辑器"这两个高频动作争夺视觉重量。 */}
+                  <span className="shrink-0 opacity-0 transition-opacity group-hover/memory-row:opacity-100 focus-within:opacity-100">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon-sm"
+                          data-testid={testId(TID_SETTINGS_MEMORY_DELETE, file.name)}
+                          disabled={deletingFileName === file.name}
+                          aria-label={intl.formatMessage(
+                            { id: "settings.memory.delete.ariaLabel" },
+                            { fileName: file.name },
+                          )}
+                          onClick={() => onDeleteMemoryFile(file)}
+                          className="text-foreground-subtle hover:text-destructive"
+                        >
+                          <Trash2Icon className="size-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent side="left" sideOffset={6}>
+                        {intl.formatMessage({ id: "settings.memory.delete.label" })}
+                      </TooltipContent>
+                    </Tooltip>
+                  </span>
                   <span
                     data-testid={testId(TID_SETTINGS_MEMORY_FILE_EDITOR_ACTIONS, file.name)}
                     className="mr-3 shrink-0"
@@ -201,6 +255,17 @@ export function MemorySettingsViewer({
           </div>
         </>
       )}
+
+      <MemoryFilePreviewDialog
+        file={previewFile}
+        readFile={onReadMemoryFile}
+        onFileChanged={() => void onRefresh()}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPreviewFile(null);
+          }
+        }}
+      />
     </section>
   );
 }

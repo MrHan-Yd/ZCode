@@ -68,6 +68,12 @@ export const TID_GIT_COMMIT_GENERATE_BUTTON = "git-commit-generate-button";
 export const TID_GIT_COMMIT_MESSAGE_MODEL_TRIGGER = "settings-git-commit-message-model";
 /** Git 提交弹窗包含未暂存更改开关 */
 export const TID_GIT_COMMIT_INCLUDE_UNSTAGED = "git-commit-include-unstaged";
+/** Git 提交弹窗可提交文件清单 */
+export const TID_GIT_COMMIT_FILE_LIST = "git-commit-file-list";
+/** Git 提交弹窗文件清单的全选开关 */
+export const TID_GIT_COMMIT_SELECT_ALL = "git-commit-select-all";
+/** Git 提交弹窗文件清单行（动态后缀为文件 repo 相对路径） */
+export const TID_GIT_COMMIT_FILE_ITEM = "git-commit-file-item";
 /** Git 提交弹窗底部 Command 动作列表 */
 export const TID_GIT_COMMIT_ACTION_COMMAND = "git-commit-action-command";
 /** Git 提交弹窗底部动作项（动态后缀为动作 id） */
@@ -369,6 +375,10 @@ export const TID_RESOURCE_MANAGER_STORAGE_CONFIRM_CANCEL =
   "resource-manager-storage-confirm-cancel";
 /** Memory 设置模块中的总开关 */
 export const TID_SETTINGS_MEMORY_SWITCH = "settings-memory-switch";
+/** 提示：其它数据目录里存在但当前不生效的工作区记忆 */
+export const TID_SETTINGS_MEMORY_INACTIVE_ROOTS = "settings-memory-inactive-roots";
+/** 设置页记忆文件行的删除按钮（动态后缀为文件名） */
+export const TID_SETTINGS_MEMORY_DELETE = "settings-memory-delete";
 /** Memory 设置模块刷新按钮 */
 export const TID_SETTINGS_MEMORY_REFRESH = "settings-memory-refresh";
 /** Memory Workspace Scope 菜单触发器 */

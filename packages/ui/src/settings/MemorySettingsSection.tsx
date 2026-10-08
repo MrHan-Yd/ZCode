@@ -1,16 +1,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type IMemoryService, type ProjectMemoryWorkspaceSummary } from "@zcode/services";
-import { TID_SETTINGS_MEMORY_SWITCH } from "@zcode/shared";
+import {
+  type IMemoryService,
+  type ProjectMemoryFileSummary,
+  type ProjectMemoryRootsDescription,
+  type ProjectMemoryWorkspaceSummary,
+} from "@zcode/services";
+import { TID_SETTINGS_MEMORY_INACTIVE_ROOTS, TID_SETTINGS_MEMORY_SWITCH } from "@zcode/shared";
 import { runUserAction, runUserActionAsync } from "@/lib/userActionTelemetry.js";
+import { Alert, AlertDescription } from "@/components/ui/alert.js";
 import { Switch } from "@/components/ui/switch.js";
+import { toast } from "@/components/ui/toast.js";
+import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { logger } from "@/logger.js";
 import {
   MemorySettingsViewer,
   type MemoryViewerLoadingState,
 } from "@/settings/MemorySettingsViewer.js";
 import { SettingsGroupCard, SettingsRow } from "@/settings/SettingsPageParts.js";
 
-type MemoryCatalogService = Pick<IMemoryService, "listProjectMemories">;
+/** 目录 + 只读正文 + 删除单条记忆；不提供编辑与批量写入。 */
+type MemoryCatalogService = Pick<
+  IMemoryService,
+  | "listProjectMemories"
+  | "describeProjectMemoryRoots"
+  | "readProjectMemoryFile"
+  | "deleteProjectMemoryFile"
+>;
 
 function normalizeWorkspaceDisplayName(value: string): string {
   const slug = value
@@ -57,11 +73,16 @@ export function MemorySettingsSection({
   workspaceDisplayNames?: readonly string[];
 }) {
   const { intl } = useZCodeIntl();
+  const confirmDialog = useConfirmDialog();
   const catalogRequestIdRef = useRef(0);
   const [catalogState, setCatalogState] = useState<MemoryViewerLoadingState>("idle");
   const [catalogError, setCatalogError] = useState<string | null>(null);
   const [workspaces, setWorkspaces] = useState<ProjectMemoryWorkspaceSummary[]>([]);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+  const [rootsDescription, setRootsDescription] = useState<ProjectMemoryRootsDescription | null>(
+    null,
+  );
+  const [deletingFileName, setDeletingFileName] = useState<string | null>(null);
 
   const refreshCatalog = useCallback(async (): Promise<ProjectMemoryWorkspaceSummary[] | null> => {
     const requestId = catalogRequestIdRef.current + 1;
@@ -75,6 +96,22 @@ export function MemorySettingsSection({
       }
       setWorkspaces(result);
       setCatalogState("ready");
+      // 根分布探测是辅助信息：失败只意味着没有提示，不能影响主列表。
+      void memoryService.describeProjectMemoryRoots().then(
+        (description) => {
+          if (catalogRequestIdRef.current === requestId) {
+            setRootsDescription(description);
+          }
+        },
+        (error: unknown) => {
+          logger.warn("[MemorySettingsSection] 读取记忆根分布失败", {
+            error: getErrorMessage(error),
+          });
+          if (catalogRequestIdRef.current === requestId) {
+            setRootsDescription(null);
+          }
+        },
+      );
       return result;
     } catch (error) {
       if (catalogRequestIdRef.current !== requestId) {
@@ -82,6 +119,7 @@ export function MemorySettingsSection({
       }
       setWorkspaces([]);
       setSelectedWorkspaceId(null);
+      setRootsDescription(null);
       setCatalogError(getErrorMessage(error));
       setCatalogState("error");
       return null;
@@ -99,6 +137,7 @@ export function MemorySettingsSection({
     setCatalogError(null);
     setWorkspaces([]);
     setSelectedWorkspaceId(null);
+    setRootsDescription(null);
   }, [memoryEnabled, projectMemoryViewerAvailable, refreshCatalog]);
 
   const displayWorkspaces = useMemo(() => {
@@ -151,6 +190,76 @@ export function MemorySettingsSection({
     });
   }, [refreshCatalog]);
 
+  const handleReadMemoryFile = useCallback(
+    async (fileName: string): Promise<{ content: string; updatedAt: number }> => {
+      if (!selectedWorkspaceId) {
+        // 预览只可能从已选中工作区的文件行发起；显式报错，避免把空 workspaceId 发给服务层
+        // 换回一句难以定位的 "Invalid Project Memory path"。
+        throw new Error("No project memory workspace selected");
+      }
+      // workspaceId 在这里绑定：预览弹窗不需要知道当前选中的是哪个工作区。
+      return await memoryService.readProjectMemoryFile({
+        workspaceId: selectedWorkspaceId,
+        fileName,
+      });
+    },
+    [memoryService, selectedWorkspaceId],
+  );
+
+  const handleDeleteMemoryFile = useCallback(
+    (file: ProjectMemoryFileSummary) => {
+      if (!selectedWorkspaceId) {
+        return;
+      }
+
+      void (async () => {
+        // 删除不可恢复（不进回收站、不在 git 下），必须二次确认并把文件名写进文案。
+        const confirmed = await confirmDialog({
+          title: intl.formatMessage({ id: "settings.memory.delete.confirmTitle" }),
+          description: intl.formatMessage(
+            { id: "settings.memory.delete.confirmDescription" },
+            { fileName: file.name },
+          ),
+          confirmLabel: intl.formatMessage({ id: "settings.memory.delete.confirmLabel" }),
+          cancelLabel: intl.formatMessage({ id: "common.cancel" }),
+          confirmVariant: "destructive",
+        });
+        if (!confirmed) {
+          return;
+        }
+
+        setDeletingFileName(file.name);
+        try {
+          await runUserActionAsync({
+            input: { featureId: "settings.memory", action: "delete_memory", trigger: "button" },
+            operation: () =>
+              memoryService.deleteProjectMemoryFile({
+                workspaceId: selectedWorkspaceId,
+                fileName: file.name,
+              }),
+            completed: { resultSource: "platform_result" },
+            failureStage: "memory_delete",
+          });
+          await refreshCatalog();
+        } catch (error) {
+          logger.warn("[MemorySettingsSection] 删除记忆文件失败", {
+            fileName: file.name,
+            error: getErrorMessage(error),
+          });
+          toast(
+            intl.formatMessage(
+              { id: "settings.memory.delete.failed" },
+              { message: getErrorMessage(error) },
+            ),
+          );
+        } finally {
+          setDeletingFileName(null);
+        }
+      })();
+    },
+    [confirmDialog, intl, memoryService, refreshCatalog, selectedWorkspaceId],
+  );
+
   return (
     <div className="space-y-6">
       <SettingsGroupCard>
@@ -186,6 +295,9 @@ export function MemorySettingsSection({
           catalogState={catalogState}
           selectedWorkspace={selectedWorkspace}
           workspaces={displayWorkspaces}
+          deletingFileName={deletingFileName}
+          onDeleteMemoryFile={handleDeleteMemoryFile}
+          onReadMemoryFile={handleReadMemoryFile}
           onRefresh={handleRefresh}
           onScopeKeyChange={(workspaceId) =>
             runUserAction({
@@ -201,6 +313,53 @@ export function MemorySettingsSection({
           }
         />
       )}
+
+      {memoryEnabled && projectMemoryViewerAvailable && rootsDescription ? (
+        <ProjectMemoryInactiveRootsNotice description={rootsDescription} />
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * 数据目录从家目录搬走后，旧根的记忆既不进列表也不参与注入。这里把该情况讲清楚：
+ * 不静默合并进列表（那会让页面失去"哪些记忆真正生效"的审计意义），只提示并给出复制指引。
+ */
+function ProjectMemoryInactiveRootsNotice({
+  description,
+}: {
+  description: ProjectMemoryRootsDescription;
+}) {
+  const { intl } = useZCodeIntl();
+  if (description.inactiveRoots.length === 0) {
+    return null;
+  }
+
+  return (
+    <Alert data-testid={TID_SETTINGS_MEMORY_INACTIVE_ROOTS}>
+      <AlertDescription className="space-y-2">
+        <p>{intl.formatMessage({ id: "settings.memory.inactiveRoots.title" })}</p>
+        <ul className="space-y-1">
+          {description.inactiveRoots.map((root) => (
+            <li key={root.rootId} className="break-all font-mono text-ui-sm">
+              {intl.formatMessage(
+                { id: "settings.memory.inactiveRoots.entry" },
+                {
+                  path: root.path,
+                  workspaceCount: root.workspaceCount,
+                  fileCount: root.fileCount,
+                },
+              )}
+            </li>
+          ))}
+        </ul>
+        <p className="break-all font-mono text-ui-sm">
+          {intl.formatMessage(
+            { id: "settings.memory.inactiveRoots.guidance" },
+            { activeRootPath: description.activeRootPath },
+          )}
+        </p>
+      </AlertDescription>
+    </Alert>
   );
 }

@@ -218,6 +218,11 @@ export interface GitGenerateCommitMessageRequest extends GitRepositoryRequest {
   locale?: Locale;
   includeUnstaged?: boolean;
   currentSessionFilePaths?: string[];
+  /**
+   * 本次不参与提交的路径，与提交时传给 `GitCommitRequest.paths` 的勾选子集互补。
+   * 消息描述的 diff 范围必须与实际提交范围一致，否则会把并未提交的改动写进消息。
+   */
+  excludePaths?: string[];
   conversationContext?: GitCommitMessageConversationContext;
   /**
    * 调用方当前会话正在使用的模型。缺省时服务退回 Host 的 preferredSelection，
