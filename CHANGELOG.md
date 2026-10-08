@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.16.1](https://github.com/MrHan-Yd/ZCode/compare/v3.16.0...v3.16.1) (2026-10-08)
+
+### Bug Fixes
+
+* **ui:** 修复提交后 Git 工具入口消失导致无法推送 ([3ba2972](https://github.com/MrHan-Yd/ZCode/commit/3ba29725000e9e1b9299c6209a7551348a7412ab))
+
+
+### Chores
+
+* 发版前拦截只存在于本地的 tag ([0278423](https://github.com/MrHan-Yd/ZCode/commit/02784232210fd61d054b7d0340a530a91a51a399))
+
 ## [3.16.0](https://github.com/MrHan-Yd/ZCode/compare/v3.15.3...v3.16.0) (2026-10-08)
 
 ### Features
