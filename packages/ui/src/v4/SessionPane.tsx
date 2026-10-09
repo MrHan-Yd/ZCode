@@ -123,6 +123,9 @@ import type { ConversationDropTargetController } from "@/v4/composer/conversatio
 import { shouldIgnoreEscapeForStopGeneration } from "@/v4/composer/escapeStop.js";
 import { ConversationDraftEmptyState } from "@/v4/ConversationDraftEmptyState.js";
 import { ConversationHeader, type PaneWorkspaceBadge } from "@/v4/ConversationHeader.js";
+import { ConversationLoadingState } from "@/v4/ConversationLoadingState.js";
+import { resolveConversationEmptySlot } from "@/v4/conversationEmptySlot.js";
+import { useSessionIndexSummary } from "@/v4/useSessionIndexSummary.js";
 import { ConversationQueuePanel } from "@/v4/ConversationQueuePanel.js";
 import { projectPendingGuideQueue } from "@/v4/pendingGuideProjection.js";
 import { ConversationQuotaBanner } from "@/v4/ConversationQuotaBanner.js";
@@ -3674,6 +3677,13 @@ export function SessionPane({
   // subscribe ACK 会先把 store 置 live，initial snapshot 稍后才到；只看
   // status 会在无投影窗口提前启用编辑器。正式 session 必须等首个 snapshot 才可输入。
   const connecting = sessionId !== null && (state.status === "connecting" || snapshot === null);
+  // 冷恢复期间时间线既无 rows 也无内容，靠 sessions-index 已有的标题与上一轮回复预览
+  // 把这段等待从「纯空白」变成「正在载入」。只在 connecting 期间持有该共享 store 引用，
+  // 首个 snapshot 到达后立即释放——此处传入的 sessionId 就是这份引用的开关。
+  const sessionIndexSummary = useSessionIndexSummary(
+    { workspacePath, workspaceIdentity, remoteSessionId },
+    connecting ? sessionId : null,
+  );
   const queueEditActiveForCurrentComposer =
     queueEditOperation?.sessionId === sessionId && queueEditOperation.workspaceKey === workspaceKey;
   const errored = sessionId !== null && state.status === "error";
@@ -3692,6 +3702,8 @@ export function SessionPane({
   // 提交时先 stop barrier 再 rewind/rerun；UI 不应再用 completed gate 把入口整轮隐藏。
   const editActionsEnabled = !readOnly && !selectionSideChat && Boolean(sessionId);
   const isDraft = sessionId === null;
+  // 消息区「无行可渲染」时的单一裁决：草稿空态 / 冷恢复加载占位 / 空（错误由错误面板接管）。
+  const conversationEmptySlot = resolveConversationEmptySlot({ isDraft, connecting, errored });
   // 滚动恢复必须使用与 sessionId 匹配的 lease projection。切换 session 的 render 与
   // passive effect 不在同一时刻，旧 lease 的 rows 若提前交给 timeline，会让新记忆按旧
   // 内容高度 clamp，后续目标 rows 到达时也无法区分这次临时落点。
@@ -4595,7 +4607,9 @@ export function SessionPane({
         </div>
       ) : null}
       <ConversationHeader
-        title={snapshot?.meta.title ?? ""}
+        // 首帧未到时 snapshot 还没有标题；用 sessions-index 已有的标题兜底，避免
+        // 加载期标题栏也是空的。snapshot 到达后依旧完全由它决定，不受此处影响。
+        title={snapshot?.meta.title ?? sessionIndexSummary?.title ?? ""}
         onSplitRight={onSplitRight}
         onSplitDown={onSplitDown}
         onClosePane={onClosePane}
@@ -4768,10 +4782,17 @@ export function SessionPane({
                 ) : null
               }
               emptyState={
-                isDraft ? (
+                conversationEmptySlot === "draft" ? (
                   <div data-testid={TID_CHAT_EMPTY} className="w-full">
                     <ConversationDraftEmptyState />
                   </div>
+                ) : conversationEmptySlot === "loading" ? (
+                  // 冷恢复等待期复用时间线既有的空内容槽位：这里的 DOM 位于 bottomDock
+                  // 之上，因此只替换内容、不动时间线实例，composer 与其草稿不会被重挂。
+                  <ConversationLoadingState
+                    preview={sessionIndexSummary?.lastAssistantPreview}
+                    summaryPanelLayout={statusPanelLayout}
+                  />
                 ) : null
               }
               centerEmptyStateWithDock={isDraft}

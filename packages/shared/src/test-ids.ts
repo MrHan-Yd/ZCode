@@ -533,6 +533,10 @@ export const TID_V4_SESSION_PANE = "v4-session-pane";
 export const TID_V4_TIMELINE = "v4-timeline";
 /** v4 时间线空态占位 */
 export const TID_V4_TIMELINE_EMPTY = "v4-timeline-empty";
+/** v4 时间线首帧加载骨架（冷恢复等待期占位，首帧 snapshot 到达即消失） */
+export const TID_V4_TIMELINE_LOADING = "v4-timeline-loading";
+/** v4 加载骨架内的「上一轮回复」预览行（取自 sessions-index 的 lastAssistantPreview） */
+export const TID_V4_TIMELINE_LOADING_PREVIEW = "v4-timeline-loading-preview";
 /** v4 投影行（动态后缀为 rowId） */
 export const TID_V4_ROW = "v4-row";
 /** v4 工作区 Hook 待审核提示条容器 */

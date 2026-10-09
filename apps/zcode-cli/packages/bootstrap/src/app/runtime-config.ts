@@ -12,7 +12,7 @@ import {
 } from "@zcode/contracts";
 import { omitMcpServers, resolveTrustedOfficialCuaServerNames } from "../mcp-config.js";
 import { resolveDefaultEmbeddedSearchBackend } from "./embedded-search-backend.js";
-import { getProjectMemoryRoot } from "./paths.js";
+import { getMemoryCliStorageRoot, getProjectMemoryRoot } from "./paths.js";
 import type { ZCodeAppOptions } from "./types.js";
 import {
   resolveRegistryOwnedModelSelection,
@@ -174,7 +174,8 @@ export function resolveAppRuntimeConfig(input: {
       profiles: [...(options.runtimeConfig?.subagents?.profiles ?? []), ...subagentProfiles],
     },
     memory: {
-      cliStorageRoot,
+      // 记忆必须与设置页同根，跟随桌面端数据根；其余运行时状态继续用本地 cliStorageRoot。
+      cliStorageRoot: getMemoryCliStorageRoot(cliStorageRoot, options.env ?? process.env),
       enabled: options.runtimeConfig?.memory?.enabled ?? configResult.config.features.memory,
       ...(options.runtimeConfig?.memory?.extractionEnabled === undefined
         ? {}

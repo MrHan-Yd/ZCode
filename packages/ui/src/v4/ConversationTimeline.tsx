@@ -1779,7 +1779,9 @@ function ConversationTimelineImpl({
               className={cn(
                 centeredEmptyLayout
                   ? "flex w-full max-w-2xl shrink-0 items-center justify-center"
-                  : "min-h-0 flex-1",
+                  : // 非草稿空态（冷恢复骨架）用 flex-col，让内容能贴到槽位底部：
+                    // 首帧内容是尾窗 + 吸底，骨架留在顶部会产生「骨架在顶、内容在底」的跳变。
+                    "flex min-h-0 flex-1 flex-col",
                 !centeredEmptyLayout && summaryPanelInlineOffsetClassName,
               )}
             >

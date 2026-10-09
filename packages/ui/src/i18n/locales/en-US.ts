@@ -4535,6 +4535,9 @@ const enUS: Record<string, string> = {
   "chat.empty.createWorkspace.error.required": "Workspace name is required.",
   "chat.empty.createWorkspace.error.separator": "Workspace name cannot contain / or \\.",
   "chat.empty.createWorkspace.error.createFailed": "Could not create workspace.",
+  // First-frame loading placeholder: the timeline is no longer blank during cold resume.
+  "chat.loading.preparing": "Loading conversation",
+  "chat.loading.lastReply": "Previous reply",
   "chat.emptyResult.title": "No visible output",
   "chat.emptyResult.description":
     "This task finished without any chat content. It may have been stopped before the model produced a response.",

@@ -4,15 +4,19 @@
  * 纯入口件：草稿文本的事实源仍在 Lexical 编辑器，这里只负责发起一次一次性生成、
  * 把过程状态（pending / 取消）留在组件内，结果交给 onEnhanced 写回草稿。
  * 不用全局 store 存 pending，避免出现第二份「草稿是否正在被增强」的事实。
+ *
+ * 取消靠 requestId 而不是 AbortSignal：AbortSignal 过不了 @zcode/rpc 的序列化边界
+ * （会被退化成 {}），服务端在途表的键必须是可序列化的 id。
  */
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { LoaderIcon, SparklesIcon } from "lucide-react";
-import { TID_V4_COMPOSER_PROMPT_ENHANCE, type ModelSelection } from "@zcode/shared";
+import { TID_V4_COMPOSER_PROMPT_ENHANCE, createUuid, type ModelSelection } from "@zcode/shared";
 import { Button } from "@/components/ui/button.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { toast } from "@/components/ui/toast.js";
 import { useOptionalServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { logger } from "@/logger.js";
 
 interface V4ComposerPromptEnhanceButtonProps {
   workspacePath: string;
@@ -47,17 +51,26 @@ function V4ComposerPromptEnhanceButtonImpl({
   const services = useOptionalServices();
   const service = services?.promptEnhanceService;
   const [pending, setPending] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
+  /** 当前在途请求 id；服务端据此在途表定位要中断的那次生成。 */
+  const requestIdRef = useRef<string | null>(null);
   // 取消与重入都靠版本号判定：只有仍属于当前这次运行的结果才允许写回草稿。
   const runIdRef = useRef(0);
 
   useEffect(
     () => () => {
+      const requestId = requestIdRef.current;
       runIdRef.current += 1;
-      abortRef.current?.abort();
-      abortRef.current = null;
+      requestIdRef.current = null;
+      setPending(false);
+      // 卸载/换服务时把在途请求交回服务端取消，避免已无人接收的生成继续跑完。
+      if (requestId) {
+        void service?.cancel(requestId).catch((error: unknown) => {
+          // 组件已不在，取消失败也没有可展示的落点，只留诊断日志。
+          logger.warn("[promptEnhance] 卸载时取消增强请求失败", { requestId, error });
+        });
+      }
     },
-    [],
+    [service],
   );
 
   const reportFailure = useCallback(
@@ -89,13 +102,20 @@ function V4ComposerPromptEnhanceButtonImpl({
     if (!service) return;
 
     if (pending) {
-      // 再点一次取消：本地 workspace 会真正中断服务端生成；远端受 ProxyChannel 限制
-      // 只会停止本地等待，服务端那次生成仍会跑完（见 specs/prompt-enhance.md）。
+      // 再点一次取消：把 requestId 交给服务端在途表，由 host 真正中断本次生成
+      // （workspace/cancelGenerateText）。本地立刻回到空闲并丢弃随后到达的结果。
+      const requestId = requestIdRef.current;
       runIdRef.current += 1;
-      abortRef.current?.abort();
-      abortRef.current = null;
+      requestIdRef.current = null;
       setPending(false);
       reportFailure({ reason: "aborted" });
+      if (requestId) {
+        // 取消是 best-effort 控制面操作：失败不回滚「本地已回到空闲」这个状态，
+        // 服务端那次生成最坏情况就是跑完。
+        void service.cancel(requestId).catch((error: unknown) => {
+          logger.warn("[promptEnhance] 取消增强请求失败", { requestId, error });
+        });
+      }
       return;
     }
 
@@ -110,8 +130,8 @@ function V4ComposerPromptEnhanceButtonImpl({
     }
 
     const runId = (runIdRef.current += 1);
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const requestId = createUuid();
+    requestIdRef.current = requestId;
     setPending(true);
 
     void service
@@ -121,7 +141,7 @@ function V4ComposerPromptEnhanceButtonImpl({
         ...(remoteSessionId ? { remoteSessionId } : {}),
         selection,
         text: draft,
-        signal: controller.signal,
+        requestId,
       })
       .then((result) => {
         if (runId !== runIdRef.current) return;
@@ -140,7 +160,7 @@ function V4ComposerPromptEnhanceButtonImpl({
       })
       .finally(() => {
         if (runId !== runIdRef.current) return;
-        abortRef.current = null;
+        requestIdRef.current = null;
         setPending(false);
       });
   }, [

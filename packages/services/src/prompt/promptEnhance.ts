@@ -33,7 +33,13 @@ export interface PromptEnhanceParams {
   selection: ZCodeWorkspaceGenerateTextParams["selection"];
   /** 输入框当前草稿原文。 */
   text: string;
-  signal?: AbortSignal;
+  /**
+   * 调用方生成的请求 id，与 cancel(requestId) 配对。
+   * 这里刻意不用 AbortSignal：AbortSignal 过不了 @zcode/rpc 的序列化边界
+   * （非原始对象走 JSON fallback，signal 会退化成 {}，host 侧再调 addEventListener
+   * 就抛 TypeError）。可序列化的 requestId 只在 host 内换成真实 signal。
+   */
+  requestId: string;
 }
 
 /**
@@ -42,6 +48,8 @@ export interface PromptEnhanceParams {
  */
 export interface IPromptEnhanceService {
   enhance(params: PromptEnhanceParams): Promise<PromptEnhanceResult>;
+  /** 取消在途增强；requestId 未知或已结束时为幂等空操作。 */
+  cancel(requestId: string): Promise<void>;
 }
 
 export const IPromptEnhanceService = createServiceDescriptor<IPromptEnhanceService>(
@@ -65,8 +73,13 @@ export function createPromptEnhanceService(options: {
   textGenerator: PromptEnhanceTextGenerator;
   logger?: ServiceLogger;
 }): IPromptEnhanceService {
+  // 「这次增强还能不能被取消」的唯一事实源：requestId → 本次生成的 AbortController。
+  // 真实 AbortSignal 只在这里创建并直接交给同进程的 textGenerator，不过 RPC 边界。
+  const inFlight = new Map<string, AbortController>();
+
   return {
     async enhance(params: PromptEnhanceParams): Promise<PromptEnhanceResult> {
+      const requestId = params.requestId?.trim() ?? "";
       const draft = normalizeDraft(params.text);
       if (!draft) {
         return { ok: false, reason: "empty-draft" };
@@ -83,12 +96,19 @@ export function createPromptEnhanceService(options: {
         ...(params.selection.options ? { options: { ...params.selection.options } } : {}),
       };
 
+      const controller = new AbortController();
+      // 调用方复用同一 requestId 时按「新请求替换旧请求」处理：先中止旧的再接管，
+      // 否则旧 controller 会永久留在在途表里，那次生成也再无法取消。
+      inFlight.get(requestId)?.abort();
+      inFlight.set(requestId, controller);
+
       options.logger?.info(undefined, "开始增强提示词", {
         workspacePath: params.workspacePath,
         workspaceIdentity: params.workspaceIdentity,
         providerId,
         model: modelId,
         draftChars: draft.length,
+        requestId,
       });
 
       let raw: string;
@@ -101,11 +121,11 @@ export function createPromptEnhanceService(options: {
           messages: buildPromptEnhanceMessages(draft),
           querySource: PROMPT_ENHANCE_QUERY_SOURCE,
           maxOutputTokens: MAX_OUTPUT_TOKENS,
-          ...(params.signal ? { signal: params.signal } : {}),
+          signal: controller.signal,
         });
         raw = result.text;
       } catch (error) {
-        if (params.signal?.aborted) {
+        if (controller.signal.aborted) {
           return { ok: false, reason: "aborted" };
         }
         // provider 未就绪在 UI 上和「模型没配置」是同一个处置：让用户先去配模型，
@@ -121,6 +141,11 @@ export function createPromptEnhanceService(options: {
           detail,
         });
         return { ok: false, reason: "request-failed", detail };
+      } finally {
+        // 只清理仍属于本次 controller 的条目：同 id 新请求接管后不能误删新的在途记录。
+        if (inFlight.get(requestId) === controller) {
+          inFlight.delete(requestId);
+        }
       }
 
       const text = sanitizeEnhancedPrompt(raw);
@@ -129,6 +154,12 @@ export function createPromptEnhanceService(options: {
         return { ok: false, reason: "invalid-output" };
       }
       return { ok: true, text };
+    },
+
+    async cancel(requestId: string): Promise<void> {
+      // 未知 id、已结束的 id、重复调用都是空操作：AbortController.abort() 本身幂等，
+      // 在途条目的删除始终由 enhance 的 finally 负责，这里不改变表的归属。
+      inFlight.get(requestId?.trim() ?? "")?.abort();
     },
   };
 }

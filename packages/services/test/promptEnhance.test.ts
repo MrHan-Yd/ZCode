@@ -17,9 +17,7 @@ interface CapturedGenerateTextParams {
   signal?: AbortSignal;
 }
 
-function createHarness(
-  respond: (params: CapturedGenerateTextParams) => Promise<{ text: string }>,
-) {
+function createHarness(respond: (params: CapturedGenerateTextParams) => Promise<{ text: string }>) {
   const calls: CapturedGenerateTextParams[] = [];
   const service = createPromptEnhanceService({
     textGenerator: {
@@ -36,7 +34,15 @@ const baseParams: PromptEnhanceParams = {
   workspacePath: "/tmp/workspace",
   selection: { providerId: "provider-a", modelId: "model-a" },
   text: "修复登录页的报错",
+  requestId: "req-base",
 };
+
+/** 生成器里「一直挂起直到 signal 被 abort」的响应，用来验证取消真的传到了底层。 */
+function pendingUntilAborted(params: CapturedGenerateTextParams): Promise<{ text: string }> {
+  return new Promise<{ text: string }>((_resolve, reject) => {
+    params.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+  });
+}
 
 test("提示词增强：空草稿不发起模型请求", async () => {
   const { calls, service } = createHarness(async () => ({ text: "unused" }));
@@ -106,16 +112,65 @@ test("提示词增强：provider 未就绪归为 model-unavailable", async () =>
   assert.equal(result.ok === false ? result.reason : "", "model-unavailable");
 });
 
-test("提示词增强：取消后归为 aborted", async () => {
-  const controller = new AbortController();
-  const { service } = createHarness(async () => {
-    controller.abort();
-    throw new Error("aborted");
+test("提示词增强：传给生成器的 signal 是真实 AbortSignal", async () => {
+  const { calls, service } = createHarness(async () => ({ text: "ok" }));
+
+  await service.enhance(baseParams);
+
+  // 回归护栏：一旦有人把经 RPC 反序列化过的 signal（{}）重新塞回参数，
+  // 这里就会失去 addEventListener，host 侧随即抛 TypeError。
+  const signal = calls[0]?.signal;
+  assert.equal(typeof signal?.addEventListener, "function");
+  assert.equal(signal?.aborted, false);
+});
+
+test("提示词增强：cancel(requestId) 中断在途生成并归为 aborted", async () => {
+  let seenSignal: AbortSignal | undefined;
+  const { service } = createHarness(async (params) => {
+    seenSignal = params.signal;
+    return await pendingUntilAborted(params);
   });
 
-  const result = await service.enhance({ ...baseParams, signal: controller.signal });
+  const pendingResult = service.enhance({ ...baseParams, requestId: "req-cancel" });
+  await Promise.resolve();
+  await service.cancel("req-cancel");
 
-  assert.deepEqual(result, { ok: false, reason: "aborted" });
+  assert.deepEqual(await pendingResult, { ok: false, reason: "aborted" });
+  assert.equal(seenSignal?.aborted, true);
+});
+
+test("提示词增强：cancel 对未知或已结束的 requestId 是幂等空操作", async () => {
+  const { service } = createHarness(async () => ({ text: "ok" }));
+
+  await service.cancel("never-started");
+  await service.cancel("never-started");
+
+  await service.enhance({ ...baseParams, requestId: "req-done" });
+  // 已结束：在途表已清理，再取消不应抛错也不影响后续请求。
+  await service.cancel("req-done");
+  assert.deepEqual(await service.enhance({ ...baseParams, requestId: "req-done" }), {
+    ok: true,
+    text: "ok",
+  });
+});
+
+test("提示词增强：同一 requestId 再次 enhance 会中止上一次在途请求", async () => {
+  const signals: Array<AbortSignal | undefined> = [];
+  const { service } = createHarness(async (params) => {
+    signals.push(params.signal);
+    if (signals.length === 1) {
+      return await pendingUntilAborted(params);
+    }
+    return { text: "第二次" };
+  });
+
+  const first = service.enhance({ ...baseParams, requestId: "req-same" });
+  await Promise.resolve();
+  const second = await service.enhance({ ...baseParams, requestId: "req-same" });
+
+  assert.deepEqual(second, { ok: true, text: "第二次" });
+  assert.deepEqual(await first, { ok: false, reason: "aborted" });
+  assert.equal(signals[0]?.aborted, true);
 });
 
 test("提示词增强：其他失败保留 detail 供 UI 展示", async () => {

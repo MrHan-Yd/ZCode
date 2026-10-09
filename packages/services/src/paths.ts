@@ -1,5 +1,5 @@
 /* path 规则集中维护：旧 task 快照与 provider 配置路径仍在这里收口。 */
-import { lstatSync } from "node:fs";
+import { existsSync, lstatSync } from "node:fs";
 import { cp } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { basename, join, win32 } from "node:path";
@@ -227,6 +227,11 @@ export function getLegacyDeletedTaskSessionSnapshotPath(
  * Copy the .zcode/v2 data directory from one base dir to another.
  * Excludes setting.json and its transient atomic-write siblings — bootstrap
  * state must only live at the default homedir location.
+ *
+ * 同时带走 `.zcode/cli/memories`：记忆属于数据根相对路径（设置页按
+ * `getZCodeDataRootDir()` 读它，运行时同样跟随数据根），漏掉它就会出现
+ * "运行时按新根写入、旧记忆留在原地、设置页显示为存在但不生效" 的分叉。
+ * 见 specs/memory-data-root-continuity.md。
  */
 export async function copyDataDirectory(oldBaseDir: string, newBaseDir: string): Promise<void> {
   const oldDir = join(oldBaseDir, ".zcode", "v2");
@@ -234,22 +239,35 @@ export async function copyDataDirectory(oldBaseDir: string, newBaseDir: string):
   await cp(oldDir, newDir, {
     recursive: true,
     force: false,
-    filter: (source) => {
-      const sourceName = basename(source);
-      if (sourceName === "setting.json" || sourceName.startsWith("setting.json.")) {
-        // setting.json.lock 和 setting.json.*.tmp 由原子写入短暂创建/删除，
-        // 复制过程中扫描到已消失的 lock 会触发 ENOENT，并让数据目录迁移失败。
-        // 这些文件都属于 bootstrap 写入中间态，不能迁移到新数据根。
-        return false;
-      }
-      // Windows 非提权环境下 fs.cp 无法复制符号链接（EPERM）。
-      // 跳过符号链接可避免 Windows 非提权环境下 fs.cp 报 EPERM。
-      try {
-        if (lstatSync(source).isSymbolicLink()) return false;
-      } catch {
-        // lstat 失败时放行，让 cp 自行处理
-      }
-      return true;
-    },
+    filter: shouldCopyDataEntry,
   });
+
+  const oldMemoriesDir = join(oldBaseDir, ".zcode", "cli", "memories");
+  // 源目录不存在时跳过：全新安装没有记忆，不能让迁移因此失败。
+  if (existsSync(oldMemoriesDir)) {
+    await cp(oldMemoriesDir, join(newBaseDir, ".zcode", "cli", "memories"), {
+      recursive: true,
+      force: false,
+      filter: shouldCopyDataEntry,
+    });
+  }
+}
+
+/** 迁移时哪些条目可以复制：排除 bootstrap 中间态与符号链接（Windows 非提权下 fs.cp 会 EPERM）。 */
+function shouldCopyDataEntry(source: string): boolean {
+  const sourceName = basename(source);
+  if (sourceName === "setting.json" || sourceName.startsWith("setting.json.")) {
+    // setting.json.lock 和 setting.json.*.tmp 由原子写入短暂创建/删除，
+    // 复制过程中扫描到已消失的 lock 会触发 ENOENT，并让数据目录迁移失败。
+    // 这些文件都属于 bootstrap 写入中间态，不能迁移到新数据根。
+    return false;
+  }
+  // Windows 非提权环境下 fs.cp 无法复制符号链接（EPERM）。
+  // 跳过符号链接可避免 Windows 非提权环境下 fs.cp 报 EPERM。
+  try {
+    if (lstatSync(source).isSymbolicLink()) return false;
+  } catch {
+    // lstat 失败时放行，让 cp 自行处理
+  }
+  return true;
 }
