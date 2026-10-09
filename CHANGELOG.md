@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.16.2](https://github.com/MrHan-Yd/ZCode/compare/v3.16.1...v3.16.2) (2026-10-09)
+
+### Features
+
+* 统一记忆数据根并优化会话加载与增强取消 ([83feae2](https://github.com/MrHan-Yd/ZCode/commit/83feae2273b5a9607845c6cd64db2600fe014a8b))
+  * 记忆读写与数据目录迁移跟随 ZCODE_DATA_BASE_DIR，避免设置页与运行时口径分叉
+  * 提示词增强改用可序列化 requestId，跨越 RPC 边界后再创建 AbortSignal 并支持幂等取消
+  * 会话冷恢复新增首帧加载骨架与上一轮回复预览，补充相关测试与规范
+
+
+### Documentation
+
+* 补充 README 的 v3.16.1 更新说明 ([0b14b15](https://github.com/MrHan-Yd/ZCode/commit/0b14b157040f0f1bb84402807e463ff0adbd2631))
+
 ## [3.16.1](https://github.com/MrHan-Yd/ZCode/compare/v3.16.0...v3.16.1) (2026-10-08)
 
 ### Bug Fixes
