@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.16.4](https://github.com/MrHan-Yd/ZCode/compare/v3.16.3...v3.16.4) (2026-10-10)
+
+### Bug Fixes
+
+* 补扫限频不再吞掉落空 query 的补扫机会 ([968f475](https://github.com/MrHan-Yd/ZCode/commit/968f4758170de9cd66540f2c15f3970ae5efbae6))
+
+
+### Chores
+
+* changelog 支持 perf 类型并补记 v3.16.3 提速条目 ([75547d7](https://github.com/MrHan-Yd/ZCode/commit/75547d7fe87bfd82d48bc65000f91adbf97f65a7))
+
 ## [3.16.3](https://github.com/MrHan-Yd/ZCode/compare/v3.16.2...v3.16.3) (2026-10-10)
 
 ### Features
