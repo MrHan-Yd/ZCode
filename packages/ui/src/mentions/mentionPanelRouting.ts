@@ -3,12 +3,8 @@ import type { PromptInputTrigger } from "@/lib/promptInputTriggers.js";
 export type MentionPanelGroupId = "plugins" | "files" | "sessions" | "whiteboards" | "skills";
 export type SessionMentionWorkspaceScope = "current-workspace" | "same-authority-workspaces";
 
-const CONTEXT_GROUP_ORDER: readonly MentionPanelGroupId[] = [
-  "plugins",
-  "files",
-  "sessions",
-  "whiteboards",
-];
+// 会话引用统一走 `#`，`@` 不再返回会话候选，避免与 `#` 重复。
+const CONTEXT_GROUP_ORDER: readonly MentionPanelGroupId[] = ["plugins", "files", "whiteboards"];
 const SESSION_GROUP_ORDER: readonly MentionPanelGroupId[] = ["sessions"];
 const SKILL_GROUP_ORDER: readonly MentionPanelGroupId[] = ["skills"];
 
@@ -32,8 +28,8 @@ export function getMentionPanelGroupOrder(
 }
 
 /**
- * `@` 与 `#` 虽然复用会话 provider，但产品范围不同。
- * 若在共享 provider 内无条件扩展 workspace，`@` 会被连带扩容；范围必须由触发器路由显式决定。
+ * 会话候选只由 `#` 触发（`@` 已不再查询会话），`#` 可扩展到同 authority 的 workspace；
+ * 保留 default 分支兜底，避免触发器路由改动连带到 provider 行为。
  */
 export function getSessionMentionWorkspaceScope(
   trigger: PromptInputTrigger | null | undefined,

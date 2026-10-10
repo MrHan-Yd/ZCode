@@ -1,12 +1,9 @@
 import { ContextMentionOptionContent } from "@/mentions/components/ContextMentionOptionContent.js";
 import { useFileMentionProvider } from "@/mentions/providers/fileMentionProvider.js";
-import { useSessionsMentionProvider } from "@/mentions/providers/sessionsMentionProvider.js";
 import {
   MENTION_FILES_ONLY_DEFAULT_PREVIEW_LIMIT,
   buildVisibleMentionGroups,
 } from "@/mentions/mentionSearch.js";
-import { getSessionMentionWorkspaceScope } from "@/mentions/mentionPanelRouting.js";
-import { useChatViewActiveTaskProvider } from "@/v4/activeTaskProvider.js";
 import { useMemo, useRef, useState, type MutableRefObject } from "react";
 import type { EditorState } from "lexical";
 import { GoalIcon, Info, PaperclipIcon, PlusIcon, Workflow } from "lucide-react";
@@ -86,7 +83,6 @@ export function ChatPromptActionMenu({
     intl.formatMessage({ id: "chat.mention.plugins.empty" }),
     intl.formatMessage({ id: "chat.mention.plugins.title" }),
   );
-  const provider = useChatViewActiveTaskProvider(sessionId, workspacePath, workspaceIdentity);
   const slashCommands = useSlashCommands(workspacePath, workspaceIdentity);
   const files = useFileMentionProvider(
     workspacePath,
@@ -97,21 +93,9 @@ export function ChatPromptActionMenu({
     intl.formatMessage({ id: "chat.mention.files.title" }),
     MENTION_FILES_ONLY_DEFAULT_PREVIEW_LIMIT,
   );
-  const sessions = useSessionsMentionProvider(
-    provider,
-    workspacePath,
-    workspaceIdentity,
-    "",
-    open && !disabled && showPlugins,
-    getSessionMentionWorkspaceScope("@"),
-    intl.formatMessage({ id: "chat.mention.sessions.empty" }),
-    intl.formatMessage({ id: "chat.mention.sessions.title" }),
-  );
+  // 会话引用统一走 `#`，`@` 上下文菜单不再列会话候选，只保留文件上下文。
   const contextGroups = buildVisibleMentionGroups(
-    [
-      { id: "files", ...files },
-      { id: "sessions", ...sessions },
-    ].map((group) => ({
+    [{ id: "files", ...files }].map((group) => ({
       ...group,
       errorText: group.error?.message ?? null,
     })),

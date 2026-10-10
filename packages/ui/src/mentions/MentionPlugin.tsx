@@ -202,7 +202,8 @@ export function MentionPlugin({
     workspacePath,
     workspaceIdentity,
     deferredActiveQuery,
-    isOpen && (isContextTrigger || isSessionTrigger),
+    // 会话引用统一走 `#`，`@` 不再查询/展示会话候选，避免与 `#` 重复。
+    isOpen && isSessionTrigger,
     getSessionMentionWorkspaceScope(activeTrigger?.trigger),
     intl.formatMessage({ id: "chat.mention.sessions.empty" }),
     intl.formatMessage({ id: "chat.mention.sessions.title" }),
