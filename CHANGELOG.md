@@ -1,5 +1,25 @@
 # Changelog
 
+## [3.16.3](https://github.com/MrHan-Yd/ZCode/compare/v3.16.2...v3.16.3) (2026-10-10)
+
+### Features
+
+* 会话引用统一走 #，@ 不再列出会话 ([ec86a07](https://github.com/MrHan-Yd/ZCode/commit/ec86a07ce10138dd69837cc0994fc82c67889aa1))
+
+* 模型智能配置（本地数据源 + 手动远端同步） ([ce10bc5](https://github.com/MrHan-Yd/ZCode/commit/ce10bc55dea9110105cf9bdf96d10dacec34c08e))
+
+* Git 提交信息支持按文件选择变更 ([2714daf](https://github.com/MrHan-Yd/ZCode/commit/2714dafb2f2c3c0f7c67d87a2f35099f1602d0ef))
+
+
+### Bug Fixes
+
+* 供应商重命名焦点交接避免菜单收尾抢焦 ([70b3e65](https://github.com/MrHan-Yd/ZCode/commit/70b3e65fb60ceb124d4a1b7f72c0b178b509ad88))
+
+
+### Documentation
+
+* 补充 README 的 v3.16.2 更新说明 ([8aa022e](https://github.com/MrHan-Yd/ZCode/commit/8aa022eb5e08da6601a745254e28d3cb9c840e01))
+
 ## [3.16.2](https://github.com/MrHan-Yd/ZCode/compare/v3.16.1...v3.16.2) (2026-10-09)
 
 ### Features
