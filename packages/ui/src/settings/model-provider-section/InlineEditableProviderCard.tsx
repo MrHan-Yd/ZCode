@@ -205,6 +205,10 @@ export function InlineEditableProviderCard({
   const nameInputRef = useRef<HTMLInputElement | null>(null);
   const nameCompositionActiveRef = useRef(false);
   const nameEditProviderIdRef = useRef<string | null>(null);
+  // 菜单关闭收尾阶段 Radix 仍可能把焦点抢回菜单或触发按钮，
+  // 这段时间内的 blur 不代表用户结束编辑，用保护窗口区分开。
+  const nameEditFocusGuardRef = useRef(false);
+  const nameEditFocusGuardTimeoutRef = useRef<number | null>(null);
   const technicalInputCompositionActiveRef = useRef(false);
   const deleteRequestedRef = useRef(false);
   const selfSaveRequestedRef = useRef(false);
@@ -263,6 +267,26 @@ export function InlineEditableProviderCard({
     syncField("baseUrlValue", resolvedBaseUrl, setBaseUrlValue);
     syncField("apiKeyValue", resolvedApiKey, setApiKeyValue);
   }, [provider]);
+
+  const armNameEditFocusGuard = useCallback(() => {
+    nameEditFocusGuardRef.current = true;
+    if (nameEditFocusGuardTimeoutRef.current !== null) {
+      window.clearTimeout(nameEditFocusGuardTimeoutRef.current);
+    }
+    nameEditFocusGuardTimeoutRef.current = window.setTimeout(() => {
+      nameEditFocusGuardRef.current = false;
+      nameEditFocusGuardTimeoutRef.current = null;
+    }, 350);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (nameEditFocusGuardTimeoutRef.current !== null) {
+        window.clearTimeout(nameEditFocusGuardTimeoutRef.current);
+        nameEditFocusGuardTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   const markDraftDirty = useCallback((field: keyof ProviderDraftValues) => {
     dirtyProviderFieldsRef.current.add(field);
@@ -525,6 +549,12 @@ export function InlineEditableProviderCard({
   const handleNameBlur = useCallback(() => {
     // Esc/切换供应商先取消编辑意图，随后发生的 blur 不得补发保存。
     if (nameEditProviderIdRef.current !== provider.providerId) return;
+    if (nameEditFocusGuardRef.current) {
+      // 菜单关闭收尾阶段的焦点竞争：blur 不代表用户结束重命名，
+      // 保持编辑态并把焦点还给输入框，否则重命名会刚进入就退出。
+      requestAnimationFrame(() => nameInputRef.current?.focus());
+      return;
+    }
     nameEditProviderIdRef.current = null;
     setEditingName(false);
     const trimmed = draftRef.current.nameValue.trim();
@@ -565,9 +595,10 @@ export function InlineEditableProviderCard({
   const handleStartEditName = useCallback(() => {
     nameEditProviderIdRef.current = provider.providerId;
     nameCompositionActiveRef.current = false;
+    armNameEditFocusGuard();
     setEditingName(true);
     requestAnimationFrame(() => nameInputRef.current?.focus());
-  }, [provider.providerId]);
+  }, [armNameEditFocusGuard, provider.providerId]);
 
   const saveConnection = useCallback(
     () => void commitPendingDraft("connection-blur").catch(() => undefined),

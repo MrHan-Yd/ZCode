@@ -7,6 +7,7 @@ import {
   type RefObject,
   type ReactNode,
 } from "react";
+
 import type {
   ProviderSettingsFormProvider,
   ProviderSettingsFormModel,
@@ -143,19 +144,22 @@ export function ProviderCardHeader({
             <DropdownMenuContent
               align="end"
               onCloseAutoFocus={(event) => {
-                // 重命名后的焦点交给输入框，不能被菜单关闭时重新抢回触发按钮。
-                if (renameRequestedRef.current) {
-                  event.preventDefault();
-                  renameRequestedRef.current = false;
-                }
+                // 菜单关闭收尾时 Radix 会把焦点还给触发按钮，关闭动画期间菜单自身也可能重新抢焦。
+                // 若在 onSelect 时立刻进入编辑态，名称输入框刚聚焦就被抢走并立即 blur，
+                // 结果就是"点了重命名却没反应/马上取消"。这里先拦下这次焦点回收，
+                // 等菜单收尾这一轮结束后再把编辑态交接给输入框。
+                if (!renameRequestedRef.current) return;
+                event.preventDefault();
+                renameRequestedRef.current = false;
+                window.setTimeout(onStartEditName, 0);
               }}
             >
               {nameEditable ? (
                 <DropdownMenuItem
                   data-testid={TID_MODEL_PROVIDER_NAME_EDIT_BUTTON}
                   onSelect={() => {
+                    // 只登记意图，真正的编辑态切换等菜单关闭收尾后再执行。
                     renameRequestedRef.current = true;
-                    onStartEditName();
                   }}
                 >
                   <Pencil className="size-3.5" />
