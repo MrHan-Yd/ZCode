@@ -19,6 +19,8 @@ export interface ProviderConfigRuntimeOptions {
   readonly onPersonalConfigPollingError?: (error: unknown) => void;
   readonly personalFilePath?: string;
   readonly personalPollingIntervalMs?: number | false;
+  /** 用户可同步的模型智能配置规则文件；缺省为 Personal Provider Config 同目录。 */
+  readonly modelSmartConfigFilePath?: string;
   readonly readLegacyProviders?: () => Promise<readonly ModelProviderConfig[]>;
   readonly watch?: boolean;
 }
@@ -43,6 +45,7 @@ export class ProviderConfigRuntime {
       personalFilePath:
         options.personalFilePath ?? join(getAppConfigDir(), PERSONAL_PROVIDER_CONFIG_FILE_NAME),
       personalPollingIntervalMs: options.personalPollingIntervalMs,
+      modelSmartConfigFilePath: options.modelSmartConfigFilePath,
       watch: options.watch,
       ...(options.readLegacyProviders
         ? {

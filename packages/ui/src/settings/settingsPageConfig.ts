@@ -18,6 +18,7 @@ import {
   WandSparkles,
   Keyboard,
   FileSearch,
+  SlidersHorizontal,
 } from "lucide-react";
 import { isSettingsSectionEnabled, type SettingsSectionId } from "@/lib/settingsNavigation.js";
 import type { Theme } from "@/useTheme.js";
@@ -71,6 +72,13 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     id: "modelProvider",
     icon: Package,
     titleId: "settings.modelProviderTitle",
+    groupId: "basics",
+  },
+  {
+    // 模型智能配置紧跟「模型」：两者都是模型参数来源，放在同一组便于理解「本地/远端同步」的关系。
+    id: "modelSmartConfig",
+    icon: SlidersHorizontal,
+    titleId: "settings.modelSmartConfig.title",
     groupId: "basics",
   },
   {

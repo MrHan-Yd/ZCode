@@ -3,7 +3,10 @@ import {
   type ProviderConfigLayerSnapshot,
   type ProviderConfigLayerUpdate,
 } from "@zcode/provider";
+import { dirname, join } from "node:path";
 import { NodeZCodeBuiltinProviderConfigSource } from "./zcode-builtin-provider-config-source.js";
+import { NodeModelSmartConfigRulesSource } from "./model-smart-config-source.js";
+import { MODEL_SMART_CONFIG_FILE_NAME } from "./runtime-paths.js";
 import {
   EndpointScopedZCodeBuiltinSource,
   type EndpointScopedZCodeBuiltinSourceOptions,
@@ -31,6 +34,8 @@ export interface NodeProviderConfigRuntimeOptions {
   readonly onPersonalConfigPollingError?: (error: unknown) => void;
   readonly personalFilePath: string;
   readonly personalPollingIntervalMs?: number | false;
+  /** 用户可同步的模型智能配置规则文件；缺省为 Personal Provider Config 同目录。 */
+  readonly modelSmartConfigFilePath?: string;
   readonly importLegacy?: (
     zcodeBuiltin: ProviderConfigLayerSnapshot,
   ) => Promise<ProviderConfigLayerUpdate | null>;
@@ -44,6 +49,7 @@ export class NodeProviderConfigRuntime {
     | NodeZCodeBuiltinProviderConfigSource
     | EndpointScopedZCodeBuiltinSource;
   readonly #personalRepository: NodePersonalProviderConfigRepository;
+  readonly #modelSmartRulesSource: NodeModelSmartConfigRulesSource;
   readonly #remoteSynchronizer?: ZCodeBuiltinRemoteSynchronizer;
   readonly #onRemoteRefreshError?: (error: unknown) => void;
   #startPromise: Promise<void> | null = null;
@@ -83,9 +89,16 @@ export class NodeProviderConfigRuntime {
           }
         : {}),
     });
+    this.#modelSmartRulesSource = new NodeModelSmartConfigRulesSource({
+      filePath:
+        options.modelSmartConfigFilePath?.trim() ||
+        join(dirname(options.personalFilePath), MODEL_SMART_CONFIG_FILE_NAME),
+      watch: options.watch,
+    });
     this.configService = new ProviderConfigService({
       zcodeBuiltinSource: this.#zcodeBuiltinSource,
       personalRepository: this.#personalRepository,
+      modelSmartRulesSource: this.#modelSmartRulesSource,
     });
   }
 
@@ -166,6 +179,7 @@ export class NodeProviderConfigRuntime {
     this.#remoteSynchronizer?.dispose();
     this.configService.dispose();
     this.#personalRepository.dispose();
+    this.#modelSmartRulesSource.dispose();
     this.#zcodeBuiltinSource.dispose();
   }
 }

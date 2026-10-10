@@ -12,6 +12,14 @@ export interface ProviderSource<TSnapshot> {
   onDidChange(listener: (reason: string) => void): () => void;
 }
 
+/**
+ * 用户可同步的模型智能配置规则源。除规则外还暴露内容 revision，
+ * 让 Provider Config Snapshot 能在同步写盘后真实改变 revision（否则 Registry 会短路不刷新）。
+ */
+export interface ModelSmartConfigRulesSource extends ProviderSource<ModelConfigRules> {
+  readWithRevision(): Promise<{ readonly revision: string; readonly rules: ModelConfigRules }>;
+}
+
 export interface ProviderConfigSnapshot {
   readonly revision: string;
   readonly zcodeBuiltinRevision: string;

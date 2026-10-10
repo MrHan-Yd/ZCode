@@ -222,6 +222,13 @@ export type {
   ProjectMemoryWorkspaceSummary,
 } from "./memory/memory.js";
 
+// ModelSmartConfig service — IModelSmartConfigService is both a type (interface) and value (descriptor).
+export { IModelSmartConfigService } from "./model-provider/modelSmartConfig.js";
+export type {
+  ModelSmartConfigEntry,
+  ModelSmartConfigView,
+} from "./model-provider/modelSmartConfig.js";
+
 export type { SessionRealtimePort } from "./session/sessionRealtimePort.js";
 
 // FileWatcher service — IFileWatcherService is both a type (interface) and value (descriptor)

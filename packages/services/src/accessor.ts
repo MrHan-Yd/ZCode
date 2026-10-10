@@ -39,6 +39,7 @@ import type { IPromptAttachmentTransferService } from "./prompt-attachment-trans
 import type { IPromptEnhanceService } from "./prompt/promptEnhance.js";
 import type { IWindowControllerService } from "./window-controller/windowController.js";
 import type { IOnboardingRecordService } from "./onboarding/onboardingRecord.js";
+import type { IModelSmartConfigService } from "./model-provider/modelSmartConfig.js";
 import type { IConversationShareService } from "./conversation-share/conversationShare.js";
 
 /** UI 层消费的统一服务接口 */
@@ -91,4 +92,6 @@ export interface IServiceAccessor {
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
   /** Composer 草稿的提示词增强；旧测试 double / 不支持的 host 可不提供，此时 UI 不渲染入口。 */
   readonly promptEnhanceService?: IPromptEnhanceService;
+  /** 模型智能配置（本地文件 + 手动远端同步）；旧测试 double / 不支持的 host 可不提供。 */
+  readonly modelSmartConfigService?: IModelSmartConfigService;
 }

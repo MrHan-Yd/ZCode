@@ -14,11 +14,16 @@ import {
   ProviderConfigMap,
   ProviderConfig as ProviderConfigValue,
   ProviderTemplateMap,
+  mergeModelConfigRules,
   resolveProviderTemplateName,
 } from "./config/index.js";
 import { resolveOwnedOrder } from "./owned-order.js";
 import type { ModelSelection } from "@zcode/shared/model-selection";
-import type { ProviderConfigSnapshot, ProviderSource } from "./sources.js";
+import type {
+  ModelSmartConfigRulesSource,
+  ProviderConfigSnapshot,
+  ProviderSource,
+} from "./sources.js";
 
 export interface ProviderConfigLayerSnapshot {
   readonly revision: string;
@@ -46,6 +51,8 @@ export interface PersonalProviderConfigRepository extends ProviderSource<Provide
 export interface ProviderConfigServiceDependencies {
   readonly zcodeBuiltinSource: ProviderSource<ProviderConfigLayerSnapshot>;
   readonly personalRepository: PersonalProviderConfigRepository;
+  /** 可选的用户同步层：其规则叠加在内置规则之上、个人精确规则之下，解析语义不变。 */
+  readonly modelSmartRulesSource?: ModelSmartConfigRulesSource;
 }
 
 export interface PersonalProviderCreation {
@@ -96,6 +103,7 @@ function writableProviderOverlay(
 export class ProviderConfigService implements ProviderSource<ProviderConfigSnapshot> {
   readonly #zcodeBuiltinSource: ProviderSource<ProviderConfigLayerSnapshot>;
   readonly #personalRepository: PersonalProviderConfigRepository;
+  readonly #modelSmartRulesSource?: ModelSmartConfigRulesSource;
   readonly #listeners = new Set<(reason: string) => void>();
   readonly #sourceDisposers: Array<() => void>;
   #disposed = false;
@@ -103,26 +111,44 @@ export class ProviderConfigService implements ProviderSource<ProviderConfigSnaps
   constructor(dependencies: ProviderConfigServiceDependencies) {
     this.#zcodeBuiltinSource = dependencies.zcodeBuiltinSource;
     this.#personalRepository = dependencies.personalRepository;
+    this.#modelSmartRulesSource = dependencies.modelSmartRulesSource;
     this.#sourceDisposers = [
       this.#zcodeBuiltinSource.onDidChange((reason) => this.#emit(`zcodeBuiltin:${reason}`)),
       this.#personalRepository.onDidChange((reason) => this.#emit(`personal:${reason}`)),
+      ...(this.#modelSmartRulesSource
+        ? [
+            this.#modelSmartRulesSource.onDidChange((reason) =>
+              this.#emit(`modelSmart:${reason}`),
+            ),
+          ]
+        : []),
     ];
   }
 
   async read(): Promise<ProviderConfigSnapshot> {
     this.#assertNotDisposed();
-    const [zcodeBuiltin, personal] = await Promise.all([
+    const [zcodeBuiltin, personal, modelSmart] = await Promise.all([
       this.#zcodeBuiltinSource.read(),
       this.#personalRepository.read(),
+      this.#modelSmartRulesSource
+        ? this.#modelSmartRulesSource.readWithRevision()
+        : Promise.resolve(null),
     ]);
     return Object.freeze({
-      revision: JSON.stringify([zcodeBuiltin.revision, personal.revision]),
+      // 同步层 revision 必须计入：内容变了但 revision 不变会让 Registry 短路，同步规则不生效。
+      revision: JSON.stringify([
+        zcodeBuiltin.revision,
+        personal.revision,
+        modelSmart?.revision ?? "none",
+      ]),
       zcodeBuiltinRevision: zcodeBuiltin.revision,
       personalRevision: personal.revision,
       zcodeBuiltinProviders: zcodeBuiltin.providers,
       zcodeBuiltinProviderTemplates: zcodeBuiltin.providerTemplates ?? ProviderTemplateMap.empty(),
       personalProviders: personal.providers,
-      zcodeBuiltinModelRules: zcodeBuiltin.models,
+      zcodeBuiltinModelRules: modelSmart
+        ? mergeModelConfigRules(zcodeBuiltin.models, modelSmart.rules)
+        : zcodeBuiltin.models,
       personalModels: personal.models,
       personalProviderOrder: personal.providerOrder ?? [],
     });
