@@ -87,13 +87,15 @@ export function useFileMentionProvider(
         if (!active) return;
         const normalizedQuery = normalizeRefreshQuery(debouncedQuery);
         if (entries.length === 0 && normalizedQuery && scope.lastMissQuery !== normalizedQuery) {
-          scope.lastMissQuery = normalizedQuery;
           // 无命中补扫必须绕过 Host TTL，否则外部新文件在缓存有效期内永远不可见；
           // 但整树重扫很贵，连续输入多个落空 query 时用冷却窗口限频，避免反复全量遍历。
           const refreshAllowed =
             scope.lastRefreshAt === null ||
             Date.now() - scope.lastRefreshAt >= FILE_SEARCH_REFRESH_COOLDOWN_MS;
           if (refreshAllowed) {
+            // 只有真正补扫过才记忆该 query。若在冷却期内被跳过也记下来，
+            // 这个 query 就再也不会触发补扫，等于把"缓存期内看不到新文件"的旧问题又放回来了。
+            scope.lastMissQuery = normalizedQuery;
             scope.lastRefreshAt = Date.now();
             entries = await fileService.searchWorkspaceFiles({ ...params, refresh: true });
             if (!active) return;
