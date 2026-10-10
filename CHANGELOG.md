@@ -16,6 +16,11 @@
 * 供应商重命名焦点交接避免菜单收尾抢焦 ([70b3e65](https://github.com/MrHan-Yd/ZCode/commit/70b3e65fb60ceb124d4a1b7f72c0b178b509ad88))
 
 
+### Performance
+
+* @ 文件检索防抖与补扫限频 ([d902679](https://github.com/MrHan-Yd/ZCode/commit/d90267988f57196dacfdf812b2c823404d833f8d))
+
+
 ### Documentation
 
 * 补充 README 的 v3.16.2 更新说明 ([8aa022e](https://github.com/MrHan-Yd/ZCode/commit/8aa022eb5e08da6601a745254e28d3cb9c840e01))

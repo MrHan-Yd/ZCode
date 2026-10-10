@@ -3,6 +3,8 @@ import createConventionalCommitsPreset from "conventional-changelog-conventional
 export const RELEASE_CHANGELOG_TYPES = [
   { type: "feat", section: "Features" },
   { type: "fix", section: "Bug Fixes" },
+  // 漏在这里的类型会被 conventional-changelog 静默丢弃（发布里有该提交，changelog 却没有）。
+  { type: "perf", section: "Performance" },
   { type: "chore", section: "Chores" },
   { type: "docs", section: "Documentation" },
   { type: "refactor", section: "Refactorings" },
