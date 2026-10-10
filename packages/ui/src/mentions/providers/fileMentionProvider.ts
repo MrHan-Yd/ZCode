@@ -30,6 +30,13 @@ function normalizeRefreshQuery(query: string): string {
   return query.trim().toLowerCase();
 }
 
+// `@` 每条键击都会触发一次文件搜索 RPC，即使有 useDeferredValue 也只是降渲染优先级。
+// 150ms 防抖把连续键入合成一次搜索，避免大工作区逐键全量扫描候选。
+const FILE_SEARCH_DEBOUNCE_MS = 150;
+// 命中空结果的补扫会绕过 60s 索引缓存做整树目录遍历（按文件内注释，37 万文件仓可达秒级）。
+// 冷却窗口防止连续输入多个落空 query 时反复整树重扫。
+const FILE_SEARCH_REFRESH_COOLDOWN_MS = 5_000;
+
 export function useFileMentionProvider(
   workspacePath: string,
   workspaceIdentity: string | undefined,
@@ -40,13 +47,22 @@ export function useFileMentionProvider(
   defaultPreviewLimit?: number,
 ): MentionCategoryResult {
   const { fileService } = useServices();
+  // 面板打开时展示旧结果，键入期间不逐键闪 loading / 发 RPC。
+  const [debouncedQuery, setDebouncedQuery] = useState(query);
+  useEffect(() => {
+    if (!enabled) return;
+    const timer = window.setTimeout(() => setDebouncedQuery(query), FILE_SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [enabled, query]);
   const limit =
-    getMentionGroupLimitForQuery(query, defaultPreviewLimit) ?? WORKSPACE_FILE_SEARCH_DISPLAY_CAP;
+    getMentionGroupLimitForQuery(debouncedQuery, defaultPreviewLimit) ??
+    WORKSPACE_FILE_SEARCH_DISPLAY_CAP;
   // 连接实例也属于作用域：相同路径的远程重连不能接纳旧 Host 的查询结果。
   const scope = useMemo(
     () => ({
       error: null as Error | null,
       lastMissQuery: null as string | null,
+      lastRefreshAt: null as number | null,
     }),
     [fileService, workspacePath, workspaceIdentity, enabled],
   );
@@ -63,24 +79,38 @@ export function useFileMentionProvider(
     // 错误态等待面板/工作区/连接生命周期重置，避免 query 变化触发失败重试循环。
     if (!enabled || scope.error) return;
     let active = true;
-    setResult({ scope, query, limit, entries: [], loading: true, error: null });
-    const params = { rootPath: workspacePath, workspaceIdentity, query, limit };
+    setResult({ scope, query: debouncedQuery, limit, entries: [], loading: true, error: null });
+    const params = { rootPath: workspacePath, workspaceIdentity, query: debouncedQuery, limit };
     const search = async () => {
       try {
         let entries = await fileService.searchWorkspaceFiles(params);
         if (!active) return;
-        const normalizedQuery = normalizeRefreshQuery(query);
+        const normalizedQuery = normalizeRefreshQuery(debouncedQuery);
         if (entries.length === 0 && normalizedQuery && scope.lastMissQuery !== normalizedQuery) {
           scope.lastMissQuery = normalizedQuery;
-          // 无命中补扫必须绕过 Host TTL，否则外部新文件在缓存有效期内永远不可见。
-          entries = await fileService.searchWorkspaceFiles({ ...params, refresh: true });
-          if (!active) return;
+          // 无命中补扫必须绕过 Host TTL，否则外部新文件在缓存有效期内永远不可见；
+          // 但整树重扫很贵，连续输入多个落空 query 时用冷却窗口限频，避免反复全量遍历。
+          const refreshAllowed =
+            scope.lastRefreshAt === null ||
+            Date.now() - scope.lastRefreshAt >= FILE_SEARCH_REFRESH_COOLDOWN_MS;
+          if (refreshAllowed) {
+            scope.lastRefreshAt = Date.now();
+            entries = await fileService.searchWorkspaceFiles({ ...params, refresh: true });
+            if (!active) return;
+          }
         }
-        setResult({ scope, query, limit, entries, loading: false, error: null });
+        setResult({ scope, query: debouncedQuery, limit, entries, loading: false, error: null });
       } catch (error) {
         if (!active) return;
         scope.error = error instanceof Error ? error : new Error(String(error));
-        setResult({ scope, query, limit, entries: [], loading: false, error: scope.error });
+        setResult({
+          scope,
+          query: debouncedQuery,
+          limit,
+          entries: [],
+          loading: false,
+          error: scope.error,
+        });
       }
     };
     void search();
@@ -88,10 +118,10 @@ export function useFileMentionProvider(
     return () => {
       active = false;
     };
-  }, [enabled, fileService, workspacePath, workspaceIdentity, query, limit, scope]);
+  }, [debouncedQuery, enabled, fileService, scope, workspaceIdentity, workspacePath, limit]);
 
   const current =
-    enabled && result?.scope === scope && result.query === query && result.limit === limit;
+    enabled && result?.scope === scope && result.query === debouncedQuery && result.limit === limit;
   const items = useMemo(
     () => (current ? result.entries.map(mapWorkspaceFileToMentionItem) : []),
     [current, result],
