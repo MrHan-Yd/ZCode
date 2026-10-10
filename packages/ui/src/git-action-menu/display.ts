@@ -95,6 +95,14 @@ export function resolveCommitPreviewSelectionState(
 }
 
 /**
+ * 清单是唯一展示待提交文件路径的地方：只要还有可提交文件就必须渲染，只有 1 个文件时也不例外。
+ * 曾经按「多于 1 个文件」隐藏清单，导致单文件场景下用户只能看到数量、看不到文件名。
+ */
+export function shouldShowCommitFileList(files: readonly GitBranchCommitPreviewFile[]): boolean {
+  return files.length > 0;
+}
+
+/**
  * 提交弹窗行宽有限，长路径必须能被截断，但**文件名不能被截掉**——同名文件分布在不同目录时，
  * 文件名才是区分依据。所以把路径拆成「目录（可截断）+ 文件名（优先保留）」两段渲染。
  */

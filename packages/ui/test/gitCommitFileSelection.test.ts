@@ -6,6 +6,7 @@ import {
   dedupeCommitPreviewFiles,
   excludeCommitPreviewFiles,
   resolveCommitPreviewSelectionState,
+  shouldShowCommitFileList,
   splitCommitPreviewFilePath,
 } from "../src/git-action-menu/display.js";
 
@@ -97,6 +98,22 @@ test("stage paths 对重复输入去重，避免 git 参数列表里出现重复
   ]);
 
   assert.deepEqual(stagePaths, ["/repo/src/a.ts"]);
+});
+
+// 清单是唯一展示待提交文件路径的地方：只有 1 个文件时也必须渲染，否则用户只能看到数量。
+test("有可提交文件就渲染清单，只有 1 个文件时也渲染", () => {
+  assert.equal(shouldShowCommitFileList([]), false);
+  assert.equal(
+    shouldShowCommitFileList([previewFile("/repo/src/a.ts", { repoRelativePath: "src/a.ts" })]),
+    true,
+  );
+  assert.equal(
+    shouldShowCommitFileList([
+      previewFile("/repo/src/a.ts", { repoRelativePath: "src/a.ts" }),
+      previewFile("/repo/src/b.ts", { repoRelativePath: "src/b.ts" }),
+    ]),
+    true,
+  );
 });
 
 test("路径拆成目录与文件名，保证长路径截断时文件名仍可见", () => {

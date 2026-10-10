@@ -46,6 +46,7 @@ import {
   excludeCommitPreviewFiles,
   resolveCommitPreviewSelectionState,
   resolveGitActionMenuPrimaryAction,
+  shouldShowCommitFileList,
   splitCommitPreviewFilePath,
 } from "@/git-action-menu/display.js";
 import {
@@ -273,8 +274,8 @@ function GitCommitDialog({
   const displayRemoved = displayChangeSummary?.removed ?? totalRemoved;
   const hasSelectedChanges = stagePaths.length > 0;
   const hasUnstagedChanges = Boolean(state?.unstagedFiles.length);
-  // 只有一个文件时勾选没有自由度，渲染清单只是噪声：总数已由开关行右侧的计数表达。
-  const showFileList = selectableFiles.length > 1;
+  // 清单是唯一展示待提交文件路径的地方：只要还有可提交文件就必须渲染，只有 1 个文件时也不例外。
+  const showFileList = shouldShowCommitFileList(selectableFiles);
   const commitActionDisabled =
     actionPending || !hasSelectedChanges || (!hasIdentity && state?.identity !== null);
   const pushOnlyDisabled = actionPending || !pushEnabled;
