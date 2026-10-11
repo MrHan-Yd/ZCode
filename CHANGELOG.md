@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.17.4](https://github.com/MrHan-Yd/ZCode/compare/v3.17.3...v3.17.4) (2026-10-11)
+
+### Bug Fixes
+
+* 拉取入口改为 Git 工具里的独立一行 ([7168878](https://github.com/MrHan-Yd/ZCode/commit/7168878154a1e9805a3c621aacd4680491652655))
+  * 不再藏在「提交或推送」的弹窗动作列表里，推送弹窗底部的次要按钮一并撤掉：那种位置要先点进弹窗才能发现拉取，而拉取恰恰常常是工作区干净时唯一要做的事
+  * 主按钮回到只承载提交或推送（不再变身为「拉取」）；「拉取」行只在存在上游分支时渲染，行尾在落后远端时标出落后提交数
+  * 弹窗拆到 GitPullDialog（结果面板、错误详情、关闭时才刷新等行为不变），GitPullAction 组件承载行与状态；无上游分支的分支判断与文案随之删除
+
+
+### Documentation
+
+* 补充 README 的 v3.17.3 更新说明 ([0f1764e](https://github.com/MrHan-Yd/ZCode/commit/0f1764e22f366ae307eb8db60b2d3fd44f9852cc))
+
 ## [3.17.3](https://github.com/MrHan-Yd/ZCode/compare/v3.17.2...v3.17.3) (2026-10-11)
 
 ### Bug Fixes
