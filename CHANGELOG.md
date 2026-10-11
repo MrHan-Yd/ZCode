@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.17.1](https://github.com/MrHan-Yd/ZCode/compare/v3.17.0...v3.17.1) (2026-10-11)
+
+### Bug Fixes
+
+* 归档管理页补齐「任务索引里出现过的所有工作区」来源 ([de43794](https://github.com/MrHan-Yd/ZCode/commit/de43794f5aac4ce4b302670412a3678c3f2163ec))
+  * IZCodeTaskService 新增 listKnownWorkspaceScopes（只回工作区身份，不加载正文）
+  * 归档页把该来源并入项目列表；枚举失败降级成原有来源，不阻塞页面
+
+
+### Documentation
+
+* 补充 README 的 v3.17.0 更新说明 ([3a212f0](https://github.com/MrHan-Yd/ZCode/commit/3a212f0871eb8a2f5e1f7344ffa3e70bac7a247c))
+
 ## [3.17.0](https://github.com/MrHan-Yd/ZCode/compare/v3.16.5...v3.17.0) (2026-10-11)
 
 ### Features
