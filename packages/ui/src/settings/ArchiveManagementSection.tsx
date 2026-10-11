@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { Archive, ArchiveX, Cloud, Folder, RefreshCw, Trash2 } from "lucide-react";
+import { Archive, ArchiveX, Cloud, Flame, Folder, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
@@ -31,6 +31,7 @@ export function ArchiveManagementSection({ workspaceTabs }: { workspaceTabs: Wor
     restoreTask,
     removeTask,
     deleteTasks,
+    purgeTasks,
     isProjectAvailable,
   } = useArchivedTasksByProject(workspaceTabs);
 
@@ -111,6 +112,35 @@ export function ArchiveManagementSection({ workspaceTabs }: { workspaceTabs: Wor
     [confirmDialog, deleteTasks, intl],
   );
 
+  /**
+   * 彻底删除（不可恢复）。确认文案必须把「删会话数据与文件、不能撤销」说清楚，
+   * 因为这一步之后没有恢复入口。
+   */
+  const handlePurge = useCallback(
+    async (targets: ProjectArchiveState[], single?: (typeof targets)[number]["tasks"][number]) => {
+      const purgeable = targets.filter((state) => state.tasks.length > 0);
+      if (purgeable.length === 0) return;
+      const count = single ? 1 : purgeable.reduce((total, state) => total + state.tasks.length, 0);
+      const confirmed = await confirmDialog({
+        title: single
+          ? intl.formatMessage({ id: "settings.archive.purgeTitle" })
+          : intl.formatMessage({ id: "settings.archive.purgeBatchTitle" }, { count: String(count) }),
+        description: intl.formatMessage({ id: "settings.archive.purgeDescription" }),
+        confirmLabel: intl.formatMessage({ id: "settings.archive.purge" }),
+      });
+      if (!confirmed) return;
+      const scoped = single
+        ? purgeable.map((state) => ({ ...state, tasks: [single] }))
+        : purgeable;
+      try {
+        await purgeTasks(scoped);
+      } catch (error) {
+        logger.error("[ArchiveManagementSection] 彻底删除归档任务失败", error);
+      }
+    },
+    [confirmDialog, intl, purgeTasks],
+  );
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -165,6 +195,16 @@ export function ArchiveManagementSection({ workspaceTabs }: { workspaceTabs: Wor
             <Trash2 className="size-4" />
             {intl.formatMessage({ id: "settings.archive.deleteAll" })}
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="text-destructive hover:text-destructive"
+            disabled={loading || projectsWithTasks.length === 0}
+            onClick={() => void handlePurge(projectsWithTasks)}
+          >
+            <Flame className="size-4" />
+            {intl.formatMessage({ id: "settings.archive.purgeAll" })}
+          </Button>
         </div>
       </div>
 
@@ -196,6 +236,16 @@ export function ArchiveManagementSection({ workspaceTabs }: { workspaceTabs: Wor
                     onClick={() => void handleBatchDelete([state])}
                   >
                     {intl.formatMessage({ id: "settings.archive.deleteGroup" })}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    disabled={busyProjectKeys.has(state.project.key)}
+                    onClick={() => void handlePurge([state])}
+                  >
+                    {intl.formatMessage({ id: "settings.archive.purgeGroup" })}
                   </Button>
                 </div>
               }
@@ -241,6 +291,21 @@ export function ArchiveManagementSection({ workspaceTabs }: { workspaceTabs: Wor
                       onClick={() => void handleRemove(state, task)}
                     >
                       <Trash2 className="size-3.5" />
+                    </Button>
+                  </ControlHintTooltip>
+                  <ControlHintTooltip
+                    title={intl.formatMessage({ id: "settings.archive.purge" })}
+                    side="top"
+                  >
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-destructive hover:text-destructive"
+                      aria-label={intl.formatMessage({ id: "settings.archive.purge" })}
+                      onClick={() => void handlePurge([state], task)}
+                    >
+                      <Flame className="size-3.5" />
                     </Button>
                   </ControlHintTooltip>
                 </div>

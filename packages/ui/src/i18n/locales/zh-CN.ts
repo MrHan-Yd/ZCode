@@ -2144,6 +2144,13 @@ const zhCN: Record<string, string> = {
   "settings.archive.deleteTitle": "删除 {count} 个归档任务？",
   "settings.archive.deleteDescription": "任务将从任务列表和归档列表中移除；会话记录仍保留在本地。",
   "settings.archive.remove": "移除",
+  "settings.archive.purge": "彻底删除",
+  "settings.archive.purgeGroup": "彻底删除本组",
+  "settings.archive.purgeAll": "彻底删除全部",
+  "settings.archive.purgeTitle": "彻底删除这个任务？",
+  "settings.archive.purgeBatchTitle": "彻底删除 {count} 个任务？",
+  "settings.archive.purgeDescription":
+    "将删除会话消息、快照与相关文件并回收磁盘空间，此操作不可恢复；正在运行的任务会被跳过。",
   "settings.archive.projectUnavailable": "{project} 当前不可用，无法读取归档任务。",
   "settings.dataBaseDir": "数据存储路径",
   "settings.dataBaseDirDescription":

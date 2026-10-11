@@ -654,6 +654,16 @@ export interface IZCodeTaskService {
     taskIds: string[];
   }): Promise<ZCodeArchivedTaskDeletionResult>;
 
+  /**
+   * 逐项「彻底删除」归档任务：物理删除会话数据与任务文件并释放磁盘空间，**不可恢复**。
+   * 运行中的任务会跳过；调用方必须先取得用户显式确认。
+   */
+  purgeArchivedTasks(params: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    taskIds: string[];
+  }): Promise<ZCodeArchivedTaskDeletionResult>;
+
   /** 重命名已持久化的 task */
   renameTask(params: {
     taskId: string;

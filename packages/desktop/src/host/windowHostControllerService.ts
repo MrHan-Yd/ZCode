@@ -266,6 +266,17 @@ export function createWindowHostControllerRuntime(options: {
           workspaceIdentity: base.workspaceIdentity,
           taskIds: mutation.taskIds,
         });
+      case "purge-archived-batch":
+        // 与软删批次同款 source 校验：确认期间远端 session 可能已替换，
+        // 不能把旧地址的「不可恢复删除」写到同 identity 的新 source 上。
+        if (sourceKey(current.scope) !== sourceKey(scope)) {
+          throw new Error("彻底删除批次的 source 已替换");
+        }
+        return service.purgeArchivedTasks({
+          workspacePath: base.workspacePath,
+          workspaceIdentity: base.workspaceIdentity,
+          taskIds: mutation.taskIds,
+        });
       case "mark-read":
         await service.setTaskUnread({
           ...base,
@@ -602,6 +613,26 @@ export function createWindowHostControllerRuntime(options: {
         });
         if (resolved) {
           // 只在整批结束后收敛投影，与 source 的一次事件共享 single-flight；刷新失败不改写已提交结果。
+          await refreshSource(resolved, true).catch((error) =>
+            options.onSourceError?.(resolved.scope, "refresh", error),
+          );
+        }
+        return result;
+      },
+      async purgeArchivedTasks({ address, taskIds }) {
+        if (taskIds.length === 0) {
+          return { deletedTaskIds: [], skippedTaskIds: [], failedTaskIds: [] };
+        }
+        const result = await projection.mutate(address, { kind: "purge-archived-batch", taskIds });
+        if (!result || typeof result === "boolean") {
+          throw new Error("彻底删除批次未返回逐项目标结果");
+        }
+        const resolved = options.resolveSource({
+          workspacePath: address.workspacePath,
+          workspaceIdentity: address.workspaceIdentity,
+        });
+        if (resolved) {
+          // 整批结束后收敛投影；刷新失败不改写已提交结果（数据已经删了）。
           await refreshSource(resolved, true).catch((error) =>
             options.onSourceError?.(resolved.scope, "refresh", error),
           );

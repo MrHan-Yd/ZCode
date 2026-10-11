@@ -1950,6 +1950,23 @@ function createControllerRoutedTaskService(
           });
         };
       }
+      if (property === "purgeArchivedTasks") {
+        return async (params: Parameters<IZCodeTaskService["purgeArchivedTasks"]>[0]) => {
+          if (params.taskIds.length === 0) {
+            return { deletedTaskIds: [], skippedTaskIds: [], failedTaskIds: [] };
+          }
+          return windowHostControllerRuntime.service.purgeArchivedTasks({
+            address: await windowHostControllerRuntime.resolveTaskAddress({
+              workspacePath: params.workspacePath,
+              workspaceIdentity: params.workspaceIdentity,
+              taskId: params.taskIds[0]!,
+              attachmentScope,
+              allowMissingTask: true,
+            }),
+            taskIds: params.taskIds,
+          });
+        };
+      }
       if (property === "deleteArchivedTask") {
         return async (params: Parameters<IZCodeTaskService["deleteArchivedTask"]>[0]) =>
           windowHostControllerRuntime.service.deleteArchivedTask({

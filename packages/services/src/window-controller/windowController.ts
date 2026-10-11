@@ -55,6 +55,11 @@ export interface IWindowControllerService {
     address: WindowHostTaskAddress;
     taskIds: string[];
   }): Promise<ZCodeArchivedTaskDeletionResult>;
+  /** 彻底删除归档任务：物理删除会话数据与文件，不可恢复；运行中的任务会被跳过。 */
+  purgeArchivedTasks(params: {
+    address: WindowHostTaskAddress;
+    taskIds: string[];
+  }): Promise<ZCodeArchivedTaskDeletionResult>;
   listTaskList(params: ZCodeTaskListQuery): Promise<WindowHostControllerTaskListResult>;
   mutateTask(params: {
     address: WindowHostTaskAddress;

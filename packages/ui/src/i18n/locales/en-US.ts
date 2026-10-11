@@ -2283,6 +2283,13 @@ const enUS: Record<string, string> = {
   "settings.archive.deleteDescription":
     "Tasks will be removed from the task list and archive; session data stays on disk.",
   "settings.archive.remove": "Remove",
+  "settings.archive.purge": "Delete permanently",
+  "settings.archive.purgeGroup": "Delete group permanently",
+  "settings.archive.purgeAll": "Delete all permanently",
+  "settings.archive.purgeTitle": "Permanently delete this task?",
+  "settings.archive.purgeBatchTitle": "Permanently delete {count} tasks?",
+  "settings.archive.purgeDescription":
+    "Session messages, snapshots and related files will be deleted and disk space reclaimed. This cannot be undone; running tasks are skipped.",
   "settings.archive.projectUnavailable": "{project} is unavailable; archived tasks cannot be read.",
   "settings.dataBaseDir": "Data storage path",
   "settings.dataBaseDirDescription":

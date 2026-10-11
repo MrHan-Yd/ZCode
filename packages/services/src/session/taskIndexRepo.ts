@@ -1597,6 +1597,61 @@ export class TaskIndexRepo {
     });
   }
 
+  /**
+   * 该 task 是否处于「已归档且未删除」。
+   *
+   * 归档态只存在于索引行（`ZCodeTaskMeta` 不投影 archived），所以「彻底删除」在发出
+   * 不可恢复的删除命令之前必须用这里查一次：purgeTask 自身的 archived 守卫发生在删除
+   * 之后，来不及阻止已删掉的会话数据。
+   */
+  async isArchivedTask(params: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    taskId: string;
+  }): Promise<boolean> {
+    await this.ensureReady();
+    const row = this.getTaskRow(params);
+    return Boolean(row && row.deleted === 0 && row.archived === 1);
+  }
+
+  /**
+   * 物理删除 task 行（「彻底删除」用，不可恢复）。
+   *
+   * 与 deleteArchivedTask（写 deleted 墓碑）不同：这里真正 DELETE 行，所以
+   * 必须显式清理分组引用——task_group_members / task_group_view_node_orders 对 tasks
+   * 没有外键级联，漏删会留下指向已不存在 task 的成员行。
+   *
+   * 只允许删除已归档且未删除的行：彻底删除的入口只对归档任务开放，这里再兜一次，
+   * 避免误删正在使用的任务。返回 false 表示当前状态不允许物理删除。
+   */
+  async purgeTask(params: {
+    workspacePath: string;
+    workspaceIdentity?: string;
+    taskId: string;
+  }): Promise<boolean> {
+    await this.ensureReady();
+    return this.enqueueWrite(params, () => {
+      const database = this.getDatabase();
+      database.exec("BEGIN IMMEDIATE");
+      try {
+        const row = this.getTaskRow(params);
+        if (!row || row.deleted === 1 || row.archived !== 1) {
+          database.exec("COMMIT");
+          return false;
+        }
+        this.deleteTaskGroupingReferencesReady(row.workspace_key, row.task_id);
+        database
+          .prepare("DELETE FROM tasks WHERE workspace_key = ? AND task_id = ?")
+          .run(row.workspace_key, row.task_id);
+        database.exec("COMMIT");
+        return true;
+      } catch (error) {
+        database.exec("ROLLBACK");
+        throw error;
+      }
+    });
+  }
+
   async updateTaskState(params: {
     workspacePath: string;
     workspaceIdentity?: string;

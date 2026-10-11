@@ -1,6 +1,7 @@
 /* oxlint-disable eslint(max-lines) -- 迁移期需要在一个门面里集中维护旧 task projection 到 ZCode session 的协议适配。 */
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -131,6 +132,10 @@ import type {
 } from "#src/session/sessionMailbox.js";
 import { TaskIndexRepo } from "#src/session/taskIndexRepo.js";
 import { runTaskAutoArchiveSweep } from "#src/session/taskAutoArchive.js";
+import {
+  getLegacyDeletedTaskSessionSnapshotPath,
+  getLegacyTaskSessionSnapshotPath,
+} from "#src/paths.js";
 import type {
   IZCodeAgentService,
   ZCodeAgentServiceEvent,
@@ -210,6 +215,32 @@ type ZCodeTerminalStreamEvent =
 const GLM_PROVIDER: ZCodeProvider = ZCODE_AGENT_PROVIDER;
 const EMPTY_SLASH_COMMANDS: ZCodeSlashCommand[] = [];
 const logger = createServiceLogger("zcode-task-service");
+
+/**
+ * 删除 task 的 v2 快照文件（legacy 导入备份与软删备份）。
+ *
+ * CLI 侧的 purgeSession 只认 sessionId，不知道 workspaceHash；v2/sessions 的目录布局
+ * 由 Host 的 paths 解析，所以这一步必须留在 Host。文件可能本来就不存在，force 忽略。
+ */
+async function removeLegacyTaskSessionSnapshots(target: {
+  workspacePath: string;
+  workspaceIdentity?: string;
+  taskId: string;
+}): Promise<void> {
+  const paths = [
+    getLegacyTaskSessionSnapshotPath(
+      target.workspacePath,
+      target.taskId,
+      target.workspaceIdentity,
+    ),
+    getLegacyDeletedTaskSessionSnapshotPath(
+      target.workspacePath,
+      target.taskId,
+      target.workspaceIdentity,
+    ),
+  ];
+  await Promise.all(paths.map((path) => rm(path, { force: true }).catch(() => undefined)));
+}
 const ASK_USER_QUESTION_TOOL_NAME = "AskUserQuestion";
 const EXIT_PLAN_MODE_TOOL_NAME = "ExitPlanMode";
 const EXIT_PLAN_MODE_APPROVAL_QUESTION = "Review this implementation plan.";
@@ -2869,6 +2900,73 @@ export function createZCodeTaskServiceAdapter(
         workspaceKey: resolveWorkspaceKey(params),
         requested: taskIds.length,
         deleted: result.deletedTaskIds.length,
+        skipped: result.skippedTaskIds.length,
+        failed: result.failedTaskIds.length,
+        durationMs: Date.now() - startedAt,
+      });
+      return result;
+    },
+
+    async purgeArchivedTasks(params): Promise<ZCodeArchivedTaskDeletionResult> {
+      const result: ZCodeArchivedTaskDeletionResult = {
+        deletedTaskIds: [],
+        skippedTaskIds: [],
+        failedTaskIds: [],
+      };
+      const taskIds = [...new Set(params.taskIds)];
+      if (taskIds.length === 0) return result;
+      const startedAt = Date.now();
+      for (const taskId of taskIds) {
+        const target = {
+          workspacePath: params.workspacePath,
+          workspaceIdentity: params.workspaceIdentity,
+          taskId,
+        };
+        try {
+          // 运行中守卫：彻底删除不可恢复，正在跑的会话先跳过（由用户停掉后再删）。
+          // 归档态只存在于索引行，必须在发出删除命令之前查；purgeTask 自己的 archived
+          // 守卫发生在删除之后，来不及阻止已经删掉的会话数据。
+          const meta = await taskIndexRepo.getTaskMeta(target);
+          const archived = await taskIndexRepo.isArchivedTask(target);
+          if (!meta || !archived || meta.status === "running") {
+            result.skippedTaskIds.push(taskId);
+            continue;
+          }
+          // 1) CLI：关闭运行时 → 物理删除会话行/消息 → 按阈值 VACUUM → 删产物目录。
+          const ack = await options.zcodeAgentService.sendConversationCommandV4({
+            workspacePath: target.workspacePath,
+            workspaceIdentity: target.workspaceIdentity,
+            envelope: createHostCommandEnvelope({
+              type: "purgeSession",
+              payload: {},
+              sessionId: taskId,
+            }),
+          });
+          assertV4CommandAckOk("purgeSession", ack, `session=${taskId}`);
+          // 2) Host：删 v2 快照（目录布局只有 Host 知道）。
+          await removeLegacyTaskSessionSnapshots(target);
+          // 3) Host：物理删除索引行 + 分组引用。放在最后：CLI 已删成功后再失败时，
+          //    重试会重新走一遍幂等的 CLI 删除，不会留下「行在数据没了」的可见任务。
+          const purged = await taskIndexRepo.purgeTask(target);
+          if (!purged) {
+            result.skippedTaskIds.push(taskId);
+            continue;
+          }
+          setOverlay(target, { deleted: true });
+          result.deletedTaskIds.push(taskId);
+        } catch (error) {
+          result.failedTaskIds.push(taskId);
+          logger.warn(undefined, "[ArchivedTaskPurge] 彻底删除失败", { ...target, error });
+        }
+      }
+      if (result.deletedTaskIds.length > 0) {
+        // 与批量删除同口径：批次完成只发一次 workspace 事件，避免逐项广播驱动全量重读。
+        emitWorkspaceTaskListChanged(params, undefined, "task_deleted");
+      }
+      logger.info(undefined, "[ArchivedTaskPurge] batch completed", {
+        workspaceKey: resolveWorkspaceKey(params),
+        requested: taskIds.length,
+        purged: result.deletedTaskIds.length,
         skipped: result.skippedTaskIds.length,
         failed: result.failedTaskIds.length,
         durationMs: Date.now() - startedAt,

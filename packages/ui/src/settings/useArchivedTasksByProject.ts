@@ -11,7 +11,7 @@ import {
   buildWorkspaceServiceLookup,
   type WorkspaceServiceResolverState,
 } from "@/lib/workspaceServiceResolver.js";
-import { deleteArchivedTaskSelection } from "@/lib/archivedTaskDeletion.js";
+import { deleteArchivedTaskSelection, purgeArchivedTaskSelection } from "@/lib/archivedTaskDeletion.js";
 import { getPluginWorkspaceKey } from "@/settings/PluginScopeMenu.js";
 import { applyTaskQueryCacheMutation } from "@/store/taskQueryCacheStore.js";
 import { useRemoteWorkspaceSessionStore } from "@/store/remoteWorkspaceSessionStore.js";
@@ -265,6 +265,57 @@ export function useArchivedTasksByProject(workspaceTabs: WorkspaceTabState[]) {
     [removeTaskLocally, serviceLookup],
   );
 
+  /**
+   * 批量彻底删除（物理删除会话数据与文件，不可恢复）。
+   *
+   * 与 deleteTasks 分开：能力缺失（老 Host 没有 purgeArchivedTasks）时整组计入失败，
+   * 不降级成软删——用户点了「彻底删除」就必须真的释放空间，否则会误以为已完成。
+   */
+  const purgeTasks = useCallback(
+    async (targets: ProjectArchiveState[]) => {
+      const purgeable = targets.filter((state) => state.tasks.length > 0);
+      if (purgeable.length === 0) return { purged: 0, skipped: 0, failed: 0 };
+      setBusyProjectKeys((current) => {
+        const next = new Set(current);
+        for (const state of purgeable) next.add(state.project.key);
+        return next;
+      });
+      try {
+        return await purgeArchivedTaskSelection(
+          {
+            groups: purgeable.map((state) => ({
+              workspace: {
+                workspacePath: state.project.workspacePath,
+                workspaceIdentity: state.project.workspaceIdentity,
+                label: state.project.label,
+                service: serviceLookup.get(state.project.key)?.services.zcodeTaskService,
+              },
+              targets: state.tasks.map((task) => ({
+                taskId: task.taskId,
+                workspacePath: state.project.workspacePath,
+                workspaceIdentity: state.project.workspaceIdentity,
+              })),
+            })),
+          },
+          (target) => {
+            removeTaskLocally(
+              buildTaskWorkspaceKey(target.workspacePath, target.workspaceIdentity),
+              target.taskId,
+            );
+            removeTaskFromTaskCaches(target);
+          },
+        );
+      } finally {
+        setBusyProjectKeys((current) => {
+          const next = new Set(current);
+          for (const state of purgeable) next.delete(state.project.key);
+          return next;
+        });
+      }
+    },
+    [removeTaskLocally, serviceLookup],
+  );
+
   return {
     projects,
     states,
@@ -274,6 +325,7 @@ export function useArchivedTasksByProject(workspaceTabs: WorkspaceTabState[]) {
     restoreTask,
     removeTask,
     deleteTasks,
+    purgeTasks,
     isProjectAvailable: (projectKey: string) => serviceLookup.has(projectKey),
   };
 }

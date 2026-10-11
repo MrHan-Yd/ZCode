@@ -55,6 +55,9 @@ export type WindowHostControllerMutation =
   | { kind: "delete" }
   | { kind: "delete-archived" }
   | { kind: "delete-archived-batch"; taskIds: string[] }
+  // 彻底删除：物理删除会话数据与文件，不可恢复。与 delete-archived-batch（写墓碑）分开，
+  // 避免任何按 kind 的既有分支误把它当成软删。
+  | { kind: "purge-archived-batch"; taskIds: string[] }
   | { kind: "mark-read"; expectedUnreadAt?: number }
   | { kind: "mark-unread" }
   | { kind: "open" }
