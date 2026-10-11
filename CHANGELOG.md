@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.17.3](https://github.com/MrHan-Yd/ZCode/compare/v3.17.2...v3.17.3) (2026-10-11)
+
+### Bug Fixes
+
+* 修复拉取入口与结果展示的若干问题 ([b5cd6f8](https://github.com/MrHan-Yd/ZCode/commit/b5cd6f8a3bb7a3fb9b046b4316c831c160e78132))
+  * 拉取期间与结束后不再立即刷新仓库状态：那会把整块 Git 区（连同刚渲染出结果的面板）卸载掉，用户读不到拉取量；刷新改到弹窗关闭时补一次
+  * 拉取成功的 toast 同时带上文件数与增删行数，作为不受卸载影响的冗余通道
+  * 有上游分支的干净仓库不再隐藏 Git 入口：behind 只在 fetch/push/pull 之后才更新，旧判据让「落后远端但尚未 fetch」时无处拉取；窄屏胶囊补「已同步」摘要，「更改 +0 -0」不再渲染
+  * 远端分支已被删除时新增 upstream-branch-missing 提示，不再落到 unknown
+  * 任一侧读不到 HEAD 时按「有更新、数量未知」上报，不再误报「已是最新」；拉取量算不出来时置 null 而不是 0
+  * 英文文案改用 commit(s)/file(s)，提交数在弹窗与 toast 中统一千分位
+
+
+### Documentation
+
+* 补充 README 的 v3.17.2 更新说明 ([5a0d73e](https://github.com/MrHan-Yd/ZCode/commit/5a0d73e1321e2a581e35b821535e1cada4d1f580))
+
 ## [3.17.2](https://github.com/MrHan-Yd/ZCode/compare/v3.17.1...v3.17.2) (2026-10-11)
 
 ### Features
