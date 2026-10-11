@@ -233,6 +233,11 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
   // 索引归服务实例；不同 Host/注入过滤器不能通过模块全局缓存复用同路径结果。
   const workspaceFileListCache = new Map<string, WorkspaceFileIndex>();
   const pendingFileExistenceChecks = new Map<string, Promise<boolean>>();
+  /**
+   * 每个 workspace 的最新搜索 token。新查询递增 token，使仍在分批打分的旧查询提前退出，
+   * 快速输入时不必把 Host CPU 让给已被取代的查询（过期响应本来就会被 renderer 丢弃）。
+   */
+  const latestWorkspaceFileSearchToken = new Map<string, number>();
 
   const checkFileExists = async (path: string): Promise<boolean> => {
     const cached = fileExistenceCache.get(path);
@@ -280,6 +285,8 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
     }
     const inFlight = workspaceFileListScanning.get(workspaceKey);
     // 刷新中的同作用域查询等待新索引，不能先命中旧缓存而遗漏刚创建的文件。
+    // 补扫的限频由 renderer 侧冷却窗口负责（fileMentionProvider），Host 不再自行节流：
+    // 若这里「假装扫过」，renderer 会把该 query 记为已补扫，新建文件就再也看不到。
     if (!refresh && inFlight?.signature === cacheSignature) return inFlight.promise;
     const cached = workspaceFileListCache.get(workspaceKey);
     if (!refresh && cached?.signature === cacheSignature) {
@@ -596,13 +603,18 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
         Math.max(0, Math.trunc(requestedLimit)),
       );
       if (limit === 0) return [];
+      const workspaceSearchKey = params.workspaceIdentity?.trim() || params.rootPath;
+      const searchToken = (latestWorkspaceFileSearchToken.get(workspaceSearchKey) ?? 0) + 1;
+      latestWorkspaceFileSearchToken.set(workspaceSearchKey, searchToken);
       const index = await ensureWorkspaceFileIndex(
         params.rootPath,
         params.workspaceIdentity,
         params.refresh,
       );
       index.candidates ??= buildHostFileSearchCandidates(index.packed, params.rootPath);
-      return searchHostFileCandidates(await index.candidates, params.query, limit);
+      return searchHostFileCandidates(await index.candidates, params.query, limit, {
+        shouldAbort: () => latestWorkspaceFileSearchToken.get(workspaceSearchKey) !== searchToken,
+      });
     },
     async listWorkspaceFilesLength(params: { rootPath: string }): Promise<number> {
       const { packed } = await ensureWorkspaceFileIndex(params.rootPath);
