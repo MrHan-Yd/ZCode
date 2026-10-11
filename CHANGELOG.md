@@ -1,5 +1,28 @@
 # Changelog
 
+## [3.17.0](https://github.com/MrHan-Yd/ZCode/compare/v3.16.5...v3.17.0) (2026-10-11)
+
+### Features
+
+* **cli:** 新增 purgeSession 物理删除会话数据并回收磁盘空间 ([47e6c61](https://github.com/MrHan-Yd/ZCode/commit/47e6c6166176c79f778121e8534007a281869a70))
+  * SessionStorePort.purgeSession + SqliteSessionStore 实现：事务内删 session 行（级联
+  * 按「空闲页 >= 2000 且占比 >= 0.2」双阈值 VACUUM；失败静默（删除已提交，回收是 best-effort）
+  * 产物目录清理：artifacts / 三种媒体缓存 / exec / workflow 脚本 / 子代理产物，根在进程启动
+  * 命令入口对 purgeSession 豁免「必须常驻会话」准入，否则归档的历史任务永远删不掉
+  * 加入 SELECTION_SIDE_CHAT_RESTRICTED_COMMANDS
+
+* 归档任务支持彻底删除并释放磁盘空间 ([bff3c32](https://github.com/MrHan-Yd/ZCode/commit/bff3c32842ec5880df6bafed58f9c8db2484b046))
+  * Host 侧 isArchivedTask（归档态只在索引行上，必须在发删除命令前查）+ purgeTask
+  * adapter purgeArchivedTasks：运行中守卫 -> CLI purgeSession -> 删 v2 快照 -> 物理删索引行
+  * window-controller / desktop host 打通 purge-archived-batch（含 source 替换校验）
+  * 归档管理页新增「彻底删除 / 本组 / 全部」与不可恢复确认文案
+  * 补充 specs/task-purge.md 与两侧单测
+
+
+### Documentation
+
+* 补充 README 的 v3.16.5 更新说明 ([eeaa103](https://github.com/MrHan-Yd/ZCode/commit/eeaa10399a7e03975b7b8655e439f8d997950d54))
+
 ## [3.16.5](https://github.com/MrHan-Yd/ZCode/compare/v3.16.4...v3.16.5) (2026-10-11)
 
 ### Features
