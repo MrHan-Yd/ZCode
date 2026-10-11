@@ -22,6 +22,7 @@ import {
   type ZCodeOffPeakTask,
 } from "@zcode/shared";
 import type { MainToSchedulerMessage, SchedulerToMainMessage } from "./schedulerProtocol.js";
+import { createAutoArchiveScanner } from "./autoArchiveScan.js";
 import { settleManualClaimForDispatchResult } from "./manualClaimRelease.js";
 import { settleOffPeakDispatchResult } from "./offPeakDispatchSettlement.js";
 import {
@@ -56,6 +57,10 @@ const offPeakRetryAt = new Map<string, number>();
 const offPeakRetryAttempts = new Map<string, number>();
 /** 在途派发集合：仅用于退出时释放认领；迟到结果凭 offPeakTaskId 即可结算，不依赖它。 */
 const offPeakInFlight = new Set<string>();
+
+// ---- 自动归档（周期扫描）----
+/** 复用一个常驻扫描器：内部持有 tasks-index 句柄、按间隔节流并单飞。 */
+const autoArchiveScanner = createAutoArchiveScanner({ log });
 
 let ticking = false;
 let tickRequested = false;
@@ -104,6 +109,8 @@ async function tick(): Promise<void> {
         for (const task of offPeakClaimed) {
           await handleOffPeakClaimed(task, now);
         }
+        // 自动归档：不阻塞派发主链路，错误已在扫描器内部收口（单飞 + 间隔节流）。
+        void autoArchiveScanner.run(now);
         // keep-awake：上报执行中计数，main 据此 + 设置决定 powerSaveBlocker。
         await reportOffPeakActiveCount();
       } catch (error) {

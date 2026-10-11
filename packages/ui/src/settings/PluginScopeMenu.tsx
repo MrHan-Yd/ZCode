@@ -37,6 +37,7 @@ export function PluginScopeMenu({
   align = "start",
   disabled = false,
   includeUser = true,
+  leadingOption,
   selectedScopeKey,
   triggerIconTestId,
   triggerTestId,
@@ -49,6 +50,11 @@ export function PluginScopeMenu({
   align?: "start" | "center" | "end";
   disabled?: boolean;
   includeUser?: boolean;
+  /**
+   * 在「用户」与工作区列表之前插入一个当前页面前置作用域（例如归档页的「全部项目」）。
+   * 只影响下拉选项与触发器文案，不改变 includeUser / workspaceOptions 语义。
+   */
+  leadingOption?: { key: string; label: string; icon?: typeof Monitor };
   selectedScopeKey: string;
   triggerIconTestId?: string;
   triggerTestId?: string;
@@ -67,7 +73,9 @@ export function PluginScopeMenu({
       remote: Boolean(tab.remoteTarget || tab.remoteSessionId),
     }));
   const selectedWorkspace = scopeWorkspaces.find((workspace) => workspace.key === selectedScopeKey);
+  const isLeadingSelected = leadingOption?.key === selectedScopeKey;
   const SelectedWorkspaceIcon = selectedWorkspace?.remote ? Cloud : Folder;
+  const LeadingIcon = leadingOption?.icon ?? Monitor;
   // 用户作用域是本机配置范围，不能使用登录账号或设备用户名代替其语义。
   const userLabel = intl.formatMessage({ id: "settings.plugin.scope.user" });
 
@@ -83,7 +91,9 @@ export function PluginScopeMenu({
           data-plugin-scope-key={selectedScopeKey}
           className="rounded-full"
         >
-          {selectedWorkspace || !includeUser ? (
+          {isLeadingSelected ? (
+            <LeadingIcon className="size-4" aria-hidden="true" data-testid={triggerIconTestId} />
+          ) : selectedWorkspace || !includeUser ? (
             <SelectedWorkspaceIcon
               className="size-4"
               aria-hidden="true"
@@ -92,12 +102,22 @@ export function PluginScopeMenu({
           ) : (
             <Monitor className="size-4" aria-hidden="true" data-testid={triggerIconTestId} />
           )}
-          <span className="max-w-48 truncate">{selectedWorkspace?.label ?? userLabel}</span>
+          <span className="max-w-48 truncate">
+            {isLeadingSelected ? leadingOption?.label : (selectedWorkspace?.label ?? userLabel)}
+          </span>
           <ChevronDown className="size-4 text-foreground-subtlest" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align={align} className="w-64 max-w-[calc(100vw-2rem)]">
         <DropdownMenuRadioGroup value={selectedScopeKey} onValueChange={onScopeKeyChange}>
+          {leadingOption ? (
+            <DropdownMenuRadioItem value={leadingOption.key} data-testid={userOptionTestId}>
+              <LeadingIcon className="size-4" aria-hidden="true" />
+              <span className="truncate text-ui-base font-medium text-foreground">
+                {leadingOption.label}
+              </span>
+            </DropdownMenuRadioItem>
+          ) : null}
           {includeUser ? (
             <DropdownMenuRadioItem value="user" data-testid={userOptionTestId}>
               <Monitor className="size-4" aria-hidden="true" />
@@ -106,7 +126,7 @@ export function PluginScopeMenu({
           ) : null}
           {scopeWorkspaces.length > 0 ? (
             <>
-              {includeUser ? <DropdownMenuSeparator /> : null}
+              {includeUser || leadingOption ? <DropdownMenuSeparator /> : null}
               <DropdownMenuLabel>
                 {intl.formatMessage({
                   id: "settings.plugin.scope.workspaces",

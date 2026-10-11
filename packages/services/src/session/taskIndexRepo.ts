@@ -944,6 +944,40 @@ export class TaskIndexRepo {
     return rows.map(rowToMeta);
   }
 
+  /**
+   * 枚举 tasks-index 里出现过的全部工作区（未删除）。
+   *
+   * 供自动归档的「全项目扫描」使用：只取 workspace 身份三列并按 workspace_key 聚合，
+   * 不读 meta_json/searchable_text，因此返回条数 = 工作区数量（通常几十），
+   * 不会像 listTaskMetas({}) 那样把所有任务行读进内存。
+   */
+  async listWorkspaceScopes(): Promise<
+    Array<{ workspaceKey: string; workspacePath: string; workspaceIdentity?: string }>
+  > {
+    await this.ensureReady();
+    const rows = this.getDatabase()
+      .prepare(
+        `SELECT
+          workspace_key,
+          MIN(workspace_path) AS workspace_path,
+          MIN(workspace_identity) AS workspace_identity
+        FROM tasks
+        WHERE deleted = 0
+        GROUP BY workspace_key
+        ORDER BY workspace_key`,
+      )
+      .all() as unknown as Array<{
+      workspace_key: string;
+      workspace_path: string;
+      workspace_identity: string | null;
+    }>;
+    return rows.map((row) => ({
+      workspaceKey: row.workspace_key,
+      workspacePath: row.workspace_path,
+      ...(row.workspace_identity ? { workspaceIdentity: row.workspace_identity } : {}),
+    }));
+  }
+
   private hasGroupedWorkspaceBootstrapRunSync(): boolean {
     const row = this.getDatabase()
       .prepare(

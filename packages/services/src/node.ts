@@ -252,6 +252,14 @@ export {
 export { AutomationService, InvalidCronExprError } from "./session/automationService.js";
 // 闲时任务与 automation 同库不同表；类型/常量全独立。
 export { OffPeakTaskRepo, OFF_PEAK_CLAIM_STALE_MS } from "./session/offPeakTaskRepo.js";
+// 自动归档：scheduler 常驻路径与 host 即时路径共用同一份判定与工作区枚举。
+export { TaskIndexRepo } from "./session/taskIndexRepo.js";
+export {
+  runTaskAutoArchiveSweep,
+  readTaskAutoArchiveConfig,
+  type TaskAutoArchiveSettingReader,
+  type TaskAutoArchiveWorkspaceScope,
+} from "./session/taskAutoArchive.js";
 // host 域终态回填 files_changed 复用现有 task diff 汇总。
 export { buildTaskChangeSummary } from "./session/taskChangeSummary.js";
 export { OffPeakTaskService } from "./session/offPeakTaskService.js";

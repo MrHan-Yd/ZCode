@@ -2266,7 +2266,7 @@ const enUS: Record<string, string> = {
   "settings.performanceModeDescription": "Simplify rendered output to improve performance.",
   "settings.taskAutoArchive": "Auto-archive old tasks",
   "settings.taskAutoArchiveDescription":
-    "Periodically scan recently opened workspaces and automatically archive completed, unread-free, unpinned tasks after the retention window.",
+    "Periodically scan all known projects and automatically archive completed, unread-free, unpinned tasks after the retention window.",
   "settings.taskAutoArchiveDays": "Archive retention",
   "settings.taskAutoArchiveDaysDescription":
     "A task becomes eligible for auto-archive only after its last update is older than this window.",
@@ -2274,6 +2274,16 @@ const enUS: Record<string, string> = {
   "settings.taskAutoArchiveDays.option.7": "Archive after 7 days",
   "settings.taskAutoArchiveDays.option.14": "Archive after 14 days",
   "settings.taskAutoArchiveDays.option.30": "Archive after 30 days",
+  "settings.archiveTitle": "Archived tasks",
+  "settings.archive.searchPlaceholder": "Search archived tasks...",
+  "settings.archive.scope.all": "All projects",
+  "settings.archive.deleteGroup": "Delete all in group",
+  "settings.archive.deleteAll": "Delete all archived",
+  "settings.archive.deleteTitle": "Delete {count} archived tasks?",
+  "settings.archive.deleteDescription":
+    "Tasks will be removed from the task list and archive; session data stays on disk.",
+  "settings.archive.remove": "Remove",
+  "settings.archive.projectUnavailable": "{project} is unavailable; archived tasks cannot be read.",
   "settings.dataBaseDir": "Data storage path",
   "settings.dataBaseDirDescription":
     "Root directory for app data (defaults to user home directory). Existing data will be copied to the new location. The .zcode/v2 suffix cannot be changed.",

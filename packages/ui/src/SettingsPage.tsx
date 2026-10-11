@@ -67,6 +67,7 @@ import { SubagentsSection } from "@/settings/SubagentsSection.js";
 import { AutomationsSection } from "@/settings/AutomationsSection.js";
 import { SegmentPill } from "@/settings/PluginStoreListView.js";
 import { PluginsSection } from "@/settings/PluginsSection.js";
+import { ArchiveManagementSection } from "@/settings/ArchiveManagementSection.js";
 import { HooksSection } from "@/settings/HooksSection.js";
 import { WorkspaceFileSearchSection } from "@/settings/WorkspaceFileSearchSection.js";
 import { MemorySettingsSection } from "@/settings/MemorySettingsSection.js";
@@ -1821,6 +1822,8 @@ export function SettingsPage({
                             workspaceIdentity={activeWorkspaceIdentity}
                             workspacePath={activeWorkspacePath ?? undefined}
                           />
+                        ) : activeSection === "archive" ? (
+                          <ArchiveManagementSection workspaceTabs={workspaceTabs} />
                         ) : activeSection === "subagents" ? (
                           <SubagentsSection
                             onManageModels={handleOpenModelProviderSettings}
