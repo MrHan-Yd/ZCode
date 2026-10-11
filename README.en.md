@@ -13,6 +13,12 @@
 
 ZCode is an AI coding workspace with desktop, browser, and terminal interfaces. This repository contains the clients, backend services, shared UI, and Agent CLI and runtime source code.
 
+> **macOS reports ZCode "is damaged" on launch?** Release builds are unsigned, so Gatekeeper may block the first launch. Clear the quarantine attribute and open it again:
+>
+> ```bash
+> xattr -cr /Applications/ZCode.app
+> ```
+
 ## Updates
 
 - 2026-10-7: Updated to ZCode v3.15.3 — fixed the update dialog flashing away on macOS before "Restart to update" could be clicked; unsigned builds now offer "Open download page" and link to the Release page for a manual install.
