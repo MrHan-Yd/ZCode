@@ -121,6 +121,7 @@ test("失败码到本地化文案 key 的映射覆盖所有预期内失败", () 
   const expectedCodes = [
     "no-remote",
     "no-upstream",
+    "upstream-branch-missing",
     "detached-head",
     "dirty-working-tree",
     "merge-conflict",

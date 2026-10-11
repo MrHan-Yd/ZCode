@@ -15,6 +15,7 @@ import {
 } from "react";
 import {
   ActivityIcon,
+  ArrowDownToLineIcon,
   ArrowRightIcon,
   ArrowUpFromLineIcon,
   BotIcon,
@@ -390,6 +391,9 @@ function GitStatusSection({
     return null;
   }
   const hasChanges = git.added + git.removed > 0;
+  // 「更改」行只在真的有改动时渲染。有上游的干净仓库现在也会显示 Git 段（见
+  // gitToolsEntryVisibility），继续无条件挂一行「+0 -0」会让这块看起来是空的。
+  const hasWorkspaceChanges = hasChanges || git.dirtyFileCount > 0;
   const canOpenReview = Boolean(onOpenGitReview && gitSummary.isRepository);
 
   return (
@@ -398,7 +402,9 @@ function GitStatusSection({
       separated={separated}
       title={intl.formatMessage({ id: "chat.statusPanel.environment" })}
       trailing={(isOpen) =>
-        isOpen ? null : (
+        // 收起态的「+N -M」同样只在真有改动时显示：规则 5 之后干净仓库也会渲染这段，
+        // 收起时顶着一行「+0 -0」比留空更像坏掉。
+        isOpen || !hasWorkspaceChanges ? null : (
           <span className="shrink-0 font-mono text-ui-sm tabular-nums">
             <span className={cn("text-[var(--color-diff-added)]", !hasChanges && "opacity-50")}>
               +{git.added}
@@ -411,30 +417,32 @@ function GitStatusSection({
       }
     >
       <div className="space-y-0">
-        {/* V4 状态面板迁移时只保留了 Changes 的静态展示，
-            没有继续透传旧版 Git review 回调，导致规范中的审阅入口不可点击。 */}
-        <button
-          type="button"
-          disabled={!canOpenReview}
-          className={cn(
-            "flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-2 text-left text-ui-base text-[var(--color-foreground)] transition-colors",
-            canOpenReview
-              ? "hover:bg-[var(--color-hover)] hover:text-[var(--color-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-input-border-focused)]"
-              : "cursor-default opacity-50",
-          )}
-          onClick={() => {
-            onOpenGitReview?.(gitWorktreeReviewSourceId ?? undefined);
-          }}
-        >
-          <FileDiffIcon className="size-4 shrink-0 text-[var(--color-foreground)]" />
-          <span className="min-w-0 flex-1 truncate">
-            {intl.formatMessage({ id: "chat.statusPanel.changes" })}
-          </span>
-          <span className="shrink-0 font-mono tabular-nums">
-            <span className="text-[var(--color-diff-added)]">+{git.added}</span>{" "}
-            <span className="text-[var(--color-diff-removed)]">-{git.removed}</span>
-          </span>
-        </button>
+        {hasWorkspaceChanges ? (
+          /* V4 状态面板迁移时只保留了 Changes 的静态展示，
+             没有继续透传旧版 Git review 回调，导致规范中的审阅入口不可点击。 */
+          <button
+            type="button"
+            disabled={!canOpenReview}
+            className={cn(
+              "flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-2 text-left text-ui-base text-[var(--color-foreground)] transition-colors",
+              canOpenReview
+                ? "hover:bg-[var(--color-hover)] hover:text-[var(--color-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-input-border-focused)]"
+                : "cursor-default opacity-50",
+            )}
+            onClick={() => {
+              onOpenGitReview?.(gitWorktreeReviewSourceId ?? undefined);
+            }}
+          >
+            <FileDiffIcon className="size-4 shrink-0 text-[var(--color-foreground)]" />
+            <span className="min-w-0 flex-1 truncate">
+              {intl.formatMessage({ id: "chat.statusPanel.changes" })}
+            </span>
+            <span className="shrink-0 font-mono tabular-nums">
+              <span className="text-[var(--color-diff-added)]">+{git.added}</span>{" "}
+              <span className="text-[var(--color-diff-removed)]">-{git.removed}</span>
+            </span>
+          </button>
+        ) : null}
         <GitBranchSwitcher
           workspacePath={workspacePath}
           gitSummary={gitSummary}
@@ -1605,6 +1613,7 @@ function StatusSummaryRow({
       removed,
       hasPushableCommits: model.git.hasPushableCommits,
       behind: model.git.behind,
+      canPull: model.git.canPull,
     })
       ? model.git
       : null;
@@ -1655,13 +1664,22 @@ function StatusSummaryRow({
     </StatusSummaryMetric>
   ) : gitRemoteSummary ? (
     <StatusSummaryMetric
-      icon={<ArrowUpFromLineIcon className="size-4 text-[var(--color-foreground)]" />}
+      // 有未推送提交是「往上推」，其余两种情况（落后远端 / 已同步）都指向「拉取」。
+      icon={
+        gitRemoteSummary.hasPushableCommits ? (
+          <ArrowUpFromLineIcon className="size-4 text-[var(--color-foreground)]" />
+        ) : (
+          <ArrowDownToLineIcon className="size-4 text-[var(--color-foreground)]" />
+        )
+      }
     >
       <span className="min-w-0 truncate">
         {intl.formatMessage({
           id: gitRemoteSummary.hasPushableCommits
             ? "chat.statusPanel.unpushedCommits"
-            : "chat.statusPanel.behindRemote",
+            : gitRemoteSummary.behind > 0
+              ? "chat.statusPanel.behindRemote"
+              : "chat.statusPanel.remoteSynced",
         })}
       </span>
       {gitRemoteSummaryCount > 0 ? (

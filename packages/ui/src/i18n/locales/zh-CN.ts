@@ -1191,6 +1191,8 @@ const zhCN: Record<string, string> = {
   "git.actionMenu.pullDialog.error.noRemote": "仓库的远程地址无效或未配置，无法拉取。",
   "git.actionMenu.pullDialog.error.noUpstream":
     "当前分支没有上游分支，请先推送一次以建立跟踪关系。",
+  "git.actionMenu.pullDialog.error.upstreamBranchMissing":
+    "上游分支在远端已不存在（可能已被删除），重新推送可重建，或清除该分支的上游配置。",
   "git.actionMenu.pullDialog.error.detachedHead": "当前处于游离 HEAD 状态，无法拉取。",
   "git.actionMenu.pullDialog.error.dirtyWorkingTree":
     "本地未提交的改动会被拉取覆盖，请先提交或暂存这些改动。",
@@ -1204,6 +1206,8 @@ const zhCN: Record<string, string> = {
   "git.actionMenu.pullDialog.error.operationInProgress":
     "仓库中已有未完成的合并或变基，请先完成或终止后再拉取。",
   "git.actionMenu.pullDialog.toast.success": "已从 {target} 拉取 {count} 个提交",
+  "git.actionMenu.pullDialog.toast.successStats":
+    "涉及 {files} 个文件，变更 +{added}/-{removed} 行",
   "git.actionMenu.pullDialog.toast.updated": "已拉取最新更改",
   "git.actionMenu.pullDialog.toast.upToDate": "已是最新版本",
   "git.branchSwitcher.label": "分支",
@@ -4547,6 +4551,7 @@ const zhCN: Record<string, string> = {
   "chat.statusPanel.changes": "更改",
   "chat.statusPanel.unpushedCommits": "未推送提交",
   "chat.statusPanel.behindRemote": "落后远端",
+  "chat.statusPanel.remoteSynced": "已同步",
   "chat.statusPanel.branch": "分支",
   "chat.statusPanel.commitPush": "提交 / 推送",
   "chat.statusPanel.clean": "干净",

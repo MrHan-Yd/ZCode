@@ -268,6 +268,7 @@ export type GitPullIssueCode =
   | "detached-head"
   | "no-remote"
   | "no-upstream"
+  | "upstream-branch-missing"
   | "dirty-working-tree"
   | "merge-conflict"
   | "diverged"
@@ -281,6 +282,7 @@ export const GIT_PULL_ISSUE_CODES: readonly GitPullIssueCode[] = [
   "detached-head",
   "no-remote",
   "no-upstream",
+  "upstream-branch-missing",
   "dirty-working-tree",
   "merge-conflict",
   "diverged",

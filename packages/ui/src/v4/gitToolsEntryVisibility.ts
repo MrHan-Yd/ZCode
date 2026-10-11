@@ -19,21 +19,30 @@ export function shouldShowGitToolsEntry(options: {
   /** 是否还有可推送的提交，由调用方按 `canPushGitBranch` 判定。 */
   hasPushableCommits: boolean;
   behind: number;
+  /**
+   * 当前分支是否有上游（`canPullGitBranch`）。有上游就保留入口，因为「落后远端」
+   * 在本地根本观测不到：`behind` 只在 fetch/push/pull 之后才更新，而本应用没有后台 fetch。
+   * 干净工作区 + 别人刚推送过 + 自己还没 fetch 时 `behind` 仍是 0，若把该状态判成
+   * 「无事可做」，拉取入口恰恰在最需要它的场景下不可见。
+   */
+  canPull: boolean;
 }): boolean {
   if (!options.gitSummary.isGitAvailable || !options.gitSummary.isRepository) {
     return false;
   }
 
   const hasWorktreeChanges = options.dirtyFileCount > 0 || options.added + options.removed > 0;
-  const hasRemoteWork = options.hasPushableCommits || options.behind > 0;
+  const hasRemoteWork = options.hasPushableCommits || options.behind > 0 || options.canPull;
   return hasWorktreeChanges || hasRemoteWork;
 }
 
 /**
- * 收起态胶囊是否显示「远程待办」摘要（未推送提交 / 落后远端）。
+ * 收起态胶囊是否显示「远程待办」摘要（未推送提交 / 落后远端 / 已同步）。
  *
  * auto 形态在容器不足 1280px 时只显示胶囊，点胶囊才展开面板——而那正是唯一能点「推送」的地方。
  * 所以"干净但有待推送提交"时胶囊必须给出可点内容，否则入口等于不存在。
+ * 有上游时也给一条（「已同步」），否则干净且同步的仓库在窄屏下胶囊可能整体为 null，
+ * 展开面板的入口随之消失，主按钮上的「拉取」也就点不到了。
  * 工作区已有行级增减时由「+/- 变更」摘要表达，这里不重复。
  */
 export function shouldShowGitRemoteSummary(options: {
@@ -41,10 +50,11 @@ export function shouldShowGitRemoteSummary(options: {
   removed: number;
   hasPushableCommits: boolean;
   behind: number;
+  canPull: boolean;
 }): boolean {
   if (options.added + options.removed > 0) {
     return false;
   }
 
-  return options.hasPushableCommits || options.behind > 0;
+  return options.hasPushableCommits || options.behind > 0 || options.canPull;
 }

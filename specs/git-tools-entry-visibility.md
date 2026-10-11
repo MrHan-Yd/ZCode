@@ -23,36 +23,44 @@ if (added + removed <= 0) return null;   // added/removed 只统计 unstaged + s
 2. **待提交改动按未提交文件数判定,不只看行级增减**。文件数(`gitDirtyFileCount`,按 path 去重)或行级增减任一非零即视为有改动。
 3. **可推送性复用 `canPushGitBranch`**,不在这里另写一套:菜单里「推送」项的启用条件、`resolveGitActionMenuPrimaryAction` 的主按钮选择都用它。否则"新分支尚无 upstream"等边界会与按钮自身状态对不上。
 4. 落后上游(`behind > 0`)也保留入口:那同样是需要用户处理的状态。
-5. **干净且与上游同步的仓库仍然不显示** —— 保留原判据的动机(不给 clean repo 挂一张空状态卡)。
-6. **收起态胶囊也要给出可点内容**。`auto` 形态在容器不足 1280px 时只显示胶囊、点开才展开面板,那是窄屏下唯一能按「推送」的路径;若胶囊各分支全为 null,`StatusSummaryRow` 会整体返回 null,入口等于不存在。因此当"无行级增减但仍有未推送提交/落后远端"时,胶囊显示一条远程待办摘要:
-   - `hasPushableCommits` 优先,文案「未推送提交」+ `ahead`;
-   - 否则「落后远端」+ `behind`;
+5. **有上游分支(`canPullGitBranch`)也保留入口**(v3.17.3 起,取代原先「干净且与上游同步就不显示」的规则)。
+   - 原因:`behind` 只在 fetch/push/pull **之后**才更新,而本应用没有任何后台 fetch。干净工作区 + 别人刚推送过 + 自己还没 fetch 时 `behind` 仍是 0,旧判据会把这种状态判成「无事可做」而隐藏入口 —— 而「想拉取别人的提交」恰恰是最需要这个入口的场景。
+   - 代价:配置了上游的干净仓库现在会一直显示 Git 段。这是有意接受的:该段并非空卡(有分支切换与「拉取」,「拉取」在此同时也是「检查远端有无更新」),「更改」行在没有改动时不再渲染。
+   - 非仓库、Git 不可用,以及**游离 HEAD 且干净**的仓库仍然不显示。
+6. **收起态胶囊也要给出可点内容**。`auto` 形态在容器不足 1280px 时只显示胶囊、点开才展开面板,那是窄屏下唯一能按「推送」的路径;若胶囊各分支全为 null,`StatusSummaryRow` 会整体返回 null,入口等于不存在。因此当"无行级增减但有远程待办"时,胶囊显示一条远程摘要:
+   - `hasPushableCommits` 优先,文案「未推送提交」+ `ahead`,图标为向上箭头;
+   - 否则 `behind > 0` 时「落后远端」+ `behind`;
+   - 否则(有上游但已同步)显示「已同步」,图标为向下箭头(与"拉取"同向);
    - 计数为 0 时不显示数字(例如"有分支但还没有 upstream"的情况)。
      有行级增减时仍由既有的「+/- 更改」摘要表达,不重复显示。
+7. **「更改」行只在真有改动时渲染**(`dirtyFileCount > 0` 或 `added + removed > 0`)。规则 5 让干净仓库也会显示 Git 段,继续无条件挂一行「+0 -0」会让这段看起来是空的。
 
 ## 状态所有者
 
 - **数据来源不变**:`gitSummary` / `gitDirtyFileCount` / `gitWorktreeChangeSummary` 仍由 `WorkspaceShellLayout` 计算并逐层传入。
-- **判据抽成纯函数** `shouldShowGitToolsEntry`(`packages/ui/src/v4/gitToolsEntryVisibility.ts`)。它刻意不含任何运行时依赖(只用 type import),这样规则可以被单测直接加载;可推送性由调用方算好传入,避免在这个文件里复制一份判定。
+- **判据抽成纯函数** `shouldShowGitToolsEntry`(`packages/ui/src/v4/gitToolsEntryVisibility.ts`)。它刻意不含任何运行时依赖(只用 type import),这样规则可以被单测直接加载;可推送性与可拉取性由调用方算好(`canPushGitBranch` / `canPullGitBranch`)传入,避免在这个文件里复制判定。
 - **面板整体可见性不用改**:`hasContent` 里已经包含 `Boolean(git)`,Git 段一旦非空,面板与 Git 段都会渲染。
+- **`gitSummary.behind` 仍然只由 fetch/push/pull 推进**,本改动不引入任何后台 fetch;规则 5 是对"该值不可靠"的补偿,不是把它变成实时值。
 
 ## 接口
 
-无协议改动。只改 `buildConversationStatusPanelGitModel` 的前置判据,并新增一个纯函数供其调用与测试。
+无协议改动。只改 `buildConversationStatusPanelGitModel` 的前置判据(`ConversationStatusPanelGitModel` 新增 `canPull` 字段供胶囊选文案),并新增一个纯函数供其调用与测试。
 
 ## 验收场景
 
-1. 干净且与上游同步、`ahead = 0 / behind = 0` → 不显示 Git 段。
+1. 干净、有上游、`ahead = 0 / behind = 0` → **显示** Git 段(规则 5),主按钮为「拉取」;「更改」行不渲染。
 2. **提交之后(ahead > 0,工作区干净)→ 仍显示 Git 段,主按钮为「推送」。**
 3. 只有未暂存的二进制改动(文件数 1、`added + removed = 0`)→ 显示 Git 段,可以提交。
 4. 有跟踪分支且 `ahead = 0`,但 `behind > 0` → 显示 Git 段。
 5. 分支尚无 upstream(跟踪分支为空)→ 显示 Git 段(与「推送」项可用一致)。
-6. 非 Git 仓库或 Git 不可用 → 不显示。
+6. 非 Git 仓库、Git 不可用、或游离 HEAD 且工作区干净 → 不显示。
 7. 窄屏 auto(只显示胶囊)下提交完 → 胶囊出现「未推送提交 1」,点开后可在面板里按「推送」。
 8. 窄屏 auto、工作区有行级增减 → 胶囊仍显示「更改 +N -M」(不叠加远程摘要)。
+9. 窄屏 auto、干净且有上游 → 胶囊显示「已同步」,保证点开面板按「拉取」的路径存在。
 
 ## 已知限制
 
 - 不新增独立于状态面板的 Git 入口:面板仍由 `hasContent` 决定整体是否渲染,而 Git 段非空即会让 `hasContent` 为真。若将来 Git 段被摘掉,入口会连带消失。
-- `behind > 0` 让入口与摘要保留下来,且主按钮在该状态下可以拉取(见 `specs/git-pull.md`);本文件只负责"入口不被误隐藏",拉取自身的交互与结果展示不在范围内。
+- 规则 5 让「有上游的干净仓库」永远显示,等于把隐藏条件收窄到「非仓库 / Git 不可用 / 游离 HEAD 且干净」。真正让 `behind` 变准的做法是后台 fetch(本应用没有),那会让判据重新变得有意义 —— 属于后续可选方向,不在本次范围。
+- `behind > 0` 与「有上游」都会保留入口,且主按钮在这些状态下可以拉取(见 `specs/git-pull.md`);本文件只负责"入口不被误隐藏",拉取自身的交互与结果展示不在范围内。
 - 不做"提交后自动提示推送"之类的引导,只保证入口不被误隐藏。

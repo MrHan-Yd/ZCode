@@ -1801,13 +1801,14 @@ export function createGitCliRepo(options?: { commandProvider?: GitCommandProvide
       const nextStatus = await this.getStatus(workspacePath);
       const headAfter = await readVerifiedHeadOid(resolution);
       const updated = isGitPullUpdated(headBefore, headAfter);
-      const commitCount =
-        updated && headBefore && headAfter
-          ? await readPullCommitCount(resolution, headBefore, headAfter)
-          : 0;
-      const diffTotals =
-        updated && headBefore && headAfter
-          ? await readPullDiffTotals(resolution, headBefore, headAfter)
+      // 拉取量要两侧 oid 都在才能算。任一侧读不到就当「有更新、数量未知」——
+      // 给 0 会被弹窗渲染成「0 个提交」，把"不知道"说成"没有"。
+      const measured =
+        updated && headBefore !== null && headAfter !== null
+          ? {
+              commitCount: await readPullCommitCount(resolution, headBefore, headAfter),
+              diffTotals: await readPullDiffTotals(resolution, headBefore, headAfter),
+            }
           : null;
 
       return {
@@ -1815,11 +1816,11 @@ export function createGitCliRepo(options?: { commandProvider?: GitCommandProvide
         trackingBranchName: nextStatus.summary.trackingBranchName,
         remoteName: parseTrackingRemoteName(nextStatus.summary.trackingBranchName),
         updated,
-        commitCount,
-        // 未更新时统一给 0，让 UI 明确报「已是最新」；更新时取不到就不展示该项。
-        fileCount: updated ? (diffTotals?.fileCount ?? null) : 0,
-        added: updated ? (diffTotals?.added ?? null) : 0,
-        removed: updated ? (diffTotals?.removed ?? null) : 0,
+        // 未更新时统一给 0，让 UI 明确报「已是最新」；更新时取不到就置 null，不展示该项。
+        commitCount: updated ? (measured?.commitCount ?? null) : 0,
+        fileCount: updated ? (measured?.diffTotals?.fileCount ?? null) : 0,
+        added: updated ? (measured?.diffTotals?.added ?? null) : 0,
+        removed: updated ? (measured?.diffTotals?.removed ?? null) : 0,
         summary: nextStatus.summary,
       };
     },

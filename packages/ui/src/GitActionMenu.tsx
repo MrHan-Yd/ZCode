@@ -63,7 +63,7 @@ import {
 } from "@/git-action-menu/currentSessionFileScope.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useSettings } from "@/hooks/useSettingService.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useZCodeIntl, type IntlInstance } from "@/i18n/IntlProvider.js";
 import { getErrorMessage } from "@/lib/errorMessage.js";
 import { runUserAction } from "@/lib/userActionTelemetry.js";
 import { formatCommandShortcutLabel, matchesPrimaryShortcut } from "@/lib/keyboardShortcuts.js";
@@ -1015,6 +1015,36 @@ interface GitPullErrorState {
   message: string;
 }
 
+/**
+ * 拉取成功的 toast 补充片段（文件数与增删行数）。toast 不像结果面板那样会被
+ * 「工作区变干净 → 整块 Git 区卸载」带走，所以「拿回来多少」也要在这里留一份。
+ * 作为独立的一句拼在主句后面，避免依赖各语言的连接符。
+ */
+function formatPullToastStats(
+  intl: IntlInstance,
+  result: GitPullResult,
+  numberFormatter: Intl.NumberFormat,
+): string {
+  // fileCount / added / removed 同出一份 diff 统计：只要有一项拿不到就整句省略。
+  if (
+    !result.updated ||
+    result.fileCount === null ||
+    result.added === null ||
+    result.removed === null
+  ) {
+    return "";
+  }
+
+  return intl.formatMessage(
+    { id: "git.actionMenu.pullDialog.toast.successStats" },
+    {
+      files: numberFormatter.format(result.fileCount),
+      added: numberFormatter.format(result.added),
+      removed: numberFormatter.format(result.removed),
+    },
+  );
+}
+
 /** 拉取弹窗的「标签 + 取值」行。弹窗里这类行有六处，统一在这里收敛对齐方式。 */
 function GitPullDetailRow({
   label,
@@ -1378,6 +1408,10 @@ export function GitActionMenu({
   const [pullResult, setPullResult] = useState<GitPullResult | null>(null);
   const [pullError, setPullError] = useState<GitPullErrorState | null>(null);
   const [mutationPending, setMutationPending] = useState(false);
+  // 本次拉取弹窗会话里是否真的跑过一次拉取（成功或失败）。用来决定关闭弹窗时
+  // 要不要补那次被推迟的刷新——纯取消关闭不该多打一次 Git 读取。
+  const pullSettledRef = useRef(false);
+  const numberFormatter = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   // 本次提交不包含的文件。弹窗会话内的临时状态，不作为持久化偏好。
   const [commitExcludedStagePaths, setCommitExcludedStagePaths] = useState<ReadonlySet<string>>(
     EMPTY_COMMIT_EXCLUDED_PATHS,
@@ -1506,10 +1540,17 @@ export function GitActionMenu({
     setPullDialogOpen(false);
     setPullResult(null);
     setPullError(null);
-  }, []);
+    // 拉取只在弹窗关闭后才刷新仓库状态（见 handlePullSubmit 的说明）：
+    // 这里补上那一次刷新。没跑过拉取的取消关闭不刷新，避免多余的一次 Git 读取。
+    if (pullSettledRef.current) {
+      pullSettledRef.current = false;
+      onRefreshGit();
+    }
+  }, [onRefreshGit]);
 
   const openPullDialog = useCallback(() => {
     // 每次重新打开都要清掉上一次的结果，否则会拿旧结果冒充本次拉取。
+    pullSettledRef.current = false;
     setPullResult(null);
     setPullError(null);
     setPullDialogOpen(true);
@@ -1946,6 +1987,7 @@ export function GitActionMenu({
     try {
       const result = await gitService.pull({ workspacePath });
       setPullResult(result);
+      pullSettledRef.current = true;
       logger.info("[GitActionMenu] 拉取更改成功", {
         workspacePath,
         branchName: result.branchName,
@@ -1954,22 +1996,31 @@ export function GitActionMenu({
         commitCount: result.commitCount,
         fileCount: result.fileCount,
       });
+      // 结果面板是主要展示处，toast 是它的冗余通道：面板可能因为工作区变干净
+      // 触发整块 Git 区卸载而消失，toast 不受影响，拉取量不会因此丢失。
+      const statsLine = formatPullToastStats(intl, result, numberFormatter);
       toast(
         !result.updated
           ? intl.formatMessage({ id: "git.actionMenu.pullDialog.toast.upToDate" })
           : // 拿不到提交数时不要说「拉取 0 个提交」——那是"不知道"，不是"没有"。
-            result.commitCount === null
-            ? intl.formatMessage({ id: "git.actionMenu.pullDialog.toast.updated" })
-            : intl.formatMessage(
-                { id: "git.actionMenu.pullDialog.toast.success" },
-                {
-                  target: result.trackingBranchName?.trim() || currentBranchLabel,
-                  count: result.commitCount,
-                },
-              ),
+            [
+              result.commitCount === null
+                ? intl.formatMessage({ id: "git.actionMenu.pullDialog.toast.updated" })
+                : intl.formatMessage(
+                    { id: "git.actionMenu.pullDialog.toast.success" },
+                    {
+                      target: result.trackingBranchName?.trim() || currentBranchLabel,
+                      count: numberFormatter.format(result.commitCount),
+                    },
+                  ),
+              statsLine,
+            ]
+              .filter(Boolean)
+              .join(" "),
       );
-      // 结果留在弹窗里(pull 的看点就是"拿回来多少"),所以这里不关弹窗。
-      onRefreshGit();
+      // 结果留在弹窗里(pull 的看点就是"拿回来多少"),所以这里不关弹窗、也不刷新：
+      // 拉取成功后 behind 会归零，立刻刷新会把整块 Git 区（连同这个弹窗）卸载掉，
+      // 结果面板刚渲染就被销毁。刷新改到弹窗关闭时执行。
     } catch (error: unknown) {
       const code = readGitPullIssueCode(error);
       const message = getErrorMessage(error);
@@ -1979,12 +2030,13 @@ export function GitActionMenu({
         error: message,
       });
       setPullError({ code, message });
-      // 冲突会留下未完成的 merge，失败也必须刷新，否则用户看到的是过期的干净工作区。
-      onRefreshGit();
+      pullSettledRef.current = true;
+      // 失败同样不在这里刷新：冲突会留下未完成的 merge，但弹窗仍然是唯一能看到
+      // 冲突原因和原始输出的地方，刷新同样会把它连同 Git 区一起卸载。关闭时再刷新。
     } finally {
       setMutationPending(false);
     }
-  }, [currentBranchLabel, gitService, intl, onRefreshGit, pullEnabled, workspacePath]);
+  }, [currentBranchLabel, gitService, intl, numberFormatter, pullEnabled, workspacePath]);
 
   const handlePrimaryAction = useCallback(() => {
     if (primaryActionDisabled) {

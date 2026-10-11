@@ -1279,9 +1279,9 @@ const enUS: Record<string, string> = {
   "git.actionMenu.pullDialog.upToDate": "Already up to date. No new commits were pulled.",
   "git.actionMenu.pullDialog.success.summary": "Pulled the latest changes",
   "git.actionMenu.pullDialog.success.commitsLabel": "Commits pulled",
-  "git.actionMenu.pullDialog.success.commitsValue": "{count} commits",
+  "git.actionMenu.pullDialog.success.commitsValue": "{count} commit(s)",
   "git.actionMenu.pullDialog.success.filesLabel": "Files involved",
-  "git.actionMenu.pullDialog.success.filesValue": "{count} files",
+  "git.actionMenu.pullDialog.success.filesValue": "{count} file(s)",
   "git.actionMenu.pullDialog.success.linesLabel": "Lines changed",
   "git.actionMenu.pullDialog.error.summary": "Pull failed. Review the error details below.",
   "git.actionMenu.pullDialog.error.detailsLabel": "Error details",
@@ -1292,6 +1292,8 @@ const enUS: Record<string, string> = {
     "This repository has no usable Git remote, so there is nothing to pull from.",
   "git.actionMenu.pullDialog.error.noUpstream":
     "This branch has no upstream branch. Push it once to set the tracking branch.",
+  "git.actionMenu.pullDialog.error.upstreamBranchMissing":
+    "The upstream branch no longer exists on the remote. Push again to recreate it, or clear this branch's upstream.",
   "git.actionMenu.pullDialog.error.detachedHead": "Cannot pull while HEAD is detached.",
   "git.actionMenu.pullDialog.error.dirtyWorkingTree":
     "Local changes would be overwritten by the pull. Commit or stash them first.",
@@ -1307,7 +1309,9 @@ const enUS: Record<string, string> = {
     "The pull timed out. Check your network connection and try again.",
   "git.actionMenu.pullDialog.error.operationInProgress":
     "Another Git merge or rebase is already in progress. Finish or abort it before pulling.",
-  "git.actionMenu.pullDialog.toast.success": "Pulled {count} commits from {target}",
+  "git.actionMenu.pullDialog.toast.success": "Pulled {count} commit(s) from {target}",
+  "git.actionMenu.pullDialog.toast.successStats":
+    "{files} file(s) changed, +{added}/-{removed} lines",
   "git.actionMenu.pullDialog.toast.updated": "Pulled the latest changes",
   "git.actionMenu.pullDialog.toast.upToDate": "Already up to date",
   "git.branchSwitcher.label": "Branch",
@@ -4852,6 +4856,7 @@ const enUS: Record<string, string> = {
   "chat.statusPanel.changes": "Changes",
   "chat.statusPanel.unpushedCommits": "Unpushed commits",
   "chat.statusPanel.behindRemote": "Behind remote",
+  "chat.statusPanel.remoteSynced": "Synced",
   "chat.statusPanel.branch": "Branch",
   "chat.statusPanel.commitPush": "Commit / Push",
   "chat.statusPanel.clean": "Clean",

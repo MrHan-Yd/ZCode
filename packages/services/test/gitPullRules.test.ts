@@ -120,6 +120,18 @@ test("没有配置 remote：识别为 no-remote", () => {
   assert.equal(failure.code, "no-remote");
 });
 
+test("远端分支已被删除：识别为 upstream-branch-missing 而不是 unknown", () => {
+  // 真实 Git 输出（PR 合并后远端删掉该分支）：上游配置还在，但远端那个 ref 没了。
+  const failure = classifyFailure(
+    [
+      "Your configuration specifies to merge with the ref 'refs/heads/feature'",
+      "from the remote, but no such ref was fetched.",
+    ].join("\n"),
+  );
+
+  assert.equal(failure.code, "upstream-branch-missing");
+});
+
 test("未识别的失败回落到 unknown，并把原始输出放进详情", () => {
   const failure = classifyFailure("fatal: something completely unexpected");
 
@@ -159,10 +171,15 @@ test("空 diff 聚合为零", () => {
   });
 });
 
-test("updated 判定：HEAD 变化才算拉到东西", () => {
+test("更新判定：两侧 HEAD 一致才算没拉到东西", () => {
   assert.equal(isGitPullUpdated("aaa", "bbb"), true);
   assert.equal(isGitPullUpdated("aaa", "aaa"), false);
-  assert.equal(isGitPullUpdated(null, "bbb"), false);
-  assert.equal(isGitPullUpdated("aaa", null), false);
   assert.equal(isGitPullUpdated(null, null), false);
+});
+
+test("更新判定：任一侧读不到 HEAD 时按「有更新、数量未知」上报，不能报成「已是最新」", () => {
+  // 拉取后读 HEAD 失败（超时等）时若报「已是最新」，会把真的快进过的分支说成没变，
+  // 用户会误判自己的分支状态；反过来只是多报一次数量未知的拉取。
+  assert.equal(isGitPullUpdated("aaa", null), true);
+  assert.equal(isGitPullUpdated(null, "bbb"), true);
 });

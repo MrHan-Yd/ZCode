@@ -95,6 +95,8 @@ export function resolveGitPullErrorMessageId(code: GitPullIssueCode | null): str
       return "git.actionMenu.pullDialog.error.timeout";
     case "operation-in-progress":
       return "git.actionMenu.pullDialog.error.operationInProgress";
+    case "upstream-branch-missing":
+      return "git.actionMenu.pullDialog.error.upstreamBranchMissing";
     default:
       return null;
   }

@@ -8,7 +8,7 @@ import type {
   WorkflowRunState,
 } from "@zcode/shared/zcode-protocol-v4";
 import { workflowRunStepCounts } from "@zcode/shared/zcode-protocol-v4";
-import { canPushGitBranch } from "@/git-action-menu/display.js";
+import { canPullGitBranch, canPushGitBranch } from "@/git-action-menu/display.js";
 import { shouldShowGitToolsEntry } from "@/v4/gitToolsEntryVisibility.js";
 import { extractPlanToolCallContent, getPlanDirectoryTitle } from "@/lib/planToolCall.js";
 
@@ -22,6 +22,8 @@ export interface ConversationStatusPanelGitModel {
   behind: number;
   /** 是否还有可推送的提交（与「推送」项的启用条件同一判据）。 */
   hasPushableCommits: boolean;
+  /** 当前分支是否有上游（与「拉取」项的启用条件同一判据）。 */
+  canPull: boolean;
   isClean: boolean;
 }
 
@@ -152,6 +154,7 @@ function buildGitModel({
   // 整块 Git 工具（含「推送」）就消失了，而这是全 UI 唯一的提交/推送入口。
   // 现在把「可推送/待拉取的提交」和「有文件数但行数为 0 的改动（二进制等）」也算进去。
   const hasPushableCommits = canPushGitBranch(gitSummary);
+  const canPull = canPullGitBranch(gitSummary);
   const shouldShow = shouldShowGitToolsEntry({
     gitSummary,
     dirtyFileCount: gitDirtyFileCount,
@@ -159,6 +162,7 @@ function buildGitModel({
     removed,
     hasPushableCommits,
     behind: gitSummary.behind,
+    canPull,
   });
   if (!shouldShow) {
     return null;
@@ -179,6 +183,7 @@ function buildGitModel({
     ahead: gitSummary.ahead,
     behind: gitSummary.behind,
     hasPushableCommits,
+    canPull,
     isClean,
   };
 }

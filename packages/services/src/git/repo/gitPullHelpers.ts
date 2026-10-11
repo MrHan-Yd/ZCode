@@ -39,6 +39,10 @@ export const GIT_PULL_ISSUE_MESSAGES: Record<KnownGitPullIssueCode, string> = {
   // （Git 对后者同样报 "does not appear to be a git repository"）。
   "no-remote": "The repository has no usable Git remote, so there is nothing to pull from.",
   "no-upstream": "The current branch has no upstream tracking branch. Push it first to set one.",
+  // 上游配置还在、但远端那个分支已经不存在（常见于 PR 合并后删分支）。
+  // 处理动作和「从未配置上游」不同：这里要重新推送重建、或清掉该分支的上游配置。
+  "upstream-branch-missing":
+    "The upstream branch no longer exists on the remote. Push again to recreate it, or clear this branch's upstream.",
   "detached-head": "Cannot pull while HEAD is detached.",
 };
 
@@ -91,6 +95,13 @@ const GIT_PULL_ISSUE_RULES: readonly GitPullIssueRule[] = [
   {
     code: "no-upstream",
     pattern: /there is no tracking information|no upstream configured for branch/i,
+  },
+  {
+    // 实测输出：Your configuration specifies to merge with the ref 'refs/heads/x'
+    // from the remote, but no such ref was fetched.
+    code: "upstream-branch-missing",
+    pattern:
+      /no such ref was fetched|couldn't find remote ref|your configuration specifies to merge with the ref/i,
   },
   {
     code: "detached-head",
@@ -160,7 +171,10 @@ export function aggregateGitPullDiffTotals(stats: Map<string, GitLineStat>): Git
  * 本次 pull 是否真的改变了当前分支。用 HEAD 差集而不是远程跟踪引用：
  * 若调用前已经 fetch 过，跟踪引用不会再移动，但 pull 仍会快进 HEAD，
  * 只比跟踪引用会把这种情况误报成「已是最新」。
+ *
+ * 任一侧读不到时（`null`）不下「无变化」的结论，而按「有更新、数量未知」上报：
+ * 把真的拉到了东西说成「已是最新」会让用户误判分支状态，反过来只是多报一次数量未知的拉取。
  */
 export function isGitPullUpdated(headBefore: string | null, headAfter: string | null): boolean {
-  return Boolean(headBefore && headAfter && headBefore !== headAfter);
+  return headBefore !== headAfter;
 }
