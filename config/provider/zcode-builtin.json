@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": 30,
+  "revision": 31,
   "config": {
     "providerConfigRules": {
       "templateRules": [
@@ -2476,6 +2476,28 @@
               },
               "maxOutputTokens": {
                 "max": 65536
+              }
+            }
+          }
+        },
+        {
+          "modelMatch": ".*muse-spark-1[.\\-]\\d(?:[.\\-:/\\[].*)?",
+          "config": {
+            "properties": {
+              "contextWindow": 1048576,
+              "inputFormat": {
+                "supportsImage": true,
+                "supportsVideo": true,
+                "supportsAudio": true,
+                "supportsPdf": false
+              }
+            },
+            "optionSpecs": {
+              "reasoningLevel": {
+                "values": ["disabled", "enabled"]
+              },
+              "maxOutputTokens": {
+                "max": 131072
               }
             }
           }
