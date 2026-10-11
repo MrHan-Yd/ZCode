@@ -78,6 +78,12 @@ export const TID_GIT_COMMIT_FILE_ITEM = "git-commit-file-item";
 export const TID_GIT_COMMIT_ACTION_COMMAND = "git-commit-action-command";
 /** Git 提交弹窗底部动作项（动态后缀为动作 id） */
 export const TID_GIT_COMMIT_ACTION_ITEM = "git-commit-action-item";
+/** Git 拉取弹窗 */
+export const TID_GIT_PULL_DIALOG = "git-pull-dialog";
+/** Git 拉取弹窗的确认按钮 */
+export const TID_GIT_PULL_CONFIRM = "git-pull-confirm";
+/** Git 拉取弹窗的结果区域（已拉取的量 / 已是最新） */
+export const TID_GIT_PULL_RESULT = "git-pull-result";
 /** 浏览器地址栏输入框 */
 export const TID_BROWSER_ADDRESS_INPUT = "browser-address-input";
 /** 浏览器后退按钮 */

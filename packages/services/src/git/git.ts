@@ -16,6 +16,8 @@ import type {
   GitIgnoredPathsRequest,
   GitLocalBranchListResult,
   GitPathMutationRequest,
+  GitPullRequest,
+  GitPullResult,
   GitPushRequest,
   GitPushResult,
   GitRefreshRequest,
@@ -48,6 +50,7 @@ export interface IGitService {
   ): Promise<GitGenerateCommitMessageResult>;
   commit(params: GitCommitRequest): Promise<GitCommitResult>;
   push(params: GitPushRequest): Promise<GitPushResult>;
+  pull(params: GitPullRequest): Promise<GitPullResult>;
   getIdentity(params: GitRepositoryRequest): Promise<GitIdentity>;
   refresh(params: GitRefreshRequest): Promise<GitRefreshResult>;
 }

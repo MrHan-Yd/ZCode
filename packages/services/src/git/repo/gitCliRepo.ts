@@ -13,6 +13,7 @@ import type {
   GitIdentity,
   GitLocalBranch,
   GitLocalBranchListResult,
+  GitPullResult,
   GitWorkspaceRepositoryInfo,
   GitPushResult,
 } from "@zcode/shared";
@@ -22,12 +23,23 @@ import {
   DEFAULT_GIT_DIFF_BYTES,
   DEFAULT_GIT_DIFF_TIMEOUT_MS,
   DEFAULT_GIT_OUTPUT_BYTES,
+  DEFAULT_GIT_PULL_OUTPUT_BYTES,
+  DEFAULT_GIT_PULL_TIMEOUT_MS,
   DEFAULT_GIT_PUSH_OUTPUT_BYTES,
   DEFAULT_GIT_PUSH_TIMEOUT_MS,
   getGitNullDevicePath,
   normalizeGitPath,
   normalizeWorkspaceInRepoPath,
 } from "../config.js";
+import {
+  aggregateGitPullDiffTotals,
+  classifyGitPullFailure,
+  createGitPullError,
+  formatGitPullErrorMessage,
+  isGitPullUpdated,
+  GIT_PULL_ISSUE_MESSAGES,
+  type GitPullDiffTotals,
+} from "./gitPullHelpers.js";
 import {
   createGitCommandProvider,
   type GitCommandProvider,
@@ -704,6 +716,62 @@ export function createGitCliRepo(options?: { commandProvider?: GitCommandProvide
     throw new Error(
       "Multiple Git remotes are configured. Configure branch.<name>.remote or remote.pushDefault first.",
     );
+  }
+
+  /**
+   * 读取 HEAD 指向的提交。空仓库（unborn HEAD）上 `rev-parse HEAD` 会失败，
+   * 这里把「还没有 HEAD」当成合法空值交给调用方判断，而不是抛出让用户看不懂的错误。
+   */
+  async function readVerifiedHeadOid(resolution: GitResolvedRepository): Promise<string | null> {
+    const result = await commandProvider.run({
+      cwd: resolution.repoRoot,
+      args: ["rev-parse", "--verify", "--quiet", "HEAD"],
+      timeoutMs: DEFAULT_GIT_COMMAND_TIMEOUT_MS,
+    });
+    if (result.timedOut || result.outputTruncated || result.exitCode !== 0) {
+      return null;
+    }
+
+    const oid = result.stdout.trim();
+    return oid.length > 0 ? oid : null;
+  }
+
+  /** 拉取量只是展示信息：统计失败时返回 null，绝不能把已经成功的拉取报成失败。 */
+  async function readPullCommitCount(
+    resolution: GitResolvedRepository,
+    baseOid: string,
+    targetOid: string,
+  ): Promise<number | null> {
+    const result = await commandProvider.run({
+      cwd: resolution.repoRoot,
+      args: ["rev-list", "--count", `${baseOid}..${targetOid}`],
+      timeoutMs: DEFAULT_GIT_COMMAND_TIMEOUT_MS,
+      maxOutputBytes: DEFAULT_GIT_OUTPUT_BYTES,
+    });
+    if (result.timedOut || result.outputTruncated || result.exitCode !== 0) {
+      return null;
+    }
+
+    const commitCount = Number.parseInt(result.stdout.trim(), 10);
+    return Number.isFinite(commitCount) ? commitCount : null;
+  }
+
+  async function readPullDiffTotals(
+    resolution: GitResolvedRepository,
+    baseOid: string,
+    targetOid: string,
+  ): Promise<GitPullDiffTotals | null> {
+    const result = await commandProvider.run({
+      cwd: resolution.repoRoot,
+      args: ["diff", "--numstat", "-z", "--find-renames", baseOid, targetOid, "--"],
+      timeoutMs: DEFAULT_GIT_DIFF_TIMEOUT_MS,
+      maxOutputBytes: DEFAULT_GIT_OUTPUT_BYTES,
+    });
+    if (result.timedOut || result.outputTruncated || result.exitCode !== 0) {
+      return null;
+    }
+
+    return aggregateGitPullDiffTotals(parseNumstat(result.stdout));
   }
 
   return {
@@ -1668,6 +1736,90 @@ export function createGitCliRepo(options?: { commandProvider?: GitCommandProvide
         trackingBranchName: nextStatus.summary.trackingBranchName,
         remoteName: remoteName ?? parseTrackingRemoteName(nextStatus.summary.trackingBranchName),
         setUpstream: !hasTrackingBranch,
+        summary: nextStatus.summary,
+      };
+    },
+
+    async pull(workspacePath: string): Promise<GitPullResult> {
+      const status = await this.getStatus(workspacePath);
+      const resolution = ensureRepositoryAvailable(status.resolution, "pull changes");
+      const branchName = status.summary.branchName?.trim() ?? "";
+      if (status.summary.headRefType !== "branch" || branchName.length === 0) {
+        throw createGitPullError("detached-head", GIT_PULL_ISSUE_MESSAGES["detached-head"]);
+      }
+
+      // 没有上游分支时无法确定拉取目标。先分清「没有 remote」和「没有 upstream」：
+      // 前者要先补 remote，后者先推一次建立跟踪关系，处理动作不同。
+      if (!status.summary.trackingBranchName) {
+        const remotes = await listRemotes(resolution);
+        if (remotes.length === 0) {
+          throw createGitPullError("no-remote", GIT_PULL_ISSUE_MESSAGES["no-remote"]);
+        }
+
+        throw createGitPullError("no-upstream", GIT_PULL_ISSUE_MESSAGES["no-upstream"]);
+      }
+
+      // 是否拉到了东西，以 HEAD 是否变化为准。远程跟踪引用不可靠：
+      // 若此前已经 fetch 过，引用不会移动，但 pull 仍会快进 HEAD。
+      const headBefore = await readVerifiedHeadOid(resolution);
+      const pullResult = await commandProvider.run({
+        cwd: resolution.repoRoot,
+        // `--no-edit` 只避免 merge 提交信息拉起编辑器把命令挂死；
+        // 是否 merge / rebase / 仅快进仍由仓库自身的 pull.rebase / pull.ff 决定。
+        args: ["pull", "--no-edit"],
+        timeoutMs: DEFAULT_GIT_PULL_TIMEOUT_MS,
+        maxOutputBytes: DEFAULT_GIT_PULL_OUTPUT_BYTES,
+        // 本进程 stdio 没有 tty：明确关掉 Git 自带的交互式账号提示，
+        // 让认证失败变成可分类的快速失败，而不是等到超时。
+        env: { GIT_TERMINAL_PROMPT: "0" },
+      });
+
+      if (pullResult.timedOut) {
+        invalidate(workspacePath);
+        throw createGitPullError(
+          "timeout",
+          `${GIT_PULL_ISSUE_MESSAGES.timeout} (elapsed=${
+            pullResult.timeoutMs ?? pullResult.durationMs
+          }ms)`,
+        );
+      }
+
+      if (pullResult.outputTruncated) {
+        invalidate(workspacePath);
+        throw createGitPullError("unknown", "git pull output exceeded limit");
+      }
+
+      if (pullResult.exitCode !== 0) {
+        // 失败会留下冲突标记 / 未完成的 merge，必须让上层重新读取状态，
+        // 否则用户看到的是过期的干净工作区。
+        invalidate(workspacePath);
+        const failure = classifyGitPullFailure(pullResult);
+        throw createGitPullError(failure.code, formatGitPullErrorMessage(failure));
+      }
+
+      invalidate(workspacePath);
+      const nextStatus = await this.getStatus(workspacePath);
+      const headAfter = await readVerifiedHeadOid(resolution);
+      const updated = isGitPullUpdated(headBefore, headAfter);
+      const commitCount =
+        updated && headBefore && headAfter
+          ? await readPullCommitCount(resolution, headBefore, headAfter)
+          : 0;
+      const diffTotals =
+        updated && headBefore && headAfter
+          ? await readPullDiffTotals(resolution, headBefore, headAfter)
+          : null;
+
+      return {
+        branchName,
+        trackingBranchName: nextStatus.summary.trackingBranchName,
+        remoteName: parseTrackingRemoteName(nextStatus.summary.trackingBranchName),
+        updated,
+        commitCount,
+        // 未更新时统一给 0，让 UI 明确报「已是最新」；更新时取不到就不展示该项。
+        fileCount: updated ? (diffTotals?.fileCount ?? null) : 0,
+        added: updated ? (diffTotals?.added ?? null) : 0,
+        removed: updated ? (diffTotals?.removed ?? null) : 0,
         summary: nextStatus.summary,
       };
     },

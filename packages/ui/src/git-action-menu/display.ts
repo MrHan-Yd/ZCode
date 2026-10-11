@@ -1,7 +1,8 @@
-import type { GitRepositorySummary } from "@zcode/shared";
+import type { GitPullIssueCode, GitRepositorySummary } from "@zcode/shared";
+import { isGitPullIssueCode } from "@zcode/shared";
 import type { GitBranchCommitPreviewFile } from "@/git-branch-switcher/display.js";
 
-type GitActionMenuPrimaryActionId = "commit" | "push";
+type GitActionMenuPrimaryActionId = "commit" | "push" | "pull";
 
 export function canUseGitActionMenu(
   summary: Pick<GitRepositorySummary, "isGitAvailable" | "isRepository">,
@@ -13,6 +14,7 @@ export function resolveGitActionMenuPrimaryAction(options: {
   actionAvailable: boolean;
   commitEnabled: boolean;
   pushEnabled: boolean;
+  pullEnabled: boolean;
 }): GitActionMenuPrimaryActionId | null {
   // 关键业务逻辑：主按钮只承载提交或推送；创建分支保留在下拉菜单里。
   // 这样干净仓库仍可通过菜单创建分支，但不会把“提交或推送”误触发为创建分支。
@@ -22,6 +24,12 @@ export function resolveGitActionMenuPrimaryAction(options: {
 
   if (options.actionAvailable && options.pushEnabled) {
     return "push";
+  }
+
+  // 干净工作区 + 落后远端时既选不出提交也选不出推送。这里补上拉取，
+  // 否则主按钮会置灰，而"落后远端"正是唯一该做的事。
+  if (options.actionAvailable && options.pullEnabled) {
+    return "pull";
   }
 
   return null;
@@ -39,6 +47,57 @@ export function canPushGitBranch(
   }
 
   return !summary.trackingBranchName || summary.ahead > 0;
+}
+
+/**
+ * 能否拉取。要求当前分支存在上游分支——没有上游就无法确定拉取目标。
+ *
+ * 刻意不看 `behind`：它来自上一次 fetch 的本地快照，可能已经过期；真正有没有东西
+ * 要拉，以 `git pull` 的结果为准（无更新会返回 `updated: false`）。
+ */
+export function canPullGitBranch(
+  summary: Pick<GitRepositorySummary, "headRefType" | "branchName" | "trackingBranchName">,
+): boolean {
+  const branchName = summary.branchName?.trim() ?? "";
+  const trackingBranchName = summary.trackingBranchName?.trim() ?? "";
+  return summary.headRefType === "branch" && branchName.length > 0 && trackingBranchName.length > 0;
+}
+
+/** 从跨 RPC 传回的异常上读拉取失败码。读不到或不是已知码时返回 null，由调用方回落到原始信息。 */
+export function readGitPullIssueCode(error: unknown): GitPullIssueCode | null {
+  const code = (error as { code?: unknown } | null)?.code;
+  return isGitPullIssueCode(code) ? code : null;
+}
+
+/**
+ * 拉取失败码到本地化文案 key 的映射。`unknown` 没有对应文案，
+ * 由调用方展示原始 Git 输出（比一句笼统的"拉取失败"更有诊断价值）。
+ */
+export function resolveGitPullErrorMessageId(code: GitPullIssueCode | null): string | null {
+  switch (code) {
+    case "no-remote":
+      return "git.actionMenu.pullDialog.error.noRemote";
+    case "no-upstream":
+      return "git.actionMenu.pullDialog.error.noUpstream";
+    case "detached-head":
+      return "git.actionMenu.pullDialog.error.detachedHead";
+    case "dirty-working-tree":
+      return "git.actionMenu.pullDialog.error.dirtyWorkingTree";
+    case "merge-conflict":
+      return "git.actionMenu.pullDialog.error.mergeConflict";
+    case "diverged":
+      return "git.actionMenu.pullDialog.error.diverged";
+    case "authentication-failed":
+      return "git.actionMenu.pullDialog.error.authenticationFailed";
+    case "network-error":
+      return "git.actionMenu.pullDialog.error.networkError";
+    case "timeout":
+      return "git.actionMenu.pullDialog.error.timeout";
+    case "operation-in-progress":
+      return "git.actionMenu.pullDialog.error.operationInProgress";
+    default:
+      return null;
+  }
 }
 
 /**

@@ -258,6 +258,60 @@ export interface GitPushResult {
   summary: GitRepositorySummary;
 }
 
+export interface GitPullRequest extends GitRepositoryRequest {}
+
+/**
+ * 拉取的失败分类。UI 按 code 选本地化文案；未识别的失败回落到 `unknown` 并展示原始 Git 输出。
+ * 这些 code 作为 Error 的 `code` 字段跨 RPC 透传（channelServer 的 passthroughKeys 已包含 `code`）。
+ */
+export type GitPullIssueCode =
+  | "detached-head"
+  | "no-remote"
+  | "no-upstream"
+  | "dirty-working-tree"
+  | "merge-conflict"
+  | "diverged"
+  | "authentication-failed"
+  | "network-error"
+  | "timeout"
+  | "operation-in-progress"
+  | "unknown";
+
+export const GIT_PULL_ISSUE_CODES: readonly GitPullIssueCode[] = [
+  "detached-head",
+  "no-remote",
+  "no-upstream",
+  "dirty-working-tree",
+  "merge-conflict",
+  "diverged",
+  "authentication-failed",
+  "network-error",
+  "timeout",
+  "operation-in-progress",
+  "unknown",
+];
+
+/**
+ * 拉取结果。`updated` 表示本次 pull 是否改变了当前分支的 HEAD；
+ * 为 false 时即「已是最新」，不是错误。
+ * 拉取量取不到时置 null，UI 只展示取到的部分。
+ */
+export interface GitPullResult {
+  branchName: string | null;
+  trackingBranchName: string | null;
+  remoteName: string | null;
+  updated: boolean;
+  commitCount: number | null;
+  fileCount: number | null;
+  added: number | null;
+  removed: number | null;
+  summary: GitRepositorySummary;
+}
+
+export function isGitPullIssueCode(value: unknown): value is GitPullIssueCode {
+  return typeof value === "string" && GIT_PULL_ISSUE_CODES.includes(value as GitPullIssueCode);
+}
+
 export interface GitRefreshResult {
   summary: GitRepositorySummary;
   identity: GitIdentity | null;

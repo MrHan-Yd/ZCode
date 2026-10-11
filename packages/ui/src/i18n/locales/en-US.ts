@@ -1259,6 +1259,57 @@ const enUS: Record<string, string> = {
   "git.actionMenu.pushDialog.error.copyFailed": "Failed to copy error details: {error}",
   "git.actionMenu.pushDialog.error.requestFailed": "Push failed: {error}",
   "git.actionMenu.pushDialog.toast.success": "Pushed to {target}",
+  "git.actionMenu.pull": "Pull",
+  "git.actionMenu.trigger.pull": "Pull",
+  "git.actionMenu.pullDialog.title": "Pull changes",
+  "git.actionMenu.pullDialog.description.tracked":
+    "Fetch the latest commits from the remote branch and update the current branch.",
+  "git.actionMenu.pullDialog.description.untracked":
+    "This branch has no upstream branch, so there is nothing to pull from.",
+  "git.actionMenu.pullDialog.currentBranchLabel": "Branch",
+  "git.actionMenu.pullDialog.upstreamLabel": "Remote branch",
+  "git.actionMenu.pullDialog.upstreamPending": "No upstream branch configured yet.",
+  "git.actionMenu.pullDialog.aheadBehindLabel": "Sync status",
+  "git.actionMenu.pullDialog.aheadBehindValue": "Ahead {ahead} / Behind {behind}",
+  "git.actionMenu.pullDialog.pullLabel": "Next step",
+  "git.actionMenu.pullDialog.pullValue": "Pull",
+  "git.actionMenu.pullDialog.upstreamMissing":
+    "This branch has no upstream branch. Push it once to set the tracking branch.",
+  "git.actionMenu.pullDialog.confirm": "Pull",
+  "git.actionMenu.pullDialog.upToDate": "Already up to date. No new commits were pulled.",
+  "git.actionMenu.pullDialog.success.summary": "Pulled the latest changes",
+  "git.actionMenu.pullDialog.success.commitsLabel": "Commits pulled",
+  "git.actionMenu.pullDialog.success.commitsValue": "{count} commits",
+  "git.actionMenu.pullDialog.success.filesLabel": "Files involved",
+  "git.actionMenu.pullDialog.success.filesValue": "{count} files",
+  "git.actionMenu.pullDialog.success.linesLabel": "Lines changed",
+  "git.actionMenu.pullDialog.error.summary": "Pull failed. Review the error details below.",
+  "git.actionMenu.pullDialog.error.detailsLabel": "Error details",
+  "git.actionMenu.pullDialog.error.copy": "Copy error",
+  "git.actionMenu.pullDialog.error.copy.copied": "Copied",
+  "git.actionMenu.pullDialog.error.copyFailed": "Failed to copy error details: {error}",
+  "git.actionMenu.pullDialog.error.noRemote":
+    "This repository has no usable Git remote, so there is nothing to pull from.",
+  "git.actionMenu.pullDialog.error.noUpstream":
+    "This branch has no upstream branch. Push it once to set the tracking branch.",
+  "git.actionMenu.pullDialog.error.detachedHead": "Cannot pull while HEAD is detached.",
+  "git.actionMenu.pullDialog.error.dirtyWorkingTree":
+    "Local changes would be overwritten by the pull. Commit or stash them first.",
+  "git.actionMenu.pullDialog.error.mergeConflict":
+    "The pull stopped because of merge conflicts. Resolve them, then commit the merge.",
+  "git.actionMenu.pullDialog.error.diverged":
+    "This branch and its upstream have diverged. Merge or rebase before pulling.",
+  "git.actionMenu.pullDialog.error.authenticationFailed":
+    "Authentication or permission was rejected by the remote. Check your credentials or SSH key.",
+  "git.actionMenu.pullDialog.error.networkError":
+    "Could not reach the remote repository. Check your network connection and try again.",
+  "git.actionMenu.pullDialog.error.timeout":
+    "The pull timed out. Check your network connection and try again.",
+  "git.actionMenu.pullDialog.error.operationInProgress":
+    "Another Git merge or rebase is already in progress. Finish or abort it before pulling.",
+  "git.actionMenu.pullDialog.toast.success": "Pulled {count} commits from {target}",
+  "git.actionMenu.pullDialog.toast.updated": "Pulled the latest changes",
+  "git.actionMenu.pullDialog.toast.upToDate": "Already up to date",
   "git.branchSwitcher.label": "Branch",
   "git.branchSwitcher.trigger.ariaLabel": "Switch Git branch",
   "git.branchSwitcher.searchPlaceholder": "Search branches",
@@ -2530,7 +2581,8 @@ const enUS: Record<string, string> = {
   "settings.previewBadge.dark": "Dark",
   "settings.modelProviderTitle": "Model settings",
   "settings.modelSmartConfig.title": "Model smart config",
-  "settings.modelSmartConfig.description": "Extra smart-config parameters for models (context window, max output, reasoning levels, ...). Only the local file is read by default; the remote repository is fetched only when you click Sync. New models without built-in parameters are auto-filled from here.",
+  "settings.modelSmartConfig.description":
+    "Extra smart-config parameters for models (context window, max output, reasoning levels, ...). Only the local file is read by default; the remote repository is fetched only when you click Sync. New models without built-in parameters are auto-filled from here.",
   "settings.modelSmartConfig.localPath": "Local file",
   "settings.modelSmartConfig.remoteUrl": "Remote URL",
   "settings.modelSmartConfig.sync": "Sync from remote repository",
@@ -2538,9 +2590,11 @@ const enUS: Record<string, string> = {
   "settings.modelSmartConfig.synced": "Synced from remote to local",
   "settings.modelSmartConfig.syncFailed": "Sync failed: {error}",
   "settings.modelSmartConfig.loadFailed": "Failed to read the local model smart config",
-  "settings.modelSmartConfig.unavailable": "Model smart config is not available in this environment.",
+  "settings.modelSmartConfig.unavailable":
+    "Model smart config is not available in this environment.",
   "settings.modelSmartConfig.entriesTitle": "Configured rules ({count})",
-  "settings.modelSmartConfig.empty": "No local rules yet. Click Sync from remote repository above, or edit the local file and Reload.",
+  "settings.modelSmartConfig.empty":
+    "No local rules yet. Click Sync from remote repository above, or edit the local file and Reload.",
   "settings.modelSmartConfig.localInvalid": "Local file could not be parsed: {error}",
   "settings.mcpTitle": "MCP Servers",
   "settings.mcp.description": "Manage MCP server configurations used by ZCode Agent.",

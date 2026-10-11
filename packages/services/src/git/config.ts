@@ -5,11 +5,17 @@ export const DEFAULT_GIT_COMMAND_TIMEOUT_MS = 15_000;
 // `git push` 可能会被仓库的 pre-push hook 阻塞较长时间（例如执行 `pnpm test`）。
 // 继续沿用普通 Git 命令的 15s 超时会把显式 push 误判成失败，因此单独放宽 push 超时。
 export const DEFAULT_GIT_PUSH_TIMEOUT_MS = 10 * 60_000;
+// `git pull` 要等网络往返，还可能触发 post-merge 等 hook。沿用普通命令的 15s 会把
+// 慢网络下的正常拉取误判成失败，因此和 push 一样单独放宽超时。
+export const DEFAULT_GIT_PULL_TIMEOUT_MS = 10 * 60_000;
 export const DEFAULT_GIT_DIFF_TIMEOUT_MS = 20_000;
 export const DEFAULT_GIT_OUTPUT_BYTES = 512 * 1024;
 // pre-push hook 可能会输出完整测试日志；继续沿用普通 Git 命令的 512KB 上限，
 // 会在真正 push 完成前因为日志过多被截断终止。这里仅给 push 单独放宽输出配额。
 export const DEFAULT_GIT_PUSH_OUTPUT_BYTES = 8 * 1024 * 1024;
+// 拉取一个远端大改动时 `git pull` 会打印逐文件统计；沿用 512KB 会在命令成功前被截断，
+// 反而把成功的拉取报成失败。这里同样单独放宽。
+export const DEFAULT_GIT_PULL_OUTPUT_BYTES = 8 * 1024 * 1024;
 export const DEFAULT_GIT_DIFF_BYTES = 1024 * 1024;
 export const GIT_UNTRACKED_STAT_MAX_BYTES = 1024 * 1024;
 export const GIT_UNTRACKED_STAT_CHUNK_BYTES = 64 * 1024;
