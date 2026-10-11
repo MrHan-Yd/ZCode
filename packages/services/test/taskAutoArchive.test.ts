@@ -137,6 +137,13 @@ test("listArchivedTasks 不再按 provider 过滤，历史 NULL-provider 归档�
         archived.map((task) => task.taskId),
         ["legacy-archived"],
       );
+      // 归档管理页用它枚举「所有出现过的项目」：只回工作区身份，且不受 provider 过滤影响。
+      assert.deepEqual(await service.listKnownWorkspaceScopes(), [
+        {
+          workspacePath: WORKSPACE.workspacePath,
+          workspaceIdentity: WORKSPACE.workspaceIdentity,
+        },
+      ]);
     } finally {
       service.disposeAll();
     }

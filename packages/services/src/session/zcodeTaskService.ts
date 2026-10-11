@@ -450,6 +450,16 @@ export interface IZCodeTaskService {
     workspaceIdentity?: string;
   }): Promise<ZCodeTaskMeta[]>;
 
+  /**
+   * 枚举任务索引里出现过的全部工作区（未删除）。
+   *
+   * 归档管理页需要按项目盘点归档任务，而「最近项目」有上限、打开的标签也只是子集：
+   * 只看这两个来源时，很久没打开的项目里的归档任务在页面上根本看不到。
+   */
+  listKnownWorkspaceScopes(): Promise<
+    Array<{ workspacePath: string; workspaceIdentity?: string }>
+  >;
+
   /** 批量归档超期旧任务；仅归档已完成、无未读、非 pinned 且当前未打开的 task */
   archiveStaleTasks(params: {
     workspacePath: string;

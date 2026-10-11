@@ -2445,6 +2445,17 @@ export function createZCodeTaskServiceAdapter(
       return tasks.map(rememberIndexedTaskMeta);
     },
 
+    async listKnownWorkspaceScopes(): Promise<
+      Array<{ workspacePath: string; workspaceIdentity?: string }>
+    > {
+      // 供归档管理页枚举「所有出现过的项目」：只回工作区身份，不加载任务正文。
+      const scopes = await taskIndexRepo.listWorkspaceScopes();
+      return scopes.map((scope) => ({
+        workspacePath: scope.workspacePath,
+        ...(scope.workspaceIdentity ? { workspaceIdentity: scope.workspaceIdentity } : {}),
+      }));
+    },
+
     async archiveStaleTasks(params): Promise<ZCodeTaskMeta[]> {
       // stale archive API 和设置页自动归档保持一致，清理全部历史 provider。
       const archivedTasks = await taskIndexRepo.archiveStaleTasks({

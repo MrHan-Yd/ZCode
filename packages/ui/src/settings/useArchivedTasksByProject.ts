@@ -91,6 +91,27 @@ export function useArchivedTasksByProject(workspaceTabs: WorkspaceTabState[]) {
   const [states, setStates] = useState<ProjectArchiveState[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyProjectKeys, setBusyProjectKeys] = useState<Set<string>>(() => new Set());
+  // 任务索引里出现过的全部工作区。只看打开的标签与「最近项目」（有上限）会漏掉很久没打开的
+  // 项目，那些项目里的归档任务在页面上就看不到——这正是归档页要解决的问题本身。
+  const [knownScopes, setKnownScopes] = useState<
+    Array<{ workspacePath: string; workspaceIdentity?: string }>
+  >([]);
+
+  useEffect(() => {
+    let active = true;
+    void baseServices.zcodeTaskService
+      .listKnownWorkspaceScopes()
+      .then((scopes) => {
+        if (active) setKnownScopes(scopes);
+      })
+      .catch((error) => {
+        // 枚举失败只降级成「只显示打开的标签与最近项目」，不阻塞页面。
+        logger.warn("[useArchivedTasksByProject] 枚举已知工作区失败", { error });
+      });
+    return () => {
+      active = false;
+    };
+  }, [baseServices]);
 
   // 项目列表只在「来源值」变化时重建：useSettings 每次刷新都会给出新的 settings 对象身份，
   // 直接依赖它会让 projects/serviceLookup/refresh 每轮换身份，从而对每个项目重复发一次
@@ -107,6 +128,7 @@ export function useArchivedTasksByProject(workspaceTabs: WorkspaceTabState[]) {
       entry.workspacePath,
       "workspaceIdentity" in entry ? (entry.workspaceIdentity ?? null) : null,
     ]),
+    knownScopes.map((scope) => [scope.workspacePath, scope.workspaceIdentity ?? null]),
   ]);
 
   const projects = useMemo(
@@ -114,10 +136,13 @@ export function useArchivedTasksByProject(workspaceTabs: WorkspaceTabState[]) {
       buildArchiveProjects(
         workspaceTabs,
         settings?.recentProjects ?? [],
-        (settings?.lastWorkspaceSession ?? []).map((entry) => ({
-          workspacePath: entry.workspacePath,
-          workspaceIdentity: "workspaceIdentity" in entry ? entry.workspaceIdentity : undefined,
-        })),
+        [
+          ...(settings?.lastWorkspaceSession ?? []).map((entry) => ({
+            workspacePath: entry.workspacePath,
+            workspaceIdentity: "workspaceIdentity" in entry ? entry.workspaceIdentity : undefined,
+          })),
+          ...knownScopes,
+        ],
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 值签名等价即复用，避免 settings 身份变化触发重复拉取。
     [projectSourceSignature],
