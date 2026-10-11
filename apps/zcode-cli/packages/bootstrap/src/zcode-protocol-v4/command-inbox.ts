@@ -72,6 +72,15 @@ type CommandInboxOutcome =
 // createSession 与 null sessionId query 归全局桶。
 const GLOBAL_BUCKET = "@global";
 
+/**
+ * 只操作持久化数据、不需要活动会话 record 的命令。
+ *
+ * 这些命令的语义是「删掉已落库的数据」，目标往往是**非常驻**的历史会话（归档任务）——
+ * 若按常规要求 sessionExists，它们会在 admission 阶段被 proto.sessionNotFound 拒绝，
+ * 于是这些任务永远删不掉。豁免只放行显式列出的命令，不放开 CAS / 行目标语义。
+ */
+const PERSISTED_DATA_COMMANDS = new Set<CommandEnvelope["type"]>(["purgeSession"]);
+
 export function queueItemIdForCommand(commandId: string): string {
   return `queue_${commandId}`;
 }
@@ -309,7 +318,14 @@ export class CommandInbox {
     envelope: CommandEnvelope,
   ): { kind: "execute"; ack: CommandAck } | { kind: "ack"; ack: CommandAck; remember: boolean } {
     const revision = envelope.sessionId === null ? 0 : this.host.getRevision(envelope.sessionId);
-    if (revision === null || (envelope.type !== "createSession" && envelope.sessionId === null)) {
+    const sessionMissing = revision === null;
+    // 只操作持久化数据的命令（见 PERSISTED_DATA_COMMANDS）不依赖活动 record：
+    // 归档的旧任务不是常驻会话，若一并按 sessionNotFound 拒绝，这些任务永远删不掉。
+    // 仍然要求带 sessionId（null 只有 createSession 允许），只是不要求它已加载。
+    if (
+      (sessionMissing && !PERSISTED_DATA_COMMANDS.has(envelope.type)) ||
+      (envelope.type !== "createSession" && envelope.sessionId === null)
+    ) {
       return {
         kind: "ack",
         remember: false,
@@ -321,6 +337,9 @@ export class CommandInbox {
         },
       };
     }
+    // 会话缺失时后续 CAS/行目标分支都不可达（那些命令不在豁免集合里），
+    // 因此这里把 null 收敛成 0 只影响 ACK 回报值。
+    const revisionAtDecision = revision ?? 0;
 
     if (COMMANDS_REQUIRING_BASE_REVISION.has(envelope.type)) {
       if (envelope.baseRevision === undefined) {
@@ -331,7 +350,7 @@ export class CommandInbox {
             commandId: envelope.commandId,
             status: "rejected",
             reasonCode: "proto.missingBaseRevision",
-            revisionAtDecision: revision,
+            revisionAtDecision,
           },
         };
       }
@@ -345,11 +364,11 @@ export class CommandInbox {
             commandId: envelope.commandId,
             status: "stale",
             reasonCode: "proto.staleLogEpoch",
-            revisionAtDecision: revision,
+            revisionAtDecision,
           },
         };
       }
-      if (envelope.baseRevision !== revision) {
+      if (envelope.baseRevision !== revisionAtDecision) {
         return {
           kind: "ack",
           remember: false,
@@ -357,7 +376,7 @@ export class CommandInbox {
             commandId: envelope.commandId,
             status: "stale",
             reasonCode: "proto.staleRevision",
-            revisionAtDecision: revision,
+            revisionAtDecision,
           },
         };
       }
@@ -373,7 +392,7 @@ export class CommandInbox {
           status: "stale",
           reasonCode: targetDecision.reasonCode,
           message: targetDecision.message,
-          revisionAtDecision: revision,
+          revisionAtDecision,
         },
       };
     }
@@ -386,7 +405,7 @@ export class CommandInbox {
           status: "rejected",
           reasonCode: targetDecision.reasonCode,
           message: targetDecision.message,
-          revisionAtDecision: revision,
+          revisionAtDecision,
         },
       };
     }
@@ -403,7 +422,7 @@ export class CommandInbox {
           status: "stale",
           reasonCode: decision.reasonCode,
           message: decision.message,
-          revisionAtDecision: revision,
+          revisionAtDecision,
         },
       };
     }
@@ -416,7 +435,7 @@ export class CommandInbox {
           status: "rejected",
           reasonCode: decision.reasonCode,
           message: decision.message,
-          revisionAtDecision: revision,
+          revisionAtDecision,
         },
       };
     }
@@ -428,7 +447,7 @@ export class CommandInbox {
           commandId: envelope.commandId,
           status: "noop",
           reasonCode: decision.reasonCode,
-          revisionAtDecision: revision,
+          revisionAtDecision,
           result: decision.result,
         },
       };
@@ -438,7 +457,7 @@ export class CommandInbox {
       ack: {
         commandId: envelope.commandId,
         status: "accepted",
-        revisionAtDecision: revision,
+        revisionAtDecision,
       },
     };
   }

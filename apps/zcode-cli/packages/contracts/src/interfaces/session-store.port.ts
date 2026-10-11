@@ -1148,6 +1148,15 @@ export interface SessionStorePort {
   removeMessage(input: { sessionID: SessionId; messageID: MessageId }): Promise<void>;
   savePart(input: MessagePart, copyFrom?: { sessionID: SessionId; id: string }): Promise<void>;
   removePart(input: { sessionID: SessionId; messageID: MessageId; partID: PartId }): Promise<void>;
+  /**
+   * 物理删除该会话及其独占数据（消息、part、todo、输入账本、用量等），用于「彻底删除」释放磁盘空间。
+   *
+   * 不可恢复：调用方必须保证会话已关闭且不再被任何运行时引用，并由用户显式确认。
+   * 实现内部会开启写事务，**不得在已开事务内调用**（否则会抛 transaction within a transaction）。
+   * 不含会话独占的文件产物（artifacts / 缓存 / 子代理产物），那些由调用方按 sessionId 清理。
+   * 可选方法：旧宿主可不实现，缺失时调用方必须显式失败而不是静默降级。
+   */
+  purgeSession?(input: { sessionID: SessionId }): Promise<void>;
   messageWithParts(input: {
     sessionID: SessionId;
     messageID: MessageId;

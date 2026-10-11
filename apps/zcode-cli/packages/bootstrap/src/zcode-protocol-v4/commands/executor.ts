@@ -15,6 +15,9 @@ const SELECTION_SIDE_CHAT_RESTRICTED_COMMANDS = new Set<CommandEnvelope["type"]>
   "retryTurn",
   "forkAssistant",
   "discardSharedContext",
+  // 物理删除会话数据不可恢复，确认面在 Host/UI；side chat 由模型驱动，
+  // 不能让它自行触发删库。
+  "purgeSession",
 ]);
 
 class V4SelectionSideChatRestrictedCommandError extends Error {

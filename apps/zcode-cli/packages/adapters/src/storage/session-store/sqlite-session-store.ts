@@ -224,6 +224,10 @@ function assertForkBundleChildLocal(bundle: ForkCommitBundle): void {
 
 const deferredStartup = Symbol("deferredSqliteStartup");
 
+/** VACUUM 触发下限：空闲页绝对量（2000 页，按默认 4KB 页约 8MB）与占整库比例同时满足才回收空间。 */
+const VACUUM_MIN_FREE_PAGES = 2000;
+const VACUUM_MIN_FREE_RATIO = 0.2;
+
 export class SqliteSessionStore
   implements
     SessionStorePort,
@@ -636,6 +640,42 @@ export class SqliteSessionStore
   }): Promise<void> {
     this.throwBeforeWrite();
     return messageRepository.removePart(this.db, input);
+  }
+
+  async purgeSession(input: { sessionID: SessionId }): Promise<void> {
+    this.throwBeforeWrite();
+    sessionRepository.purgeSession(this.db, input);
+    this.vacuumSessionStoreIfFragmented();
+  }
+
+  /**
+   * 删除行之后 sqlite 文件不会自己缩小，只有 VACUUM 才会把空闲页归还给文件系统。
+   * VACUUM 需要排他锁并重写整库（多个 Agent 进程共享同一 DB，慢盘上可能秒级），
+   * 因此按「空闲页绝对量 + 占比」双阈值触发：小批量删除不值得付这个代价，
+   * 只有释放量足够大时才真正回收空间。
+   *
+   * 失败必须静默吞掉：删除已经提交，VACUUM 只是空间回收，不能让它把成功的删除变成失败
+   * （最常见的失败是多进程争锁的 SQLITE_BUSY，下次删除还会再试）。
+   */
+  private vacuumSessionStoreIfFragmented(): void {
+    try {
+      const freePages = Number(
+        (
+          this.db.prepare("pragma freelist_count").get() as
+            | { freelist_count?: number }
+            | undefined
+        )?.freelist_count ?? 0,
+      );
+      if (freePages < VACUUM_MIN_FREE_PAGES) return;
+      const totalPages = Number(
+        (this.db.prepare("pragma page_count").get() as { page_count?: number } | undefined)
+          ?.page_count ?? 0,
+      );
+      if (totalPages <= 0 || freePages / totalPages < VACUUM_MIN_FREE_RATIO) return;
+      this.db.exec("vacuum");
+    } catch {
+      // 见上：VACUUM 是 best-effort 的空间回收，不参与删除的成功判定。
+    }
   }
 
   async messageWithParts(input: {

@@ -27,6 +27,9 @@ import {
   prepareProtocolStartupStorage,
 } from "./zcode-protocol/storage-startup.js";
 import { closeSessionStore, getSessionDbPath } from "./app/session-store.js";
+import { rememberSessionDataRoots } from "./app/session-data-purge.js";
+import { getCliStorageRoot } from "./app/paths.js";
+import { resolvePath } from "@zcode/adapters";
 import { startProcessProviderRegistryRuntime } from "./app/process-provider-registry-runtime.js";
 import { scheduleStartupLogRetentionCleanup } from "./log-retention.js";
 import { StartupTimer, startupNow } from "./startup-logging.js";
@@ -136,6 +139,12 @@ export async function runZCodeProtocolAgent(
   try {
     // 数据库准备先于账号、Registry 和遥测，不把远端材料等待混进迁移门禁。
     const configResult = createConfig({ env: options.env });
+    // 「彻底删除」清理产物目录需要在没有 app 的进程里也拿到根：目标通常是非常驻的历史
+    // 会话，不会触发 create-app。这里与 create-app 用同一表达式登记，保证路径同源。
+    {
+      const storageRoot = resolvePath(configResult.config.storage.dir);
+      rememberSessionDataRoots({ cliStorageRoot: getCliStorageRoot(storageRoot), storageRoot });
+    }
     sessionStore = await acquireProtocolStartupResource({
       signal: options.lifecycle?.signal,
       logger,

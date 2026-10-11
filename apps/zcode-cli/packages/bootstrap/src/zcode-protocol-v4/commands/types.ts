@@ -224,6 +224,14 @@ export interface V4CommandCoreHost {
    */
   closeSession?(sessionId: string): Promise<void>;
   /**
+   * 会话数据的物理删除（purgeSession 的执行面）：按 closeSession 的顺序摘除运行时与订阅，
+   * 再删除会话行/消息与产物目录。不可恢复。
+   *
+   * 与 closeSession 的区别：closeSession 保留历史，本钩子真正删库。用户确认在 Host/UI 侧，
+   * 钩子实现只负责执行；能力缺失时必须显式失败，不能静默降级成「只关闭」。
+   */
+  purgeSession?(sessionId: string): Promise<void>;
+  /**
    * 会话记录创建（createSession 的执行面：record 建立/事件接线/模型 catalog 同步/
    * 失败清理，全部与旧协议宿主纠缠）。binder 实现调旧 createSession op；
    * v4 自持会话注册表后由原生实现取代本钩子。

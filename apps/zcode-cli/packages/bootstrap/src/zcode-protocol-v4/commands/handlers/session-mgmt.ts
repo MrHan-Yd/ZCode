@@ -10,7 +10,7 @@ import { mapAttachmentRefsToTurnAttachments } from "../attachment-refs.js";
 import { inputIntentMetadata } from "../input-intent.js";
 import { commandAdmissionOf } from "../executor.js";
 import { startPromptTurn } from "../prompt-turn.js";
-import { requireRecord } from "../record-access.js";
+import { requireRecord, V4SessionNotFoundError } from "../record-access.js";
 import type { V4CommandCoreHost } from "../types.js";
 import { applyRequestedSessionConfig } from "./model-config.js";
 import {
@@ -188,9 +188,34 @@ async function discardSharedContext(
   return undefined;
 }
 
+/**
+ * purgeSession：物理删除该会话及其独占数据以释放磁盘空间，不可恢复。
+ *
+ * 与 deleteSession 的区别：deleteSession 只关闭运行时、历史仍留在库里；本命令会真正删库
+ * 并清理产物目录，因此必须由用户显式二次确认后调用（确认面在 Host/UI，不在协议层）。
+ *
+ * 这里**不要求会话常驻**：目标通常是归档的历史任务，本就没有活动 record（admission 侧
+ * 对同类命令同样豁免）。运行时若恰好常驻，bridge 的钩子会先按 closeSession 的顺序摘除。
+ * 能力缺失时显式失败，不静默降级成 close——否则用户会以为空间已经释放。
+ */
+async function purgeSession(
+  host: V4CommandCoreHost,
+  envelope: CommandEnvelope,
+): Promise<CommandResult | undefined> {
+  if (!host.purgeSession) {
+    throw new Error("v4 purgeSession requires host.purgeSession capability");
+  }
+  if (envelope.sessionId === null) {
+    throw new V4SessionNotFoundError("(null)");
+  }
+  await host.purgeSession(envelope.sessionId);
+  return undefined;
+}
+
 export const sessionMgmtHandlers = {
   createSession,
   renameSession,
   deleteSession,
+  purgeSession,
   discardSharedContext,
 };

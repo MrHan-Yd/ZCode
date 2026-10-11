@@ -107,6 +107,7 @@ import {
   resolveStartupPlugins,
   startAppStartup,
 } from "./startup-marks.js";
+import { rememberSessionDataRoots } from "./session-data-purge.js";
 
 function decodePromptAttachmentDataUrl(
   content: string,
@@ -372,6 +373,9 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       startupTimer,
       storageRoot,
     });
+    // 「彻底删除」清理产物目录时复用同一对根：登记一次，避免清理侧再解析一遍 config
+    // 而与写入路径分叉（写入方全部由这里派生）。
+    rememberSessionDataRoots({ cliStorageRoot, storageRoot });
     const mcpPort =
       options.mcpPort ??
       (runtimeConfig.mcp?.enabled === false

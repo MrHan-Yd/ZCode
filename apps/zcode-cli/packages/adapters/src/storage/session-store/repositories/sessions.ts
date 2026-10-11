@@ -355,3 +355,33 @@ function mustGetSession(db: DatabaseSync, sessionID: SessionId): SessionInfo {
   }
   return session;
 }
+
+/**
+ * 物理删除会话及其独占数据（「彻底删除」释放磁盘空间用）。
+ *
+ * - `delete from session` 按外键级联删除 message / part / todo / session_entry /
+ *   session_target / session_input / model_usage / turn_usage / tool_usage 以及
+ *   session_task_link 等 cascade 子行。
+ * - `input_history.session_id`、`dwf_actor.session_id`、`dwf_run.parent_session_id`
+ *   没有外键，必须显式处理，否则会留下指向已删会话的孤儿行。
+ * - workflow_run / workflow_activity 的父引用是 `on delete set null`：历史保留、只解除归属。
+ *   这是刻意的最小删除集选择，不做级联硬删。
+ */
+export function purgeSession(db: DatabaseSync, input: { sessionID: SessionId }): void {
+  const sessionID = input.sessionID;
+  db.exec("begin immediate");
+  try {
+    // 用户输入历史属于会话内容，随会话删除。
+    db.prepare("delete from input_history where session_id = ?").run(sessionID);
+    // dynamic workflow 记录保留行、只解除指向本会话的引用。
+    db.prepare("update dwf_run set parent_session_id = null where parent_session_id = ?").run(
+      sessionID,
+    );
+    db.prepare("update dwf_actor set session_id = null where session_id = ?").run(sessionID);
+    db.prepare("delete from session where id = ?").run(sessionID);
+    db.exec("commit");
+  } catch (error) {
+    db.exec("rollback");
+    throw error;
+  }
+}

@@ -27,6 +27,7 @@ import {
   type SessionSummary,
 } from "@zcode/shared/zcode-protocol-v4";
 import { V4CommandExecutor } from "../zcode-protocol-v4/commands/executor.js";
+import { purgeSessionDataDirs } from "../app/session-data-purge.js";
 import { V4QueuePromotionLeaseUnavailableError } from "../zcode-protocol-v4/commands/handlers/queue.js";
 import { V4CapabilityUnsupportedError } from "../zcode-protocol-v4/commands/handlers/interaction-background.js";
 import {
@@ -686,6 +687,25 @@ export function createConversationV4Gateway(
     timer.unref?.();
     autoDrainRetryTimers.set(sessionId, timer);
   };
+  /**
+   * 会话关闭（deleteSession 与 purgeSession 共用的执行面）：
+   * 退订事件 → app.close → gateway 清通道 → 注册表摘除。
+   *
+   * disposeSession 必须在注册表删除之前调用——gateway 靠 getSessionWorkspaceId
+   * （读 context.sessions）定位 workspace 才能把 session.removed 推给 sessions-index
+   * 订阅者；先 delete 再 dispose 时 workspaceId 恒为 null，删除会话后侧栏列表项永不消失。
+   */
+  const closeSessionRecord = async (sessionId: string): Promise<void> => {
+    const record = context.sessions.get(sessionId);
+    if (!record) {
+      // handler 已校验存在性；此处只兜并发竞态（重复删除幂等成功）。
+      return;
+    }
+    record.unsubscribe?.();
+    await record.app.close?.();
+    context.v4Gateway?.disposeSession(sessionId);
+    context.sessions.delete(sessionId);
+  };
   const coreHost: V4CommandCoreHost = {
     // 同一注册表对象引用：view 是旧 record 的结构化窄视图，字段变更双向可见。
     getRecord: (sessionId) => context.sessions.get(sessionId),
@@ -1083,21 +1103,19 @@ export function createConversationV4Gateway(
     },
     // deleteSession 的执行面：内联旧 closeSession op 的 4 步（不 import 旧 op——
     // 语义与 server-operations.ts closeSession 对齐，随会话注册表归 v4 后收编）。
-    closeSession: async (sessionId) => {
-      const record = context.sessions.get(sessionId);
-      if (!record) {
-        // handler 已校验存在性；此处只兜并发竞态（重复删除幂等成功）。
-        return;
+    closeSession: (sessionId) => closeSessionRecord(sessionId),
+    // purgeSession 的执行面：先按 closeSession 的顺序摘除运行时与订阅，再物理删除
+    // 会话行与产物目录。顺序不能颠倒：会话仍在注册表时删库，后续事件写入会重新
+    // insert 出半截会话。产物目录删除失败不阻断（见 session-data-purge）。
+    purgeSession: async (sessionId) => {
+      await closeSessionRecord(sessionId);
+      const store = context.deps.sessionStore;
+      if (!store?.purgeSession) {
+        // 不能静默降级成「只关闭」：那会让用户以为空间已释放。
+        throw new Error("v4 purgeSession requires sessionStore.purgeSession capability");
       }
-      record.unsubscribe?.();
-      await record.app.close?.();
-      // v4 通道：会话关闭同时清 publisher / 订阅调度；重开会话走 snapshot 冷启动。
-      // disposeSession 必须在注册表删除之前调用——
-      // gateway 靠 getSessionWorkspaceId（读 context.sessions）定位 workspace 才能把
-      // session.removed 推给 sessions-index 订阅者；先 delete 再 dispose 时 workspaceId
-      // 恒为 null，删除会话后侧栏列表项永不消失（e2e conversation-session-v4-sidebar 抓出）。
-      context.v4Gateway?.disposeSession(sessionId);
-      context.sessions.delete(sessionId);
+      await store.purgeSession({ sessionID: sessionId as SessionId });
+      await purgeSessionDataDirs(sessionId);
     },
     // createSession 的执行面：record 建立/事件接线/catalog 同步/失败自清理全在旧
     // createSession op 内（半初始化 record 的回收顺序修过 bug，不重复实现）。

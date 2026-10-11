@@ -243,6 +243,9 @@ export const commandPayloadSchemas = {
   amendWorkflowRunSettings: amendWorkflowRunSettingsPayloadSchema,
   renameSession: z.object({ title: z.string() }),
   deleteSession: z.object({}),
+  // purgeSession：物理删除该会话及其独占数据以释放磁盘空间，不可恢复。
+  // 与 deleteSession（仅关闭运行时、保留历史）语义不同，只能由用户显式二次确认后调用。
+  purgeSession: z.object({}),
   discardSharedContext: z.object({ contextId: z.string().trim().min(1) }).strict(),
 } as const;
 
