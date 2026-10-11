@@ -1260,7 +1260,7 @@ const enUS: Record<string, string> = {
   "git.actionMenu.pushDialog.error.requestFailed": "Push failed: {error}",
   "git.actionMenu.pushDialog.toast.success": "Pushed to {target}",
   "git.actionMenu.pull": "Pull",
-  "git.actionMenu.trigger.pull": "Pull",
+  "git.actionMenu.pullRow.behind": "Behind {count}",
   "git.actionMenu.pullDialog.title": "Pull changes",
   "git.actionMenu.pullDialog.description.tracked":
     "Fetch the latest commits from the remote branch and update the current branch.",
@@ -1273,8 +1273,6 @@ const enUS: Record<string, string> = {
   "git.actionMenu.pullDialog.aheadBehindValue": "Ahead {ahead} / Behind {behind}",
   "git.actionMenu.pullDialog.pullLabel": "Next step",
   "git.actionMenu.pullDialog.pullValue": "Pull",
-  "git.actionMenu.pullDialog.upstreamMissing":
-    "This branch has no upstream branch. Push it once to set the tracking branch.",
   "git.actionMenu.pullDialog.confirm": "Pull",
   "git.actionMenu.pullDialog.upToDate": "Already up to date. No new commits were pulled.",
   "git.actionMenu.pullDialog.success.summary": "Pulled the latest changes",

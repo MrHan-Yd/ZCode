@@ -60,58 +60,37 @@ test("behind 为 0 也允许拉取：本地快照可能过期，以 git pull 的
   );
 });
 
-test("主按钮：干净工作区 + 落后远端时选中拉取（本次修复的空洞）", () => {
+test("主按钮只承载提交或推送：拉取是独立一行，不再抢主按钮", () => {
+  // 干净工作区且无事可做时主按钮保持置灰，拉取由 Git 工具里的独立行承担。
   assert.equal(
     resolveGitActionMenuPrimaryAction({
       actionAvailable: true,
       commitEnabled: false,
       pushEnabled: false,
-      pullEnabled: true,
-    }),
-    "pull",
-  );
-});
-
-test("主按钮：有未提交改动时提交优先于拉取", () => {
-  assert.equal(
-    resolveGitActionMenuPrimaryAction({
-      actionAvailable: true,
-      commitEnabled: true,
-      pushEnabled: false,
-      pullEnabled: true,
-    }),
-    "commit",
-  );
-});
-
-test("主按钮：有未推送提交时推送优先于拉取", () => {
-  assert.equal(
-    resolveGitActionMenuPrimaryAction({
-      actionAvailable: true,
-      commitEnabled: false,
-      pushEnabled: true,
-      pullEnabled: true,
-    }),
-    "push",
-  );
-});
-
-test("主按钮：仓库不可用或无事可做时仍为 null", () => {
-  assert.equal(
-    resolveGitActionMenuPrimaryAction({
-      actionAvailable: false,
-      commitEnabled: false,
-      pushEnabled: false,
-      pullEnabled: true,
     }),
     null,
   );
   assert.equal(
     resolveGitActionMenuPrimaryAction({
       actionAvailable: true,
-      commitEnabled: false,
+      commitEnabled: true,
       pushEnabled: false,
-      pullEnabled: false,
+    }),
+    "commit",
+  );
+  assert.equal(
+    resolveGitActionMenuPrimaryAction({
+      actionAvailable: true,
+      commitEnabled: false,
+      pushEnabled: true,
+    }),
+    "push",
+  );
+  assert.equal(
+    resolveGitActionMenuPrimaryAction({
+      actionAvailable: false,
+      commitEnabled: true,
+      pushEnabled: true,
     }),
     null,
   );

@@ -10,13 +10,8 @@ import {
   type ReactNode,
 } from "react";
 import {
-  TID_GIT_PULL_CONFIRM,
-  TID_GIT_PULL_DIALOG,
-  TID_GIT_PULL_RESULT,
   type GitCommitMessageConversationContext,
   type GitIdentity,
-  type GitPullIssueCode,
-  type GitPullResult,
   type GitRepositorySummary,
   type ModelSelection,
   type ZCodeTaskChangeSummary,
@@ -45,15 +40,12 @@ import { GitBranchSwitcher } from "@/GitBranchSwitcher.js";
 import { hasGitCommitIdentity } from "@/git-branch-switcher/switchAssist.js";
 import {
   canUseGitActionMenu,
-  canPullGitBranch,
   canPushGitBranch,
   collectCommitPreviewStagePaths,
   dedupeCommitPreviewFiles,
   excludeCommitPreviewFiles,
-  readGitPullIssueCode,
   resolveCommitPreviewSelectionState,
   resolveGitActionMenuPrimaryAction,
-  resolveGitPullErrorMessageId,
   shouldShowCommitFileList,
   splitCommitPreviewFilePath,
 } from "@/git-action-menu/display.js";
@@ -63,14 +55,13 @@ import {
 } from "@/git-action-menu/currentSessionFileScope.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useSettings } from "@/hooks/useSettingService.js";
-import { useZCodeIntl, type IntlInstance } from "@/i18n/IntlProvider.js";
+import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { getErrorMessage } from "@/lib/errorMessage.js";
 import { runUserAction } from "@/lib/userActionTelemetry.js";
 import { formatCommandShortcutLabel, matchesPrimaryShortcut } from "@/lib/keyboardShortcuts.js";
 import { logger } from "@/logger.js";
 import {
   AlertCircleIcon,
-  ArrowDownToLine,
   ArrowUpFromLine,
   CheckIcon,
   CloudUploadIcon,
@@ -96,7 +87,7 @@ interface GitActionMenuProps {
 
 type GitCommitPreviewFile = ReturnType<typeof buildGitBranchCommitPreviewFiles>[number];
 
-const COMMIT_DIALOG_ACTION_IDS = ["commit", "commitAndPush", "push", "pull"] as const;
+const COMMIT_DIALOG_ACTION_IDS = ["commit", "commitAndPush", "push"] as const;
 const GIT_COMMIT_MESSAGE_TEXTAREA_ID = "git-action-menu-commit-message";
 const TID_GIT_ACTION_TRIGGER = "git-action-trigger";
 const TID_GIT_COMMIT_ACTION_COMMAND = "git-commit-action-command";
@@ -147,11 +138,6 @@ interface GitCommitDialogProps {
   /** 本次不参与提交的文件（key 为 `stagePath`）；空集表示全部提交。 */
   excludedStagePaths: ReadonlySet<string>;
   pushEnabled: boolean;
-  /**
-   * 拉取入口是否可用到「可以点开」。分支没有上游时仍然放开，让弹窗说明
-   * 「先推送一次建立跟踪关系」；直接置灰的话用户只会看到一个没解释的灰按钮。
-   */
-  pullAvailable: boolean;
   onRefreshGit: () => void;
   onOpenChange: (nextOpen: boolean) => void;
   onMessageChange: (nextValue: string) => void;
@@ -162,7 +148,6 @@ interface GitCommitDialogProps {
   onSubmit: () => void;
   onSubmitAndPush: () => void;
   onPushOnly: () => void;
-  onPullOnly: () => void;
 }
 
 function getCommitDialogFiles(
@@ -257,7 +242,6 @@ function GitCommitDialog({
   includeUnstaged,
   excludedStagePaths,
   pushEnabled,
-  pullAvailable,
   onRefreshGit,
   onOpenChange,
   onMessageChange,
@@ -268,7 +252,6 @@ function GitCommitDialog({
   onSubmit,
   onSubmitAndPush,
   onPushOnly,
-  onPullOnly,
 }: GitCommitDialogProps) {
   const { intl, locale } = useZCodeIntl();
   const [selectedActionId, setSelectedActionId] = useState<CommitDialogActionId>("commit");
@@ -296,7 +279,6 @@ function GitCommitDialog({
   const commitActionDisabled =
     actionPending || !hasSelectedChanges || (!hasIdentity && state?.identity !== null);
   const pushOnlyDisabled = actionPending || !pushEnabled;
-  const pullOnlyDisabled = actionPending || !pullAvailable;
   const commitShortcutLabel = formatCommandShortcutLabel("⏎");
   const commitActions = useMemo(
     () => [
@@ -330,26 +312,14 @@ function GitCommitDialog({
         loading: false,
         onSelect: onPushOnly,
       },
-      {
-        id: "pull" as const,
-        icon: <ArrowDownToLine className="size-4" />,
-        label: intl.formatMessage({
-          id: "git.actionMenu.pull",
-        }),
-        disabled: pullOnlyDisabled,
-        loading: false,
-        onSelect: onPullOnly,
-      },
     ],
     [
       commitActionDisabled,
       intl,
       mutationPending,
-      onPullOnly,
       onPushOnly,
       onSubmit,
       onSubmitAndPush,
-      pullOnlyDisabled,
       pushOnlyDisabled,
     ],
   );
@@ -764,8 +734,6 @@ interface GitPushDialogProps {
   mutationPending: boolean;
   onOpenChange: (nextOpen: boolean) => void;
   onSubmit: () => void;
-  /** 提供时在底部额外给出「拉取」入口（落后远端时推送前通常要先拉）。 */
-  onPullInstead?: () => void;
 }
 
 function GitPushDialog({
@@ -777,7 +745,6 @@ function GitPushDialog({
   mutationPending,
   onOpenChange,
   onSubmit,
-  onPullInstead,
 }: GitPushDialogProps) {
   const { intl, locale } = useZCodeIntl();
   const numberFormatter = new Intl.NumberFormat(locale);
@@ -976,19 +943,6 @@ function GitPushDialog({
                 >
                   {intl.formatMessage({ id: "common.cancel" })}
                 </Button>
-                {onPullInstead ? (
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="lg"
-                    onClick={onPullInstead}
-                    disabled={mutationPending}
-                    className="h-10 min-w-0 px-5"
-                  >
-                    <ArrowDownToLine className="size-4" />
-                    {intl.formatMessage({ id: "git.actionMenu.pull" })}
-                  </Button>
-                ) : null}
                 <Button
                   type="button"
                   size="lg"
@@ -999,376 +953,6 @@ function GitPushDialog({
                   {mutationPending ? <LoaderIcon className="size-4 animate-spin" /> : null}
                   {intl.formatMessage({
                     id: "git.actionMenu.pushDialog.confirm",
-                  })}
-                </Button>
-              </>
-            )}
-          </DialogFooter>
-        </div>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-interface GitPullErrorState {
-  code: GitPullIssueCode | null;
-  message: string;
-}
-
-/**
- * 拉取成功的 toast 补充片段（文件数与增删行数）。toast 不像结果面板那样会被
- * 「工作区变干净 → 整块 Git 区卸载」带走，所以「拿回来多少」也要在这里留一份。
- * 作为独立的一句拼在主句后面，避免依赖各语言的连接符。
- */
-function formatPullToastStats(
-  intl: IntlInstance,
-  result: GitPullResult,
-  numberFormatter: Intl.NumberFormat,
-): string {
-  // fileCount / added / removed 同出一份 diff 统计：只要有一项拿不到就整句省略。
-  if (
-    !result.updated ||
-    result.fileCount === null ||
-    result.added === null ||
-    result.removed === null
-  ) {
-    return "";
-  }
-
-  return intl.formatMessage(
-    { id: "git.actionMenu.pullDialog.toast.successStats" },
-    {
-      files: numberFormatter.format(result.fileCount),
-      added: numberFormatter.format(result.added),
-      removed: numberFormatter.format(result.removed),
-    },
-  );
-}
-
-/** 拉取弹窗的「标签 + 取值」行。弹窗里这类行有六处，统一在这里收敛对齐方式。 */
-function GitPullDetailRow({
-  label,
-  value,
-  valueClassName,
-}: {
-  label: string;
-  value: ReactNode;
-  valueClassName?: string;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4">
-      <div className="text-ui-base font-medium text-foreground">{label}</div>
-      <div className={cn("text-foreground-subtle", valueClassName)}>{value}</div>
-    </div>
-  );
-}
-
-interface GitPullDialogProps {
-  open: boolean;
-  gitSummary: GitRepositorySummary;
-  currentBranchLabel: string;
-  pullEnabled: boolean;
-  result: GitPullResult | null;
-  error: GitPullErrorState | null;
-  mutationPending: boolean;
-  onOpenChange: (nextOpen: boolean) => void;
-  onSubmit: () => void;
-}
-
-function GitPullDialog({
-  open,
-  gitSummary,
-  currentBranchLabel,
-  pullEnabled,
-  result,
-  error,
-  mutationPending,
-  onOpenChange,
-  onSubmit,
-}: GitPullDialogProps) {
-  const { intl, locale } = useZCodeIntl();
-  const numberFormatter = new Intl.NumberFormat(locale);
-  const [errorCopied, setErrorCopied] = useState(false);
-  const descriptionId = gitSummary.trackingBranchName
-    ? "git.actionMenu.pullDialog.description.tracked"
-    : "git.actionMenu.pullDialog.description.untracked";
-  // 已知失败码走本地化文案；识别不出来的失败直接展示原始 Git 输出，比一句笼统的「拉取失败」更可诊断。
-  const failureMessageId = resolveGitPullErrorMessageId(error?.code ?? null);
-  const finished = Boolean(error) || Boolean(result);
-
-  const handleCopyError = useCallback(() => {
-    if (!error) {
-      return;
-    }
-
-    if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
-      toast(
-        intl.formatMessage(
-          { id: "git.actionMenu.pullDialog.error.copyFailed" },
-          { error: "clipboard-unavailable" },
-        ),
-      );
-      return;
-    }
-
-    void navigator.clipboard.writeText(error.message).then(
-      () => {
-        setErrorCopied(true);
-        window.setTimeout(() => {
-          setErrorCopied(false);
-        }, 1500);
-      },
-      (copyError: unknown) => {
-        const message = copyError instanceof Error ? copyError.message : String(copyError);
-        toast(
-          intl.formatMessage(
-            { id: "git.actionMenu.pullDialog.error.copyFailed" },
-            { error: message },
-          ),
-        );
-      },
-    );
-  }, [error, intl]);
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        data-testid={TID_GIT_PULL_DIALOG}
-        className="max-w-lg gap-0 rounded-2xl p-0 overflow-hidden"
-      >
-        <DialogHeader className="gap-2 px-6 py-5 pb-0">
-          <DialogTitle className="text-lg font-medium text-foreground">
-            {intl.formatMessage({ id: "git.actionMenu.pullDialog.title" })}
-          </DialogTitle>
-          <DialogDescription className="text-ui-base leading-6 text-foreground-subtle">
-            {intl.formatMessage({ id: descriptionId })}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-5 px-6 py-6">
-          {!finished ? (
-            <div className="rounded-xl bg-background/30">
-              <div className="flex items-start justify-between p-4">
-                <div className="text-ui-base font-medium text-foreground">
-                  {intl.formatMessage({
-                    id: "git.actionMenu.pullDialog.currentBranchLabel",
-                  })}
-                </div>
-                <div className="flex items-center gap-2 text-ui-base font-medium text-foreground">
-                  <GitBranchIcon className="size-4 text-foreground-subtle" />
-                  <span>{currentBranchLabel}</span>
-                </div>
-              </div>
-
-              <div className="space-y-3 border-t border-border/50 p-4 text-ui-base">
-                <GitPullDetailRow
-                  label={intl.formatMessage({
-                    id: "git.actionMenu.pullDialog.upstreamLabel",
-                  })}
-                  value={
-                    gitSummary.trackingBranchName
-                      ? gitSummary.trackingBranchName
-                      : intl.formatMessage({
-                          id: "git.actionMenu.pullDialog.upstreamPending",
-                        })
-                  }
-                />
-                <GitPullDetailRow
-                  label={intl.formatMessage({
-                    id: "git.actionMenu.pullDialog.aheadBehindLabel",
-                  })}
-                  value={intl.formatMessage(
-                    { id: "git.actionMenu.pullDialog.aheadBehindValue" },
-                    {
-                      ahead: numberFormatter.format(gitSummary.ahead),
-                      behind: numberFormatter.format(gitSummary.behind),
-                    },
-                  )}
-                />
-                <div className="flex items-center justify-between gap-4 border-t border-border/50 pt-3">
-                  <div className="text-ui-base font-medium text-foreground">
-                    {intl.formatMessage({
-                      id: "git.actionMenu.pullDialog.pullLabel",
-                    })}
-                  </div>
-                  <div className="flex items-center gap-2 text-foreground-subtle">
-                    <ArrowDownToLine className="size-4" />
-                    <span>
-                      {intl.formatMessage({
-                        id: "git.actionMenu.pullDialog.pullValue",
-                      })}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          ) : null}
-
-          {!pullEnabled && !finished ? (
-            <div className="flex items-start gap-3 rounded-xl bg-warning/10 px-4 py-3 text-ui-base text-warning">
-              <AlertCircleIcon className="mt-0.5 size-4 shrink-0" />
-              <span>
-                {intl.formatMessage({
-                  id: "git.actionMenu.pullDialog.upstreamMissing",
-                })}
-              </span>
-            </div>
-          ) : null}
-
-          {result ? (
-            <div data-testid={TID_GIT_PULL_RESULT}>
-              {result.updated ? (
-                <div className="rounded-xl bg-background/30">
-                  <div className="flex items-start justify-between p-4">
-                    <div className="text-ui-base font-medium text-foreground">
-                      {intl.formatMessage({
-                        id: "git.actionMenu.pullDialog.success.summary",
-                      })}
-                    </div>
-                    <div className="flex items-center gap-2 text-ui-base font-medium text-foreground">
-                      <ArrowDownToLine className="size-4 text-foreground-subtle" />
-                      <span>{result.trackingBranchName ?? currentBranchLabel}</span>
-                    </div>
-                  </div>
-
-                  {result.commitCount !== null ||
-                  result.fileCount !== null ||
-                  (result.added !== null && result.removed !== null) ? (
-                    <div className="space-y-3 border-t border-border/50 p-4 text-ui-base">
-                      {result.commitCount !== null ? (
-                        <GitPullDetailRow
-                          label={intl.formatMessage({
-                            id: "git.actionMenu.pullDialog.success.commitsLabel",
-                          })}
-                          value={intl.formatMessage(
-                            { id: "git.actionMenu.pullDialog.success.commitsValue" },
-                            { count: numberFormatter.format(result.commitCount) },
-                          )}
-                        />
-                      ) : null}
-                      {result.fileCount !== null ? (
-                        <GitPullDetailRow
-                          label={intl.formatMessage({
-                            id: "git.actionMenu.pullDialog.success.filesLabel",
-                          })}
-                          value={intl.formatMessage(
-                            { id: "git.actionMenu.pullDialog.success.filesValue" },
-                            { count: numberFormatter.format(result.fileCount) },
-                          )}
-                        />
-                      ) : null}
-                      {result.added !== null && result.removed !== null ? (
-                        <GitPullDetailRow
-                          label={intl.formatMessage({
-                            id: "git.actionMenu.pullDialog.success.linesLabel",
-                          })}
-                          valueClassName="font-mono"
-                          value={
-                            <>
-                              <span className="text-diff-added">
-                                +{numberFormatter.format(result.added)}
-                              </span>{" "}
-                              <span className="text-diff-removed">
-                                -{numberFormatter.format(result.removed)}
-                              </span>
-                            </>
-                          }
-                        />
-                      ) : null}
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="flex items-start gap-3 rounded-xl bg-background/30 px-4 py-3 text-ui-base text-foreground-subtle">
-                  <ArrowDownToLine className="mt-0.5 size-4 shrink-0" />
-                  <span>
-                    {intl.formatMessage({
-                      id: "git.actionMenu.pullDialog.upToDate",
-                    })}
-                  </span>
-                </div>
-              )}
-            </div>
-          ) : null}
-
-          {error ? (
-            <>
-              <div className="flex items-start gap-3 rounded-xl bg-warning/10 px-4 py-3 text-ui-base text-warning">
-                <AlertCircleIcon className="mt-0.5 size-4 shrink-0" />
-                <span>
-                  {failureMessageId
-                    ? intl.formatMessage({ id: failureMessageId })
-                    : intl.formatMessage({
-                        id: "git.actionMenu.pullDialog.error.summary",
-                      })}
-                </span>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-ui-base font-medium text-foreground">
-                    {intl.formatMessage({
-                      id: "git.actionMenu.pullDialog.error.detailsLabel",
-                    })}
-                  </div>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 px-2 text-ui-base text-foreground-subtle hover:text-foreground"
-                    onClick={handleCopyError}
-                  >
-                    {intl.formatMessage({
-                      id: errorCopied
-                        ? "git.actionMenu.pullDialog.error.copy.copied"
-                        : "git.actionMenu.pullDialog.error.copy",
-                    })}
-                  </Button>
-                </div>
-                <Textarea
-                  // 与推送弹窗一致：固定尺寸 + 换行，长错误文本不会把弹窗撑爆。
-                  className="field-sizing-fixed w-full max-w-full min-h-40 rounded-lg border-input-border bg-background/50 px-3 py-3 text-ui-base text-foreground whitespace-pre-wrap break-words placeholder:text-foreground-subtlest focus-visible:border-input-border-focused focus-visible:bg-input-focused focus-visible:ring-0 md:text-ui-base"
-                  readOnly
-                >
-                  {error.message}
-                </Textarea>
-              </div>
-            </>
-          ) : null}
-
-          <DialogFooter className="gap-2 pt-4">
-            {finished ? (
-              <Button
-                type="button"
-                size="lg"
-                onClick={() => onOpenChange(false)}
-                disabled={mutationPending}
-                className="h-10 min-w-0 px-5"
-              >
-                {intl.formatMessage({ id: "common.close" })}
-              </Button>
-            ) : (
-              <>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="lg"
-                  onClick={() => onOpenChange(false)}
-                  disabled={mutationPending}
-                  className="h-10 min-w-0 px-5"
-                >
-                  {intl.formatMessage({ id: "common.cancel" })}
-                </Button>
-                <Button
-                  type="button"
-                  data-testid={TID_GIT_PULL_CONFIRM}
-                  size="lg"
-                  onClick={onSubmit}
-                  disabled={mutationPending || !pullEnabled}
-                  className="h-10 min-w-0 px-5"
-                >
-                  {mutationPending ? <LoaderIcon className="size-4 animate-spin" /> : null}
-                  {intl.formatMessage({
-                    id: "git.actionMenu.pullDialog.confirm",
                   })}
                 </Button>
               </>
@@ -1404,14 +988,7 @@ export function GitActionMenu({
   const [commitMessageGenerationPending, setCommitMessageGenerationPending] = useState(false);
   const [pushDialogOpen, setPushDialogOpen] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
-  const [pullDialogOpen, setPullDialogOpen] = useState(false);
-  const [pullResult, setPullResult] = useState<GitPullResult | null>(null);
-  const [pullError, setPullError] = useState<GitPullErrorState | null>(null);
   const [mutationPending, setMutationPending] = useState(false);
-  // 本次拉取弹窗会话里是否真的跑过一次拉取（成功或失败）。用来决定关闭弹窗时
-  // 要不要补那次被推迟的刷新——纯取消关闭不该多打一次 Git 读取。
-  const pullSettledRef = useRef(false);
-  const numberFormatter = useMemo(() => new Intl.NumberFormat(locale), [locale]);
   // 本次提交不包含的文件。弹窗会话内的临时状态，不作为持久化偏好。
   const [commitExcludedStagePaths, setCommitExcludedStagePaths] = useState<ReadonlySet<string>>(
     EMPTY_COMMIT_EXCLUDED_PATHS,
@@ -1446,7 +1023,6 @@ export function GitActionMenu({
   );
   const commitEnabled = gitSummary.isDirty;
   const pushEnabled = canPushGitBranch(gitSummary);
-  const pullEnabled = canPullGitBranch(gitSummary);
   const triggerPending = mutationPending || commitMessageGenerationPending || commitDialogLoading;
   const primaryActionId = useMemo(
     () =>
@@ -1454,9 +1030,8 @@ export function GitActionMenu({
         actionAvailable,
         commitEnabled,
         pushEnabled,
-        pullEnabled,
       }),
-    [actionAvailable, commitEnabled, pullEnabled, pushEnabled],
+    [actionAvailable, commitEnabled, pushEnabled],
   );
   const primaryActionDisabled = !actionAvailable || triggerPending || primaryActionId === null;
   const isStatusRowTrigger = triggerLayout === "status-row";
@@ -1476,7 +1051,6 @@ export function GitActionMenu({
       branchName: gitSummary.branchName,
       trackingBranchName: gitSummary.trackingBranchName,
       isDirty: gitSummary.isDirty,
-      pullEnabled,
     });
   }, [
     gitSummary.branchName,
@@ -1488,7 +1062,6 @@ export function GitActionMenu({
     actionAvailable,
     primaryActionId,
     primaryActionDisabled,
-    pullEnabled,
     workspacePath,
   ]);
 
@@ -1534,26 +1107,6 @@ export function GitActionMenu({
   const openPushDialog = useCallback(() => {
     setPushError(null);
     setPushDialogOpen(true);
-  }, []);
-
-  const closePullDialog = useCallback(() => {
-    setPullDialogOpen(false);
-    setPullResult(null);
-    setPullError(null);
-    // 拉取只在弹窗关闭后才刷新仓库状态（见 handlePullSubmit 的说明）：
-    // 这里补上那一次刷新。没跑过拉取的取消关闭不刷新，避免多余的一次 Git 读取。
-    if (pullSettledRef.current) {
-      pullSettledRef.current = false;
-      onRefreshGit();
-    }
-  }, [onRefreshGit]);
-
-  const openPullDialog = useCallback(() => {
-    // 每次重新打开都要清掉上一次的结果，否则会拿旧结果冒充本次拉取。
-    pullSettledRef.current = false;
-    setPullResult(null);
-    setPullError(null);
-    setPullDialogOpen(true);
   }, []);
 
   const loadCommitDialogState = useCallback(
@@ -1975,69 +1528,6 @@ export function GitActionMenu({
     }
   }, [closePushDialog, intl, onRefreshGit, pushCurrentBranch, pushEnabled, workspacePath]);
 
-  const handlePullSubmit = useCallback(async () => {
-    if (!pullEnabled) {
-      return;
-    }
-
-    setMutationPending(true);
-    setPullError(null);
-    setPullResult(null);
-
-    try {
-      const result = await gitService.pull({ workspacePath });
-      setPullResult(result);
-      pullSettledRef.current = true;
-      logger.info("[GitActionMenu] 拉取更改成功", {
-        workspacePath,
-        branchName: result.branchName,
-        trackingBranchName: result.trackingBranchName,
-        updated: result.updated,
-        commitCount: result.commitCount,
-        fileCount: result.fileCount,
-      });
-      // 结果面板是主要展示处，toast 是它的冗余通道：面板可能因为工作区变干净
-      // 触发整块 Git 区卸载而消失，toast 不受影响，拉取量不会因此丢失。
-      const statsLine = formatPullToastStats(intl, result, numberFormatter);
-      toast(
-        !result.updated
-          ? intl.formatMessage({ id: "git.actionMenu.pullDialog.toast.upToDate" })
-          : // 拿不到提交数时不要说「拉取 0 个提交」——那是"不知道"，不是"没有"。
-            [
-              result.commitCount === null
-                ? intl.formatMessage({ id: "git.actionMenu.pullDialog.toast.updated" })
-                : intl.formatMessage(
-                    { id: "git.actionMenu.pullDialog.toast.success" },
-                    {
-                      target: result.trackingBranchName?.trim() || currentBranchLabel,
-                      count: numberFormatter.format(result.commitCount),
-                    },
-                  ),
-              statsLine,
-            ]
-              .filter(Boolean)
-              .join(" "),
-      );
-      // 结果留在弹窗里(pull 的看点就是"拿回来多少"),所以这里不关弹窗、也不刷新：
-      // 拉取成功后 behind 会归零，立刻刷新会把整块 Git 区（连同这个弹窗）卸载掉，
-      // 结果面板刚渲染就被销毁。刷新改到弹窗关闭时执行。
-    } catch (error: unknown) {
-      const code = readGitPullIssueCode(error);
-      const message = getErrorMessage(error);
-      logger.warn("[GitActionMenu] 拉取更改失败", {
-        workspacePath,
-        code,
-        error: message,
-      });
-      setPullError({ code, message });
-      pullSettledRef.current = true;
-      // 失败同样不在这里刷新：冲突会留下未完成的 merge，但弹窗仍然是唯一能看到
-      // 冲突原因和原始输出的地方，刷新同样会把它连同 Git 区一起卸载。关闭时再刷新。
-    } finally {
-      setMutationPending(false);
-    }
-  }, [currentBranchLabel, gitService, intl, numberFormatter, pullEnabled, workspacePath]);
-
   const handlePrimaryAction = useCallback(() => {
     if (primaryActionDisabled) {
       return;
@@ -2050,16 +1540,12 @@ export function GitActionMenu({
           openPushDialog();
           return;
         }
-        if (primaryActionId === "pull") {
-          openPullDialog();
-          return;
-        }
         void openCommitDialog();
       },
       completed: { resultSource: "local_commit" },
       failureStage: "git_action_open",
     });
-  }, [openCommitDialog, openPullDialog, openPushDialog, primaryActionId, primaryActionDisabled]);
+  }, [openCommitDialog, openPushDialog, primaryActionId, primaryActionDisabled]);
 
   const handleStatusRowContainerClick = useCallback(() => {
     handlePrimaryAction();
@@ -2088,10 +1574,7 @@ export function GitActionMenu({
           size="default"
           disabled={primaryActionDisabled}
           aria-label={intl.formatMessage({
-            id:
-              primaryActionId === "pull"
-                ? "git.actionMenu.trigger.pull"
-                : "git.actionMenu.trigger.ariaLabel",
+            id: "git.actionMenu.trigger.ariaLabel",
           })}
           className={cn(
             "h-7 rounded-lg border-0 gap-1 px-1.5 @max-[560px]/workspace-header:w-7 @max-[560px]/workspace-header:px-0 @max-[560px]/workspace-header:[&>span]:hidden",
@@ -2106,18 +1589,11 @@ export function GitActionMenu({
             <LoaderIcon className="size-4 animate-spin text-foreground-subtle" />
           ) : primaryActionId === "push" ? (
             <ArrowUpFromLine className="size-4 text-foreground" />
-          ) : primaryActionId === "pull" ? (
-            <ArrowDownToLine className="size-4 text-foreground" />
           ) : (
             <GitCommitIcon className="size-4 text-foreground" />
           )}
           <span className={cn(isStatusRowTrigger && "min-w-0 truncate")}>
-            {intl.formatMessage({
-              id:
-                primaryActionId === "pull"
-                  ? "git.actionMenu.trigger.pull"
-                  : "git.actionMenu.trigger",
-            })}
+            {intl.formatMessage({ id: "git.actionMenu.trigger" })}
           </span>
         </Button>
       </div>
@@ -2134,7 +1610,6 @@ export function GitActionMenu({
         includeUnstaged={commitIncludeUnstaged}
         excludedStagePaths={commitExcludedStagePaths}
         pushEnabled={pushEnabled}
-        pullAvailable={actionAvailable}
         onRefreshGit={refreshCommitDialogAfterBranchChange}
         onOpenChange={(nextOpen) => {
           if (!nextOpen) {
@@ -2158,10 +1633,6 @@ export function GitActionMenu({
           closeCommitDialog();
           openPushDialog();
         }}
-        onPullOnly={() => {
-          closeCommitDialog();
-          openPullDialog();
-        }}
       />
 
       <GitPushDialog
@@ -2178,34 +1649,6 @@ export function GitActionMenu({
         }}
         onSubmit={() => {
           void handlePushSubmit();
-        }}
-        // 落后远端时推送前通常要先拉取；工作区干净且既有本地提交又有远端提交时，
-        // 主按钮选中的是推送，拉取只能从这里进入。
-        {...(pullEnabled && gitSummary.behind > 0
-          ? {
-              onPullInstead: () => {
-                closePushDialog();
-                openPullDialog();
-              },
-            }
-          : {})}
-      />
-
-      <GitPullDialog
-        open={pullDialogOpen}
-        gitSummary={gitSummary}
-        currentBranchLabel={currentBranchLabel}
-        pullEnabled={pullEnabled}
-        result={pullResult}
-        error={pullError}
-        mutationPending={mutationPending}
-        onOpenChange={(nextOpen) => {
-          if (!nextOpen) {
-            closePullDialog();
-          }
-        }}
-        onSubmit={() => {
-          void handlePullSubmit();
         }}
       />
     </>

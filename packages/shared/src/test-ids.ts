@@ -78,6 +78,8 @@ export const TID_GIT_COMMIT_FILE_ITEM = "git-commit-file-item";
 export const TID_GIT_COMMIT_ACTION_COMMAND = "git-commit-action-command";
 /** Git 提交弹窗底部动作项（动态后缀为动作 id） */
 export const TID_GIT_COMMIT_ACTION_ITEM = "git-commit-action-item";
+/** Git 工具里的「拉取」行（点击打开拉取弹窗） */
+export const TID_GIT_PULL_TRIGGER = "git-pull-trigger";
 /** Git 拉取弹窗 */
 export const TID_GIT_PULL_DIALOG = "git-pull-dialog";
 /** Git 拉取弹窗的确认按钮 */

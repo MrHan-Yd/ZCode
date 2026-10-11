@@ -2,7 +2,7 @@ import type { GitPullIssueCode, GitRepositorySummary } from "@zcode/shared";
 import { isGitPullIssueCode } from "@zcode/shared";
 import type { GitBranchCommitPreviewFile } from "@/git-branch-switcher/display.js";
 
-type GitActionMenuPrimaryActionId = "commit" | "push" | "pull";
+type GitActionMenuPrimaryActionId = "commit" | "push";
 
 export function canUseGitActionMenu(
   summary: Pick<GitRepositorySummary, "isGitAvailable" | "isRepository">,
@@ -14,22 +14,17 @@ export function resolveGitActionMenuPrimaryAction(options: {
   actionAvailable: boolean;
   commitEnabled: boolean;
   pushEnabled: boolean;
-  pullEnabled: boolean;
 }): GitActionMenuPrimaryActionId | null {
   // 关键业务逻辑：主按钮只承载提交或推送；创建分支保留在下拉菜单里。
   // 这样干净仓库仍可通过菜单创建分支，但不会把“提交或推送”误触发为创建分支。
+  // 拉取不在这里：它在 Git 工具里是独立一行（GitPullAction），
+  // 不需要藏在「提交或推送」这个按钮后面。
   if (options.actionAvailable && options.commitEnabled) {
     return "commit";
   }
 
   if (options.actionAvailable && options.pushEnabled) {
     return "push";
-  }
-
-  // 干净工作区 + 落后远端时既选不出提交也选不出推送。这里补上拉取，
-  // 否则主按钮会置灰，而"落后远端"正是唯一该做的事。
-  if (options.actionAvailable && options.pullEnabled) {
-    return "pull";
   }
 
   return null;

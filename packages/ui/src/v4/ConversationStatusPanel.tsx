@@ -80,6 +80,7 @@ import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/h
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { formatBackgroundTaskElapsedLabel } from "@/BackgroundTaskElapsedLabel.js";
 import { GitActionMenu } from "@/GitActionMenu.js";
+import { GitPullAction } from "@/GitPullAction.js";
 import { GitBranchSwitcher } from "@/GitBranchSwitcher.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type {
@@ -465,6 +466,16 @@ function GitStatusSection({
           triggerLayout="status-row"
           className="w-full"
         />
+        {/* 拉取与提交/推送同级，所以占独立一行；没有上游分支时这一行不出现
+            （`canPull` 为假），此时「提交或推送」会先把分支推上去建立跟踪关系。 */}
+        {git.canPull ? (
+          <GitPullAction
+            workspacePath={workspacePath}
+            gitSummary={gitSummary}
+            onRefreshGit={onRefreshGit}
+            className="w-full"
+          />
+        ) : null}
       </div>
     </StatusSection>
   );
