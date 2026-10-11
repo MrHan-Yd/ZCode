@@ -21,6 +21,7 @@ ZCode is an AI coding workspace with desktop, browser, and terminal interfaces. 
 
 ## Updates
 
+- 2026-10-11: Updated to ZCode v3.17.2 — the Git tools can now pull: from the commit dialog, the primary button, and the push dialog. A successful pull reports how many commits, files, and added/removed lines came down; an up-to-date pull says so explicitly; and missing remotes, branches without an upstream, overwritten local changes, merge conflicts, authentication failures, unreachable remotes, and timeouts each get a readable message. Built-in model rules now cover the Muse Spark 1.x family (1M context / 131k max output, with image, video, and audio input).
 - 2026-10-11: Updated to ZCode v3.17.1 — the Archived tasks page now also enumerates every workspace present in the task index, fixing archived tasks from long-unopened projects being invisible there.
 - 2026-10-11: Updated to ZCode v3.17.0 — archived tasks can now be deleted permanently: session messages, snapshots, and related files are removed and disk space reclaimed (irreversible), with per-task, per-project, and delete-all entries in the Archived tasks settings page.
 - 2026-10-11: Updated to ZCode v3.16.5 — auto-archive now scans all known projects and adds a resident periodic sweep, fixing archived tasks that were missing from the list; settings gained a per-project Archived tasks page with restore, remove, and batch delete; `@` file search now cancels superseded queries and skips the full sort when the query is empty.
