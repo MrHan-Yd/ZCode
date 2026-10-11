@@ -1,5 +1,25 @@
 # Changelog
 
+## [3.17.2](https://github.com/MrHan-Yd/ZCode/compare/v3.17.1...v3.17.2) (2026-10-11)
+
+### Features
+
+* Git 工具新增一键拉取并展示拉取量 ([2241674](https://github.com/MrHan-Yd/ZCode/commit/2241674522e5b0b791a5d40dad20bd9087a6697e))
+  * 三处入口：提交弹窗动作列表、主按钮（干净工作区落后远端时不再是禁用态）、推送弹窗
+  * 结果按 HEAD 是否变化判定：有更新展示提交数/文件数/增删行数，无更新明确提示「已是最新」
+  * 失败给稳定错误码并本地化：无远程、无上游、本地改动被覆盖、合并冲突、分叉、认证失败、网络不可达、超时、有未完成的合并
+  * 错误详情保留原始 Git 输出；冲突等失败后仍刷新仓库状态，避免看到过期的干净工作区
+
+* 内置模型规则补 Muse Spark 家族参数 ([20c1dda](https://github.com/MrHan-Yd/ZCode/commit/20c1dda8a1748d7e8fc59c9582e174b755267e07))
+  * 新增家族规则 .*muse-spark-1[.\-]\d…，1M 上下文 / 131k 最大输出，输入模态补 image/video/audio
+  * 此前 muse-spark 1.x 全系落到兜底规则（200k / 32k），与上游公开目录不符
+  * revision 30 → 31；内置 release 用 revision 标识内容，必须随内容递增
+
+
+### Documentation
+
+* 补充 README 的 v3.17.1 更新说明 ([31a4aba](https://github.com/MrHan-Yd/ZCode/commit/31a4abaf0d1312aad06b4a3fa894f2a16c274860))
+
 ## [3.17.1](https://github.com/MrHan-Yd/ZCode/compare/v3.17.0...v3.17.1) (2026-10-11)
 
 ### Bug Fixes
