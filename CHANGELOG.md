@@ -1,5 +1,29 @@
 # Changelog
 
+## [3.16.5](https://github.com/MrHan-Yd/ZCode/compare/v3.16.4...v3.16.5) (2026-10-11)
+
+### Features
+
+* 自动归档改为扫描全部已知项目并新增归档管理页 ([1894d2f](https://github.com/MrHan-Yd/ZCode/commit/1894d2f747b1e46c2d8069703baf2d53ad3d93d4))
+  * 抽出共享扫描判定，常驻 scheduler 进程按启动+定时（1h 节流、单飞）扫描
+  * listWorkspaceScopes 用轻量 DISTINCT 枚举工作区，不加载任务正文
+  * 归档读取不再按 provider 过滤，修复「归档了却看不到」
+  * 设置页新增按项目分组的归档管理：作用域下拉、搜索、取消归档、移除、按组/全部删除
+  * 补充 specs/task-auto-archive.md
+
+
+### Performance
+
+* @ 文件搜索支持取消被取代的查询并去掉空查询全量排序 ([771a847](https://github.com/MrHan-Yd/ZCode/commit/771a847e012049469991ce6dde2eaa84132b9206))
+  * searchWorkspaceFiles 按 workspace 维护递增 token，分批打分被取代即提前返回
+  * 空 query 走默认预览快路径，省掉对全部候选的三趟 map+sort+map
+  * 补充 specs/mention-file-scan-performance.md 与单测
+
+
+### Documentation
+
+* 补充 macOS 启动提示「已损坏」时的 xattr 说明 ([867d0ac](https://github.com/MrHan-Yd/ZCode/commit/867d0ac49084126ea6a504c9ffb4ec79d0023b18))
+
 ## [3.16.4](https://github.com/MrHan-Yd/ZCode/compare/v3.16.3...v3.16.4) (2026-10-10)
 
 ### Bug Fixes
