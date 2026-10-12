@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.17.5](https://github.com/MrHan-Yd/ZCode/compare/v3.17.4...v3.17.5) (2026-10-12)
+
+### Features
+
+* **usage:** 会话统计面板并列展示平均与当前输出速度 ([221e794](https://github.com/MrHan-Yd/ZCode/commit/221e7948e2ae164947f2b22c51283ce4f6ddf9c3))
+  * 面板新增「当前输出速度」行，原「输出速度（TPS）」改名为「平均输出速度（TPS）」
+  * 新增 sessionStatsSpeeds 统一决定每个显示面读哪个口径，并把入口渲染门禁一并收拢、补测
+  * 入口 aria-label 改为中性表述：它空闲时显示的是累计平均，不是当前值
+  * spec 补齐两个口径不可换算的规则、数据流、验收场景与已知限制
+
+
+### Documentation
+
+* 补充 README 的 v3.17.4 更新说明 ([dbf0a22](https://github.com/MrHan-Yd/ZCode/commit/dbf0a223e2ab6444ffba741cf07ed201c18675d5))
+
 ## [3.17.4](https://github.com/MrHan-Yd/ZCode/compare/v3.17.3...v3.17.4) (2026-10-11)
 
 ### Bug Fixes
