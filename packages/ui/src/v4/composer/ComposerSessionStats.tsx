@@ -12,6 +12,11 @@ import {
   formatPreciseDuration,
 } from "@/v4/conversationWorkDuration.js";
 import { useLiveOutputSpeed } from "@/v4/composer/useLiveOutputSpeed.js";
+import {
+  canRenderSessionStatsEntry,
+  resolveSessionStatsSpeeds,
+  type SessionStatsSpeeds,
+} from "@/v4/composer/sessionStatsSpeeds.js";
 
 /** 一轮结束后的补取窗口：刚结束那轮要立刻计进统计，之后就把轮询关掉。 */
 const SETTLE_GRACE_MS = 2_000;
@@ -68,10 +73,13 @@ function SessionStatsPanel({
   intl,
   locale,
   summary,
+  speeds,
 }: {
   intl: IntlInstance;
   locale: Locale;
   summary: SessionPerformanceSummary | null;
+  /** 两个口径的输出速度：平均来自持久层累计，当前来自运行中的流式估算。 */
+  speeds: SessionStatsSpeeds;
 }) {
   const emptyValue = intl.formatMessage({ id: "chat.sessionStats.emptyValue" });
   return (
@@ -93,13 +101,15 @@ function SessionStatsPanel({
           label={intl.formatMessage({ id: "chat.sessionStats.averageTtft" })}
           value={formatDurationValue(summary?.averageTtftMs, intl, locale)}
         />
+        {/* 平均与当前并列：两者口径不同、运行中数值可以不一致，因此必须都标出来，
+            否则用户只能把「入口数字与面板不一致」读成算错。 */}
         <SessionStatRow
-          label={intl.formatMessage({ id: "chat.sessionStats.outputSpeed" })}
-          value={
-            summary?.tokensPerSecond === null || summary?.tokensPerSecond === undefined
-              ? emptyValue
-              : formatSpeedValue(summary.tokensPerSecond, intl)
-          }
+          label={intl.formatMessage({ id: "chat.sessionStats.averageSpeed" })}
+          value={speeds.average === null ? emptyValue : formatSpeedValue(speeds.average, intl)}
+        />
+        <SessionStatRow
+          label={intl.formatMessage({ id: "chat.sessionStats.currentSpeed" })}
+          value={speeds.current === null ? emptyValue : formatSpeedValue(speeds.current, intl)}
         />
       </div>
     </div>
@@ -107,9 +117,10 @@ function SessionStatsPanel({
 }
 
 /**
- * 工具条上的会话统计入口：常驻显示输出速度，悬停/聚焦展开整个会话的累计口径。
- * 运行中显示流式实时估算，空闲时回到持久层的累计值；两个都拿不到就不渲染入口。
- * 数据与口径见 specs/session-performance-stats.md。
+ * 工具条上的会话统计入口：常驻显示输出速度，悬停/聚焦展开「会话统计」面板。
+ * 入口数字优先取运行中的实时估算，拿不到时回落到持久层的累计平均；面板则把两个口径
+ * 并列列出（平均/当前），因此运行中两处数值不一致是预期表现，不是算错。
+ * 两个都拿不到就不渲染入口。数据与口径见 specs/session-performance-stats.md。
  */
 export function ComposerSessionStats({
   workspacePath,
@@ -140,14 +151,10 @@ export function ComposerSessionStats({
     readOutputTokens,
   });
 
-  const settledSpeed = summary?.tokensPerSecond ?? null;
-  // 实时估算优先：它才是用户此刻看到的输出速度；停下来的那一秒回落到累计值。
-  const displaySpeed = liveSpeed ?? settledSpeed;
-  const hasSessionData =
-    summary !== null && (summary.modelRequestCount > 0 || summary.toolCallCount > 0);
-  if (!sessionId || (!hasSessionData && displaySpeed === null)) return null;
+  const speeds = resolveSessionStatsSpeeds(summary, liveSpeed);
+  if (!canRenderSessionStatsEntry({ sessionId, summary, speeds })) return null;
 
-  const speedLabel = displaySpeed === null ? null : formatSpeedValue(displaySpeed, intl);
+  const speedLabel = speeds.trigger === null ? null : formatSpeedValue(speeds.trigger, intl);
 
   return (
     <HoverCard closeDelay={0} openDelay={0} open={open} onOpenChange={setOpen}>
@@ -179,11 +186,12 @@ export function ComposerSessionStats({
       </HoverCardTrigger>
       <HoverCardContent
         align="end"
-        className="!w-56 overflow-hidden !rounded-xl border border-popover-border bg-popover p-0 !shadow-md"
+        // w-64：五行里最长的标签是「平均输出速度（TPS）」，w-56 会把标签截断成省略号。
+        className="!w-64 overflow-hidden !rounded-xl border border-popover-border bg-popover p-0 !shadow-md"
         side="top"
         sideOffset={6}
       >
-        <SessionStatsPanel intl={intl} locale={locale} summary={summary} />
+        <SessionStatsPanel intl={intl} locale={locale} summary={summary} speeds={speeds} />
       </HoverCardContent>
     </HoverCard>
   );
