@@ -24,8 +24,9 @@ import type { WorkflowArtifactSidePaneTab } from "@/lib/workspaceSidePane.js";
 import { useZCodeStoreWithDefault } from "@/store/StoreProvider.js";
 import { resolveTheme, type Theme } from "@/useTheme.js";
 import type { PaneWorkspaceScope } from "@/v4/paneLayoutStore.js";
+import type { ConversationStoreState } from "@/v4/conversationProjectionStore.js";
 import type { SessionLease } from "@/v4/sessionDataLayer.js";
-import { useConversationProjection } from "@/v4/useConversationProjection.js";
+import { useConversationProjectionValue } from "@/v4/useConversationProjection.js";
 import { useV4Conversation, V4PaneConversationProvider } from "@/v4/V4ConversationContext.js";
 
 /**
@@ -33,6 +34,10 @@ import { useV4Conversation, V4PaneConversationProvider } from "@/v4/V4Conversati
  * 会让合并 hook 的依赖每帧都变，于是每帧重查一次 journal。
  */
 const EMPTY_SUMMARIES: readonly WorkflowRunArtifactSummary[] = [];
+
+// 模块级 selector：workflowRuns 在结构共享下未变化时引用稳定，父会话的文本流式
+// 更新（每帧换 snapshot 引用）不再触发本面板重渲染。
+const selectWorkflowRuns = (state: ConversationStoreState) => state.snapshot?.workflowRuns ?? null;
 
 const WorkflowArtifactContent = memo(function WorkflowArtifactContent({
   tab,
@@ -55,10 +60,10 @@ const WorkflowArtifactContent = memo(function WorkflowArtifactContent({
     setLease(nextLease);
     return () => nextLease.release();
   }, [layer, tab.parentSessionId]);
-  const state = useConversationProjection(lease);
+  const workflowRuns = useConversationProjectionValue(lease, selectWorkflowRuns);
   const run = useMemo(
-    () => state.snapshot?.workflowRuns?.runs.find((candidate) => candidate.runId === tab.runId),
-    [state.snapshot?.workflowRuns, tab.runId],
+    () => workflowRuns?.runs.find((candidate) => candidate.runId === tab.runId),
+    [workflowRuns, tab.runId],
   );
   // run 不在活投影里（冷恢复 / 被 8-run 上限淘汰）⇒ 整份清单走 journal；在场但零产物 ⇒ 空数组。
   const live = run === undefined ? undefined : (run.artifacts ?? EMPTY_SUMMARIES);

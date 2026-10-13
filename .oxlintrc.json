@@ -56,6 +56,9 @@
   "globals": {},
   "ignorePatterns": [
     "dist-release",
+    "dist",
+    "packages/web/dist-p2ab",
+    "packages/web/dist-p2ab2",
     "packages/ui/src/components/ui",
     "packages/ui/src/components/ai-elements",
     ".agents/skills",

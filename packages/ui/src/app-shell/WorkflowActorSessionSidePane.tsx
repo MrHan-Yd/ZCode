@@ -5,10 +5,15 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import type { WorkflowActorSessionSidePaneTab } from "@/lib/workspaceSidePane.js";
 import { workflowActorStartState } from "@/app-shell/workflowRunPanel.js";
+import type { ConversationStoreState } from "@/v4/conversationProjectionStore.js";
 import type { PaneWorkspaceScope } from "@/v4/paneLayoutStore.js";
 import { SessionPane } from "@/v4/SessionPane.js";
-import { useConversationProjection } from "@/v4/useConversationProjection.js";
+import { useConversationProjectionValue } from "@/v4/useConversationProjection.js";
 import { useV4Conversation, V4PaneConversationProvider } from "@/v4/V4ConversationContext.js";
+
+// 模块级 selector：workflowRuns 在结构共享下未变化时引用稳定，父会话的文本流式
+// 更新（每帧换 snapshot 引用）不再触发本门重算。
+const selectWorkflowRuns = (state: ConversationStoreState) => state.snapshot?.workflowRuns ?? null;
 
 interface WorkflowActorSessionSidePaneProps {
   tab: WorkflowActorSessionSidePaneTab;
@@ -71,16 +76,16 @@ const WorkflowActorSessionContent = memo(function WorkflowActorSessionContent({
   const lease = useMemo(() => layer.acquire(tab.parentSessionId), [layer, tab.parentSessionId]);
   useEffect(() => () => lease.release(), [lease]);
 
-  const snapshot = useConversationProjection(lease).snapshot;
+  const workflowRuns = useConversationProjectionValue(lease, selectWorkflowRuns);
   const gate = useMemo(
     () =>
-      workflowActorStartState(snapshot?.workflowRuns?.runs, {
+      workflowActorStartState(workflowRuns?.runs, {
         runId: tab.runId,
         siteId: tab.siteId,
         ordinal: tab.ordinal,
         ...(tab.actorSessionId === undefined ? {} : { actorSessionId: tab.actorSessionId }),
       }),
-    [snapshot?.workflowRuns, tab.actorSessionId, tab.ordinal, tab.runId, tab.siteId],
+    [workflowRuns, tab.actorSessionId, tab.ordinal, tab.runId, tab.siteId],
   );
 
   // `unknown` 与 `started` 都照旧订阅：前者是 run 被淘汰 / 冷恢复后的常态，直接订阅是

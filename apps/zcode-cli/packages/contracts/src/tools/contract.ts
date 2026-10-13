@@ -126,7 +126,11 @@ export interface ToolResultBudget {
   preview?: {
     maxBytes?: number;
     maxLines?: number;
-    direction?: "head" | "tail";
+    /**
+     * head：保留开头（默认）；tail：保留结尾；head-tail：两端都保留、中段以省略
+     * 标记替代（specs/tool-result-head-tail-truncation.md）。
+     */
+    direction?: "head" | "tail" | "head-tail";
   };
   artifact?: {
     enabled: boolean;

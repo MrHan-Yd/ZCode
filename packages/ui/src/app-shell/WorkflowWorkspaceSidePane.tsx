@@ -32,12 +32,17 @@ import {
   formatWorkspaceDuration,
 } from "@/app-shell/workflowWorkspaceTranscript.js";
 import type { PaneWorkspaceScope } from "@/v4/paneLayoutStore.js";
-import { useConversationProjection } from "@/v4/useConversationProjection.js";
+import type { ConversationStoreState } from "@/v4/conversationProjectionStore.js";
+import { useConversationProjectionValue } from "@/v4/useConversationProjection.js";
 import { useV4Conversation, V4PaneConversationProvider } from "@/v4/V4ConversationContext.js";
 
 /** 条目到场的错位：每个 24 ms，封顶 360 ms——第 16 个之后一起落地，长清单不该等半秒。 */
 const CARD_STAGGER_MS = 24;
 const CARD_STAGGER_CAP_MS = 360;
+
+// 模块级 selector：本面板只消费 snapshot 的子结构（workflowRuns / rows.window），
+// 切片订阅把 sessionPlans、plansLoading 等无关字段更新隔离在外。
+const selectSnapshot = (state: ConversationStoreState) => state.snapshot;
 
 interface WorkflowWorkspaceSidePaneProps {
   tab: WorkflowWorkspaceSidePaneTab;
@@ -131,7 +136,7 @@ const WorkflowWorkspaceContent = memo(function WorkflowWorkspaceContent({
   // 父会话租约走渲染期同步建连（同 actor 面板）：首帧就要有投影，落点与状态叠加都读它。
   const lease = useMemo(() => layer.acquire(tab.parentSessionId), [layer, tab.parentSessionId]);
   useEffect(() => () => lease.release(), [lease]);
-  const snapshot = useConversationProjection(lease).snapshot;
+  const snapshot = useConversationProjectionValue(lease, selectSnapshot);
 
   const run = useMemo(
     () => snapshot?.workflowRuns?.runs.find((candidate) => candidate.runId === tab.runId),

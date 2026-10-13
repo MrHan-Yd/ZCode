@@ -159,7 +159,7 @@ import {
   resolveConversationShareBackgroundScrollLocked,
   resolveConversationShareSelectionPanelVisible,
 } from "@/v4/conversationShareModePolicy.js";
-import { buildConversationTurnRenderUnits } from "@/v4/conversationTurnRenderUnits.js";
+import { createConversationTurnRenderUnitsBuilder } from "@/v4/conversationTurnRenderUnitsCache.js";
 import { buildConversationTurnNavigatorItems } from "@/v4/conversationTurnNavigatorHelpers.js";
 import { SessionPluginReferenceIconBoundary } from "@/v4/SessionPluginReferenceIconProvider.js";
 import {
@@ -648,9 +648,12 @@ export function SessionPane({
     enabled: shareSelectionPanelVisible,
     onDismiss: dismissShareSelectionPanel,
   });
+  // 每个调用点各持一份增量缓存槽：本处用空 options，与 ConversationTimeline 的实时 nowMs
+  // 互不覆写基线（见 createConversationTurnRenderUnitsBuilder 的注释）。
+  const buildShareRenderUnits = useMemo(() => createConversationTurnRenderUnitsBuilder(), []);
   const shareRenderUnits = useMemo(
-    () => buildConversationTurnRenderUnits(snapshot?.rows.window ?? []),
-    [snapshot?.rows.window],
+    () => buildShareRenderUnits(snapshot?.rows.window ?? []),
+    [buildShareRenderUnits, snapshot?.rows.window],
   );
   const shareItems = useMemo(
     () =>

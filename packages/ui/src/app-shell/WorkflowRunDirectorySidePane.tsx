@@ -17,13 +17,18 @@ import { formatTaskRelativeTime } from "@/lib/taskListItemPresentation.js";
 import type { PaneWorkspaceScope } from "@/v4/paneLayoutStore.js";
 import type { SessionLease } from "@/v4/sessionDataLayer.js";
 import { V4PaneConversationProvider, useV4Conversation } from "@/v4/V4ConversationContext.js";
-import { useConversationProjection } from "@/v4/useConversationProjection.js";
+import type { ConversationStoreState } from "@/v4/conversationProjectionStore.js";
+import { useConversationProjectionValue } from "@/v4/useConversationProjection.js";
 import {
   WORKFLOW_RUN_DIRECTORY_LIMIT,
   buildWorkflowRunDirectory,
   workflowRunDirectoryRefreshKey,
   type WorkflowRunDirectoryRow,
 } from "@/v4/workflowRunDirectoryModel.js";
+
+// 模块级 selector：workflowRuns 在结构共享下未变化时引用稳定，父会话的文本流式
+// 更新（每帧换 snapshot 引用）不再触发本面板重渲染。
+const selectWorkflowRuns = (state: ConversationStoreState) => state.snapshot?.workflowRuns ?? null;
 
 /**
  * 一条对话的 workflow run 目录。三步形状与 subagent 目录逐字同构：任务列表页脚行 → 这一页 → `workflow-run`
@@ -157,7 +162,7 @@ const WorkflowRunDirectoryContents = memo(function WorkflowRunDirectoryContents(
   const { intl } = useZCodeIntl();
   const { layer } = useV4Conversation();
   const [lease, setLease] = useState<SessionLease | null>(null);
-  const projection = useConversationProjection(lease);
+  const workflowRuns = useConversationProjectionValue(lease, selectWorkflowRuns);
   useEffect(() => {
     const nextLease = layer.acquire(tab.parentSessionId);
     setLease(nextLease);
@@ -174,7 +179,7 @@ const WorkflowRunDirectoryContents = memo(function WorkflowRunDirectoryContents(
     sessionId: tab.parentSessionId,
     live: true,
     limit: WORKFLOW_RUN_DIRECTORY_LIMIT,
-    refreshKey: workflowRunDirectoryRefreshKey(projection.snapshot?.workflowRuns?.runs),
+    refreshKey: workflowRunDirectoryRefreshKey(workflowRuns?.runs),
   });
   const directory = useMemo(() => buildWorkflowRunDirectory(summaries), [summaries]);
   const handleOpen = (row: WorkflowRunDirectoryRow) => {

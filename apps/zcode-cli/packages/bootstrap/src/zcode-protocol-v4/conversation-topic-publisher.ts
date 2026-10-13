@@ -75,6 +75,98 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+// 行级 delta 快路径的外壳余量（JSON 外壳 + seq 十进制位数增长），与流式追加快路径的
+// `+64`、workflowRunDeltaGrowthUpperBound 的 WORKFLOW_RUN_DELTA_ENVELOPE_SLACK_BYTES 同值同论证。
+const CONVERSATION_ROW_DELTA_ENVELOPE_SLACK_BYTES = 64;
+
+/**
+ * 行级 delta 批次的快照增长字节上界；含无法给出可靠上界的 op 时返回 null，调用方必须落回
+ * 精确测量。依据 specs/publisher-delta-byte-accounting.md。
+ *
+ * 上界对 wire tail window 语义天然成立：新行内容全在载荷里，窗口挤头只会让增长更小，
+ * 行被 profile 过滤则 wire 不变——因此无需复刻 getWireSnapshotForProfile 的窗口逻辑。
+ * 包内导出仅供差分测试验证上界性质，不属于协议公共面。
+ *
+ * 两类结构性 op 由本函数收敛，**不**返回 null：
+ * - `row.upserted` 按「批内折叠后的旧行字节」取差量：批内 append 的行可被后续 upsert 命中，
+ *   只对照批前快照会漏算其增长（低估 → 16MiB 闸门被算松）。
+ * - attachRevision 注入的**仅含 `revision`** 的 `state.updated`：它只替换一个十进制标量，
+ *   增长是位数差（≤1），已被每批余量吸收。含其它键的 `state.updated` 是整键替换，旧值字节
+ *   不在载荷里，必须精确测量。
+ */
+export function conversationRowDeltaGrowthUpperBound(
+  deltas: readonly ConversationDelta[],
+  previousSnapshot: ConversationSnapshot,
+): number | null {
+  let total = 0;
+  // 批内行状态折叠（rowId → 该行当前字节；undefined = 批内确认不存在/被移除）。语义与
+  // applyConversationDeltas 对齐：批内 append 可被后续 upsert 命中；批内 removed 之后
+  // 的 upsert 按 no-op。未折叠时「同批 append 后 upsert 同 rowId」会低估。
+  const rowBytesInBatch = new Map<number, number | undefined>();
+  const baselineRowBytes = (rowId: number): number | undefined => {
+    if (rowBytesInBatch.has(rowId)) return rowBytesInBatch.get(rowId);
+    const previous = previousSnapshot.rows.window.find((row) => row.rowId === rowId);
+    const bytes = previous === undefined ? undefined : utf8JsonByteLength(previous);
+    rowBytesInBatch.set(rowId, bytes);
+    return bytes;
+  };
+  for (const delta of deltas) {
+    switch (delta.op) {
+      case "row.appended": {
+        const bytes = utf8JsonByteLength(delta.row);
+        total += bytes;
+        rowBytesInBatch.set(delta.row.rowId, bytes);
+        break;
+      }
+      case "row.upserted": {
+        // 替换语义：真实增长 = 新行字节 − 折叠后旧行字节；旧行不存在 = applyConversationDelta
+        // 的 no-op，增长 0。把每次 upsert 的净增折叠为「正向增量之和」，其和恒 ≥ 终态净增长
+        // （总变差 ≥ 净变化），因此上界性质成立。
+        const bytes = utf8JsonByteLength(delta.row);
+        const previous = baselineRowBytes(delta.row.rowId);
+        if (previous !== undefined) total += Math.max(0, bytes - previous);
+        rowBytesInBatch.set(delta.row.rowId, bytes);
+        break;
+      }
+      case "row.delta":
+        // append 拼接后的 JSON 转义逐字符决定、无边界效应，拼接总转义 ≤ 各部分转义之和；
+        // 单独序列化还带引号开销，只会更大。
+        total += utf8JsonByteLength(delta.append);
+        break;
+      case "row.removed":
+        // `fromRowId` 删除该行及之后所有行。移除只会让快照变小，这里刻意**不**下调基线：
+        // 后续 upsert 命中被移除的行时，旧实现的 no-op（真实增长 ≤ 0）会被记成非负差量，
+        // 只会高估、不会低估。
+        break;
+      case "workflowRun.removed":
+        // 只会让快照变小。
+        break;
+      case "workflowRun.updated":
+        // 键级整体替换，载荷即上界（与 workflowRunDeltaGrowthUpperBound 同一论证）。
+        total += utf8JsonByteLength(delta);
+        break;
+      case "state.updated": {
+        const keys = Object.keys(delta.patch);
+        const isRevisionOnly =
+          keys.length > 0 &&
+          keys.every((key) => key === "revision") &&
+          typeof delta.patch.revision === "number";
+        // 空 patch 与含其它键的 patch 都按整键替换处理（保守落回精确测量）。
+        if (!isRevisionOnly) return null;
+        const previousRevision = previousSnapshot.revision ?? 0;
+        total += Math.max(
+          0,
+          String(delta.patch.revision).length - String(previousRevision).length,
+        );
+        break;
+      }
+      default:
+        return null;
+    }
+  }
+  return total + CONVERSATION_ROW_DELTA_ENVELOPE_SLACK_BYTES;
+}
+
 function hasPlanMarkdown(row: ToolCallRow): boolean {
   if (isRecord(row.input)) {
     const plan = row.input.plan;
@@ -556,12 +648,17 @@ export class ConversationTopicPublisher {
     } else {
       let candidateBytes = 0;
       let nextUpperBound = 0;
+      // 应用前快照：applyEventAtomically 在独立候选投影上归约（不可变语义），此引用可靠，
+      // 供 row.upserted 的差量记账查找旧行。
+      const previousSnapshot = this.projection.getSnapshot();
       deltas = this.projection.applyEventAtomically(event, (snapshot, produced) => {
         // dwf 快路径：这条事件只产键级增量时，它们的字节数就是快照增长的上界（一条 upsert
         // 最多把自己那点内容加进去，removed 只会让快照变小），不必把整份快照再序列化一遍
         // ——那一次 JSON.stringify 是每条引擎事件都要付的 MB 级开销，也是这次改造的另一半。
         // 判据用的是**实际产出**而不是预演，所以 diff 退化出的整键 patch 自然落回精确路径。
-        const growth = workflowRunDeltaGrowthUpperBound(produced);
+        const growth =
+          workflowRunDeltaGrowthUpperBound(produced) ??
+          conversationRowDeltaGrowthUpperBound(produced, previousSnapshot);
         if (growth !== null && this.wireSnapshotBytesUpperBound + growth <= projectionLimit) {
           nextUpperBound = this.wireSnapshotBytesUpperBound + growth;
           return true;

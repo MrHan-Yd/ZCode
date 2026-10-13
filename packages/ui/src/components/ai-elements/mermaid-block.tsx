@@ -1,14 +1,19 @@
 "use client";
 
-import { createMermaidPlugin, type MermaidConfig } from "@streamdown/mermaid";
 import { Loader2Icon } from "lucide-react";
 import type { HTMLAttributes } from "react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { lazyMermaidPlugin } from "@/lib/lazyMermaidPlugin.js";
 import { logger } from "@/logger.js";
 import type { Theme } from "@/useTheme.js";
 import { resolveTheme } from "@/useTheme.js";
+
+// 类型位置 import()：verbatimModuleSyntax 下行内 `import { type X }` 会残留成
+// side-effect import，把 @streamdown/mermaid（连带 mermaid 全库）重新拖回静态图；
+// `type X = import("...").T` 形式在编译期整体擦除，彻底走异步边界。
+type MermaidConfig = import("@streamdown/mermaid").MermaidConfig;
 
 type MermaidRenderState =
   | {
@@ -33,7 +38,9 @@ export interface MermaidBlockProps extends HTMLAttributes<HTMLDivElement> {
   onPreviewSvgChange?: (svg: string | null) => void;
 }
 
-const mermaidPlugin = createMermaidPlugin();
+// 懒加载插件：mermaid 本体只在首个 mermaid 代码块真正渲染时才动态加载，
+// 避免把数百 KB 的 mermaid 打进首屏 entry chunk（specs/startup-lazy-mermaid.md）。
+const mermaidPlugin = lazyMermaidPlugin;
 let mermaidRenderQueue = Promise.resolve();
 const MERMAID_COLOR_CANVAS_SENTINEL = "#010203";
 

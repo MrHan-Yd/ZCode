@@ -37,6 +37,26 @@ import { getMainLaunchPartialMarks } from "./desktopLaunchMarks.js";
 import { BroadcastHub } from "./broadcastHub.js";
 import type { TaskRealtimeBus } from "./taskRealtimeBus.js";
 import { createHostLogRelay } from "./hostLogRelay.js";
+
+/**
+ * realtime 消息类型集合：这些类型由 taskRealtimeBus.handleHostMessage（独立注册的监听器）
+ * 消费，本入口的 if 链不含任何 realtime 分支——对它们做全量 safeParse 是纯浪费（流式
+ * 热路径每条 chunk 一次）。type 命中即短路，把这条消息的全量校验交给真正消费它的
+ * bus 侧监听器（broadcastHub 在存在远端会话时仍会再解析一次，故是全量校验从 3 次降到 2 次，
+ * 而非「唯一次解析」）。
+ * 依据 specs/host-message-realtime-short-circuit.md。
+ */
+const REALTIME_MESSAGE_TYPES: ReadonlySet<string> = new Set<string>([
+  HostResponseTypes.TaskRealtimePublish,
+  HostResponseTypes.TaskRunLeaseAcquire,
+  HostResponseTypes.TaskRunLeaseRelease,
+  HostResponseTypes.TaskStreamOpPublish,
+  HostResponseTypes.TaskOwnerCommandRequest,
+  HostResponseTypes.TaskOwnerCommandResult,
+  HostResponseTypes.SessionMessageSendRequested,
+  HostResponseTypes.SessionRouteAnnounce,
+  HostResponseTypes.SessionMessageDeliverResult,
+]);
 import {
   registerHostAgentProcess,
   registerHostProcess,
@@ -303,6 +323,15 @@ export function spawnHostProcess(
 
   const databaseStartupRelay = bindDatabaseStartupRelay(win, child, hostId);
   child.on("message", (message: unknown) => {
+    // realtime 消息交给 taskRealtimeBus 的监听器解析；此处短路省掉一次全量 Zod 校验
+    // （见 REALTIME_MESSAGE_TYPES 注释）。type 非 string（畸形消息）不短路，走下方拒绝路径。
+    if (
+      typeof message === "object" &&
+      message !== null &&
+      REALTIME_MESSAGE_TYPES.has((message as { type?: unknown }).type as string)
+    ) {
+      return;
+    }
     const result = hostResponseMessageSchema.safeParse(message);
     if (!result.success) {
       return;

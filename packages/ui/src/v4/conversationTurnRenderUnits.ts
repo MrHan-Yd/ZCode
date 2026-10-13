@@ -1,3 +1,4 @@
+/* oxlint-disable eslint(max-lines) -- render units 语义的纯函数区（行守卫/materialize/normalize 与 uncached 基线同住一文件，保证黄金不变量「增量 ≡ 全量」的两侧可对照阅读）；增量缓存包装已拆至 conversationTurnRenderUnitsCache.ts。 */
 import type {
   AssistantTextRow,
   ConversationRow,
@@ -73,6 +74,8 @@ interface BuildConversationTurnRenderUnitsOptions {
   nowMs?: number;
   sessionPhase?: SessionPhase;
 }
+
+export type { BuildConversationTurnRenderUnitsOptions };
 
 interface DraftTurnRenderUnit {
   key: string;
@@ -229,7 +232,7 @@ function shouldForceOpenAbnormalHistory(
   return sessionPhase === "completedInterrupted" || sessionPhase === "error";
 }
 
-function materializeDraftUnit(
+export function materializeDraftUnit(
   draft: DraftTurnRenderUnit,
   index: number,
   total: number,
@@ -371,7 +374,7 @@ function createDraftUnit(turnId: string): DraftTurnRenderUnit {
   };
 }
 
-function shouldKeepRenderUnit(unit: ConversationTurnRenderUnit): boolean {
+export function shouldKeepRenderUnit(unit: ConversationTurnRenderUnit): boolean {
   // 隐形行清零后（投影不再产不可渲染 marker），任何工作行都可渲染；
   // 「哪些 marker 可渲染」不再是 UI 的判断。
   return (
@@ -385,7 +388,7 @@ function shouldKeepRenderUnit(unit: ConversationTurnRenderUnit): boolean {
   );
 }
 
-function normalizeRenderUnitPosition(
+export function normalizeRenderUnitPosition(
   unit: ConversationTurnRenderUnit,
   index: number,
   total: number,
@@ -435,7 +438,7 @@ function normalizeRenderUnitPosition(
   };
 }
 
-export function buildConversationTurnRenderUnits(
+export function buildConversationTurnRenderUnitsUncached(
   rows: readonly ConversationRow[],
   options: BuildConversationTurnRenderUnitsOptions = {},
 ): ConversationTurnRenderUnit[] {
@@ -478,4 +481,29 @@ export function buildConversationTurnRenderUnits(
   return keptUnits.map((unit, index) =>
     normalizeRenderUnitPosition(unit, index, keptUnits.length, options),
   );
+}
+
+/** 从该 turn 的全部行重建 draft（与 uncached 循环体逐字段一致；增量重建使用）。 */
+export function aggregateDraftUnit(
+  turnId: string,
+  turnRows: readonly ConversationRow[],
+): DraftTurnRenderUnit {
+  const draft = createDraftUnit(turnId);
+  for (const row of turnRows) {
+    if (isTurnHeaderRow(row)) {
+      draft.header = row;
+      continue;
+    }
+    draft.orderedRows.push(row);
+    if (isUserInputRow(row)) {
+      draft.userInputs.push(row);
+      continue;
+    }
+    if (isHookInvocationRow(row)) {
+      draft.hookInvocations.push(row);
+      continue;
+    }
+    draft.assistantWorkRows.push(row);
+  }
+  return draft;
 }

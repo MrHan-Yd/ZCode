@@ -2,9 +2,20 @@ import {
   modelMessageContentToText,
   type ModelMessageContent,
   type ModelMessageContentBlock,
+  type ToolResultBudget,
 } from "@zcode/contracts";
 import { findOfficialCuaFrameContentPair } from "@zcode/zcode-cua/frame-contract";
 import type { ToolResultSerialization } from "../types.js";
+
+/**
+ * 与 contracts 的 `ToolResultBudget["preview"]["direction"]` 同源，避免多处重复字面量。
+ * `direction` 本身是可选属性，`NonNullable` 需要套两层才能同时剥掉 `preview` 与
+ * `direction` 的 `undefined`——只剥外层会让别名残留 `undefined`，下游按 `"head" | "tail"`
+ * 收窄的调用点（如 `fitStringToBytes`）全部报 TS2345。
+ */
+export type ResultPreviewDirection = NonNullable<
+  NonNullable<ToolResultBudget["preview"]>["direction"]
+>;
 
 interface HookStringProjection {
   content: string;
@@ -28,7 +39,7 @@ export class OfficialCuaFrameContractError extends Error {
 export function projectOfficialCuaStructuredContent(
   content: ModelMessageContentBlock[],
   maxModelBytes: number,
-  direction: "head" | "tail",
+  direction: ResultPreviewDirection,
 ): { content: ModelMessageContentBlock[]; truncated: boolean } | undefined {
   const pair = findOfficialCuaFrameContentPair(content);
   if (!pair) return undefined;
@@ -71,7 +82,10 @@ export function projectOfficialCuaStructuredContent(
     projectedMarker.length > 0 ? Buffer.byteLength(projectedMarker, "utf8") + 2 : 0;
   const suffixBudget =
     projectedMarker.length > 0 ? Math.max(0, remainingAfterPair - markerCost - 2) : 0;
-  const projectedSuffix = fitStringToBytes(suffixText, suffixBudget, direction);
+  const projectedSuffix =
+    direction === "head-tail"
+      ? fitStringToBytesHeadTail(suffixText, suffixBudget)
+      : fitStringToBytes(suffixText, suffixBudget, direction);
 
   const projected: ModelMessageContentBlock[] = [
     pair.image,
@@ -126,7 +140,7 @@ export function appendHookToStringContent(
   content: string,
   suffix: string,
   maxBytes: number,
-  previewDirection: "head" | "tail",
+  previewDirection: ResultPreviewDirection,
 ): HookStringProjection {
   const augmentedContent = `${content}${suffix}`;
   if (Buffer.byteLength(augmentedContent, "utf8") <= maxBytes) {
@@ -156,7 +170,7 @@ export function projectHookAugmentedModelContent(input: {
   hookContext: string;
   maxModelBytes: number;
   modelContent: ModelMessageContent;
-  previewDirection: "head" | "tail";
+  previewDirection: ResultPreviewDirection;
   suffix: string;
 }): ModelMessageContent {
   if (input.artifactPreview) return input.contentProjection.content;
@@ -182,13 +196,79 @@ export function fitContentWithSuffix(
   content: string,
   maxBytes: number,
   suffix: string,
-  direction: "head" | "tail",
+  direction: ResultPreviewDirection,
 ): string {
   if (maxBytes <= 0) return "";
   const suffixContent = fitStringToBytes(suffix, maxBytes, "head");
   const remainingBytes = maxBytes - Buffer.byteLength(suffixContent, "utf8");
   if (remainingBytes <= 0) return suffixContent;
+  // 预算太小（装不下省略标记 + 两端有意义的内容）时 head-tail 退化为 head，
+  // 避免 marker 反而挤占全部预算。
+  if (direction === "head-tail") {
+    if (remainingBytes <= HEAD_TAIL_MARKER_RESERVE_BYTES + 1024) {
+      return `${fitStringToBytes(content, remainingBytes, "head")}${suffixContent}`;
+    }
+    return fitContentHeadTail(content, remainingBytes, suffixContent);
+  }
   return `${fitStringToBytes(content, remainingBytes, direction)}${suffixContent}`;
+}
+
+/** head-tail 预览里分给尾部的预算比例：build/test 输出的错误摘要通常在末尾。 */
+const HEAD_TAIL_TAIL_RATIO = 0.3;
+/** 省略标记的预算预留：实际标记 ~50 字节，余量覆盖省略字节数的位数增长。 */
+const HEAD_TAIL_MARKER_RESERVE_BYTES = 128;
+/** 收敛轮次里对 head 的额外超裁量：保证每轮严格缩 head，压过 marker 位数增长（≤2 字节/轮）。 */
+const HEAD_TAIL_SHRINK_OVERSHOOT_BYTES = 8;
+
+/**
+ * head-tail 截断：head(约 70%) + 中段省略标记 + tail(约 30%)，总字节严格 ≤ maxBytes
+ * （suffix 的预算已由调用方扣除，这里只需保证 head+marker+tail ≤ maxBytes）。
+ * 依据 specs/tool-result-head-tail-truncation.md。
+ */
+function fitContentHeadTail(content: string, maxBytes: number, suffix: string): string {
+  const contentBytes = Buffer.byteLength(content, "utf8");
+  // 内容装得下剩余预算时，head/tail 路径仍会附加 suffixContent（见 fitContentWithSuffix）；
+  // head-tail 必须同契约，否则 hook 后缀在这个分支被静默丢弃。
+  if (contentBytes <= maxBytes) return `${content}${suffix}`;
+  const contentBudgetBytes = maxBytes - HEAD_TAIL_MARKER_RESERVE_BYTES;
+  const tailBudgetBytes = Math.floor(contentBudgetBytes * HEAD_TAIL_TAIL_RATIO);
+  const headBudgetBytes = contentBudgetBytes - tailBudgetBytes;
+  const tail = fitStringToBytes(content, tailBudgetBytes, "tail");
+  let head = fitStringToBytes(content, headBudgetBytes, "head");
+  // 收敛循环：省略标记含被丢弃中段的精确字节数，head 每次修正会反过来影响该数字的
+  // 位数（每轮 ≤ 2 字节）；overshoot 常数保证严格收敛，实践 1–2 轮完成。
+  for (let round = 0; round < 4; round += 1) {
+    const marker = headTailOmissionMarker(contentBytes, head, tail);
+    const totalBytes =
+      Buffer.byteLength(head, "utf8") + Buffer.byteLength(marker, "utf8") + Buffer.byteLength(tail, "utf8");
+    if (totalBytes <= maxBytes) {
+      return `${head}${marker}${tail}${suffix}`;
+    }
+    const excessBytes = totalBytes - maxBytes + HEAD_TAIL_SHRINK_OVERSHOOT_BYTES;
+    head = fitStringToBytes(head, Buffer.byteLength(head, "utf8") - excessBytes, "head");
+  }
+  // 防御性兜底（理论不可达）：按差额逐轮硬裁 head，直到总字节不超过预算。
+  for (;;) {
+    const marker = headTailOmissionMarker(contentBytes, head, tail);
+    const totalBytes =
+      Buffer.byteLength(head, "utf8") + Buffer.byteLength(marker, "utf8") + Buffer.byteLength(tail, "utf8");
+    if (totalBytes <= maxBytes) {
+      return `${head}${marker}${tail}${suffix}`;
+    }
+    const excessBytes = totalBytes - maxBytes;
+    if (Buffer.byteLength(head, "utf8") <= excessBytes) {
+      // head 裁无可裁：tail+marker 仍超预算只可能是预算本身 < marker+tail 下限，
+      // 调用方已用 reserve 门槛排除；这里放弃 tail 保住字节上限。
+      return `${fitStringToBytes(content, maxBytes, "head")}${suffix}`;
+    }
+    head = fitStringToBytes(head, Buffer.byteLength(head, "utf8") - excessBytes, "head");
+  }
+}
+
+function headTailOmissionMarker(contentBytes: number, head: string, tail: string): string {
+  const omittedBytes =
+    contentBytes - Buffer.byteLength(head, "utf8") - Buffer.byteLength(tail, "utf8");
+  return `\n\n[... ${omittedBytes} bytes in the middle omitted ...]\n\n`;
 }
 
 function joinTextBlocks(content: ModelMessageContentBlock[]): string {
@@ -258,4 +338,18 @@ function fitStringToBytes(value: string, maxBytes: number, direction: "head" | "
   return direction === "tail"
     ? chars.slice(chars.length - low).join("")
     : chars.slice(0, low).join("");
+}
+
+/**
+ * head+tail 纯文本切分，**不**自带省略标记——供已有自己的截断提示的路径复用（官方 CUA 的
+ * 结构化投影在文本外另挂 `OFFICIAL_CUA_TEXT_TRUNCATION_MARKER`，再叠一条通用
+ * "...bytes omitted..." 会出现两个标记）。head 预算取整后 tail 补足，二者之和 ≤ maxBytes <
+ * 原文长度，因此首尾切片不可能重叠。
+ */
+function fitStringToBytesHeadTail(value: string, maxBytes: number): string {
+  if (maxBytes <= 0) return "";
+  if (Buffer.byteLength(value, "utf8") <= maxBytes) return value;
+  const tailBudgetBytes = Math.floor(maxBytes * HEAD_TAIL_TAIL_RATIO);
+  const headBudgetBytes = maxBytes - tailBudgetBytes;
+  return `${fitStringToBytes(value, headBudgetBytes, "head")}${fitStringToBytes(value, tailBudgetBytes, "tail")}`;
 }

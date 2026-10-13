@@ -9,10 +9,11 @@
 import { Button } from "../ui/button.js";
 import { ButtonGroup, ButtonGroupText } from "../ui/button-group.js";
 import { cn } from "../lib/utils.js";
+import { useStreamingTextThrottle } from "../../hooks/useStreamingTextThrottle.js";
 import { cjk } from "@streamdown/cjk";
 import { code } from "@streamdown/code";
 import { createMathPlugin } from "@streamdown/math";
-import { mermaid } from "@streamdown/mermaid";
+import { lazyMermaidPlugin } from "@/lib/lazyMermaidPlugin.js";
 import type { EditorInfo, FileStat, OpenInEditorOptions } from "@zcode/shared";
 import type { UIMessage } from "ai";
 import { ChevronLeftIcon, ChevronRightIcon, CopyIcon, ExternalLinkIcon } from "lucide-react";
@@ -425,8 +426,12 @@ const messageCjkPlugin: typeof cjk = {
   remarkPlugins: [...cjk.remarkPluginsBefore, ...messageCjkRemarkPluginsAfter],
   remarkPluginsAfter: messageCjkRemarkPluginsAfter,
 };
-const streamdownPlugins = { cjk: messageCjkPlugin, code, math: messageMathPlugin, mermaid };
+const streamdownPlugins = { cjk: messageCjkPlugin, code, math: messageMathPlugin, mermaid: lazyMermaidPlugin };
 const messageLinkSafety = { enabled: false } as const;
+
+// 流式 markdown 渲染节流间隔（specs/streaming-markdown-throttle.md）：约 12.5fps，
+// 相对 30fps 的 chunk 到达率降低约六成全文解析次数，纯文本阅读无感知差异。
+const STREAMING_MARKDOWN_THROTTLE_MS = 80;
 // `decoration-dashed` 会把原有的细圆点下划线绘制成短线段；这里只改变下划线的
 // 出现时机，继续使用 `dotted` 保留原视觉形态。
 const messageLinkClassName =
@@ -1333,12 +1338,21 @@ export const MessageResponse = memo(
     const wrapLongLines = forceCodeWrap || codePreviewSettings.wrapLongLines;
     const rawMarkdown = useMemo(() => extractCodeText(children), [children]);
     const renderStreaming = streaming;
+    // 流式期间把进入解析管线的文本按 80ms 节流：Streamdown 的块解析（Lexer+remend）
+    // 无 memoization，每个 chunk 全文重解析是长消息流式卡顿的主要渲染端开销。节流值
+    // 在两次发射间引用稳定，Streamdown 的 memo 据此跳过重解析；完成态旁路不节流，
+    // 尾帧由 settle 兜底，最终渲染与原文逐字节一致。
+    const throttledRawMarkdown = useStreamingTextThrottle(
+      rawMarkdown,
+      renderStreaming,
+      STREAMING_MARKDOWN_THROTTLE_MS,
+    );
     const projectedCitationMarkdown = useMemo(
       () =>
         renderZCodeFileCitations
-          ? projectZCodeFileCitations(rawMarkdown, { streaming: renderStreaming }).visibleText
-          : rawMarkdown,
-      [rawMarkdown, renderStreaming, renderZCodeFileCitations],
+          ? projectZCodeFileCitations(throttledRawMarkdown, { streaming: renderStreaming }).visibleText
+          : throttledRawMarkdown,
+      [throttledRawMarkdown, renderStreaming, renderZCodeFileCitations],
     );
     const targetMarkdown = useMemo(
       () =>

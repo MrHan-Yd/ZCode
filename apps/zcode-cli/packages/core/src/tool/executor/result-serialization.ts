@@ -26,16 +26,26 @@ import {
   OfficialCuaFrameContractError,
   projectHookAugmentedModelContent,
   projectOfficialCuaStructuredContent,
+  type ResultPreviewDirection,
 } from "./result-content-projection.js";
 import type { ToolExecutorDeps } from "./types.js";
 import { isRecord } from "./utils.js";
 
+// 未显式声明 resultBudget 的工具走这份默认预算（当前仓库所有工具都在 contract 里显式声明，
+// 这是兜底而非活跃路径，详见 specs/tool-result-head-tail-truncation.md）：
+// - 策略 artifact：超限输出落盘 + 2KB `<persisted-output>` 预览（与 bash 同款）；artifactStore
+//   缺失/写入失败时由 tryWriteToolArtifact 优雅回退到 truncate 路径。
+// - head-tail 截断：head 保命令回显等开头语境、tail 保错误摘要，中段以省略标记替代。
 const DEFAULT_RESULT_BUDGET: ToolResultBudget = {
   maxInlineBytes: 100_000,
   maxModelBytes: 100_000,
-  strategy: "truncate",
+  strategy: "artifact",
   preview: {
-    direction: "head",
+    direction: "head-tail",
+  },
+  artifact: {
+    enabled: true,
+    retention: "session",
   },
 };
 
@@ -107,7 +117,7 @@ export async function serializeOutput(
       protectedProjection = projectOfficialCuaStructuredContent(
         modelContent,
         maxModelBytes,
-        effectiveBudget.preview?.direction ?? "head",
+        resolvePreviewDirection(effectiveBudget),
       );
     } catch (error) {
       if (!(error instanceof OfficialCuaFrameContractError)) throw error;
@@ -203,7 +213,7 @@ export async function serializeOutput(
     content,
     maxModelBytes,
     suffix,
-    effectiveBudget.preview?.direction ?? "head",
+    resolvePreviewDirection(effectiveBudget),
   );
 
   return {
@@ -246,7 +256,7 @@ export function appendHookAdditionalContexts(
     );
     return omittedFrameCredential ? { ...projected, truncated: true } : projected;
   }
-  const previewDirection = entry.resultBudget?.preview?.direction ?? "head";
+  const previewDirection = resolvePreviewDirection(entry.resultBudget);
   const artifactPreview = isPersistedArtifactPreview(serialization);
   const contentProjection = artifactPreview
     ? appendHookToPersistedArtifactPreview(serialization.content, suffix, maxModelBytes)
@@ -284,6 +294,15 @@ function structuredMediaBytes(content: ModelMessageContent): number {
       return total + Buffer.byteLength(block.dataUrl, "utf8");
     return total;
   }, 0);
+}
+
+/**
+ * 预览方向的唯一解析入口：入口未声明预算时回落到 `DEFAULT_RESULT_BUDGET`。此前
+ * `serializeOutput` 与 `appendHookAdditionalContexts` 各自 `?? "head"`，同一批 entry 上
+ * 会解析出不同方向（默认预算已是 head-tail，hook 路径却回落 head），必须收敛到一处。
+ */
+function resolvePreviewDirection(budget: ToolResultBudget | undefined): ResultPreviewDirection {
+  return budget?.preview?.direction ?? DEFAULT_RESULT_BUDGET.preview?.direction ?? "head";
 }
 
 function resolveMaxModelBytes(entry: ToolEntry): number {

@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import type { MessageFileLinkTarget } from "@/components/ai-elements/message.js";
 import { MessageResponse } from "@/components/ai-elements/message.js";
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
@@ -6,9 +6,10 @@ import { DEFAULT_CODE_PREVIEW_SETTINGS } from "@/lib/codePreviewSettings.js";
 import { extractPlanToolCallContent } from "@/lib/planToolCall.js";
 import type { PlanDetailSidePaneTab } from "@/lib/workspaceSidePane.js";
 import { useZCodeStoreWithDefault } from "@/store/StoreProvider.js";
+import type { ConversationStoreState } from "@/v4/conversationProjectionStore.js";
 import type { SessionLease } from "@/v4/sessionDataLayer.js";
 import { toolCallRowToLegacyNode } from "@/v4/toolCallRowAdapter.js";
-import { useConversationProjection } from "@/v4/useConversationProjection.js";
+import { useConversationProjectionValue } from "@/v4/useConversationProjection.js";
 import { useV4Conversation, V4PaneConversationProvider } from "@/v4/V4ConversationContext.js";
 import type { PaneWorkspaceScope } from "@/v4/paneLayoutStore.js";
 
@@ -37,16 +38,23 @@ const PlanDetailContent = memo(function PlanDetailContent({
     setLease(nextLease);
     return () => nextLease.release();
   }, [layer, tab.parentSessionId]);
-  const state = useConversationProjection(lease);
+  // 切片订阅目标 toolCall 行：行引用在结构共享下未变化时稳定，主会话其它行的流式
+  // 更新（row.delta 每帧换 snapshot/window 引用）不再触发本面板重算。
+  const selectPlanRow = useCallback(
+    (state: ConversationStoreState) =>
+      state.snapshot?.rows.window.find(
+        (candidate) => candidate.kind === "toolCall" && candidate.toolCallId === tab.toolCallId,
+      ) ?? null,
+    [tab.toolCallId],
+  );
+  const planRow = useConversationProjectionValue(lease, selectPlanRow);
 
   const liveMarkdown = useMemo(() => {
-    const row = state.snapshot?.rows.window.find(
-      (candidate) => candidate.kind === "toolCall" && candidate.toolCallId === tab.toolCallId,
-    );
+    const row = planRow;
     if (!row || row.kind !== "toolCall") return undefined;
     const node = toolCallRowToLegacyNode(row);
     return extractPlanToolCallContent(node.toolCall, tab.workspacePath).markdown;
-  }, [state.snapshot, tab.toolCallId, tab.workspacePath]);
+  }, [planRow, tab.workspacePath]);
 
   useEffect(() => {
     if (liveMarkdown) setLastMarkdown(liveMarkdown);

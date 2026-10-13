@@ -43,9 +43,9 @@ import {
   getConversationStatusPanelOffsetClassName,
 } from "@/v4/conversationLayout.js";
 import {
-  buildConversationTurnRenderUnits,
   type ConversationTurnRenderUnit,
 } from "@/v4/conversationTurnRenderUnits.js";
+import { createConversationTurnRenderUnitsBuilder } from "@/v4/conversationTurnRenderUnitsCache.js";
 import {
   resolveConversationTurnNavigatorActiveQueryRowId,
   resolveConversationTurnNavigatorHydrationRetryDelayMs,
@@ -414,13 +414,16 @@ function ConversationTimelineImpl({
     return () => observer.disconnect();
   }, [hasHeaderSlot]);
   const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
+  // 本组件按调用点独占一份增量缓存槽：SessionPane 的 share 构建用空 options，若共用一个槽
+  // 会每帧互相覆写基线，增量路径永远落空。
+  const buildRenderUnits = useMemo(() => createConversationTurnRenderUnitsBuilder(), []);
   const renderUnits = useMemo(
     () =>
-      buildConversationTurnRenderUnits(rows, {
+      buildRenderUnits(rows, {
         nowMs: liveNowMs,
         sessionPhase,
       }),
-    [liveNowMs, rows, sessionPhase],
+    [buildRenderUnits, liveNowMs, rows, sessionPhase],
   );
   const { virtualizedUnits, liveUnit, liveUnitIndex } = useMemo(
     () => splitConversationTimelineLiveTail(renderUnits),

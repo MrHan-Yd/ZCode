@@ -57,9 +57,9 @@ import {
 } from "@/v4/conversationAssistantWorkItems.js";
 import type { ConversationCuaGroupRenderItem } from "@/v4/conversationCuaGroups.js";
 import {
-  buildConversationTurnRenderUnits,
   type ConversationTurnRenderUnit,
 } from "@/v4/conversationTurnRenderUnits.js";
+import { createConversationTurnRenderUnitsBuilder } from "@/v4/conversationTurnRenderUnitsCache.js";
 import type { AssistantWorkRow, ConversationTurnFlowItem } from "@/v4/conversationTurnFlowItems.js";
 import type { ConversationTurnWorkSegment } from "@/v4/conversationTurnWorkSegments.js";
 import { formatConversationWorkDuration } from "@/v4/conversationWorkDuration.js";
@@ -1084,7 +1084,9 @@ export function ConversationShareReadonlyTimeline({
   artifactOpenAction,
   unsupportedRowCount = 0,
 }: ConversationShareReadonlyTimelineProps) {
-  const units = buildConversationTurnRenderUnits(rows);
+  // 本组件独占一份增量缓存槽，避免与 SessionPane / ConversationTimeline 的调用互相覆写基线。
+  const buildRenderUnits = useMemo(() => createConversationTurnRenderUnitsBuilder(), []);
+  const units = buildRenderUnits(rows);
   const openShareExternalUrl = useCallback((url: string) => {
     try {
       const parsed = new URL(url);

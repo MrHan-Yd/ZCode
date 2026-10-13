@@ -21,7 +21,13 @@ import {
 } from "@zcode/shared";
 import { logger as defaultLogger } from "./logger.js";
 
-const STREAM_MIRROR_FLUSH_INTERVAL_MS = 1000;
+// 流式 mirror 的 flush 间隔。此前为 1000ms：token 以 1Hz 突发呈现，打字观感明显顿挫。
+// 32ms（约 30fps）在保持相邻 text_delta 合批（coalesceOps）的同时让流式输出连续；
+// 大批量高速输出另有 pendingOps 阈值提前 flush（见 STREAM_MIRROR_MAX_PENDING_OPS）。
+const STREAM_MIRROR_FLUSH_INTERVAL_MS = 32;
+// 单批积压 op 数上限：高速流式输出时若仍等 32ms 定时器，UI 会滞后积压的整段内容，
+// 达到阈值立即 flush，让滞后上限收敛到一个批次的量。
+const STREAM_MIRROR_MAX_PENDING_OPS = 128;
 const STREAM_MIRROR_MAX_REPLAY_BATCHES = 60;
 const STREAM_MIRROR_MAX_REPLAY_BYTES = 512 * 1024;
 const STREAM_MIRROR_MAX_BATCH_BYTES = 512 * 1024;
@@ -72,6 +78,10 @@ interface PendingStreamBatch {
   nextOpSeq: number;
   pendingOps: TaskStreamMirrorPublishOp[];
   replay: TaskStreamMirrorBatchEvent[];
+  /** 与 replay 平行：每个已记忆批次的序列化字节数（push 时测一次，shift 同步扣减）。 */
+  replayEventBytes: number[];
+  /** replay 全部批次的字节总和（增量维护，替代每次 flush 的全量 JSON.stringify 求和）。 */
+  replayBytesTotal: number;
   replayUnavailable: boolean;
   timer: ReturnType<typeof setTimeout> | null;
   replayInitializedHostIds: Set<string>;
@@ -410,6 +420,13 @@ export class TaskRealtimeBus {
       return;
     }
 
+    // 高速输出（大量 text_delta）时定时器起点固定在第一个 op，积压会随速率线性增长；
+    // 超过阈值立即下发，把 UI 滞后上限收敛到一个批次的量。
+    if (batch.pendingOps.length >= STREAM_MIRROR_MAX_PENDING_OPS) {
+      this.flushBatch(batchKey, true);
+      return;
+    }
+
     if (!batch.timer) {
       batch.timer = setTimeout(() => {
         batch.timer = null;
@@ -442,6 +459,8 @@ export class TaskRealtimeBus {
       nextOpSeq: 1,
       pendingOps: [],
       replay: [],
+      replayEventBytes: [],
+      replayBytesTotal: 0,
       replayUnavailable: false,
       timer: null,
       replayInitializedHostIds: new Set<string>(),
@@ -503,14 +522,17 @@ export class TaskRealtimeBus {
         (op) => op.kind === "stream_event" && this.isTerminalEventType(op.event.type),
       ),
     };
-    if (JSON.stringify(event).length > STREAM_MIRROR_MAX_BATCH_BYTES) {
+    // 测一次、两处用：单批超限判断 + replay 字节记账（此前 rememberReplayBatch 内部
+    // 会对同一 event 再 stringify 一遍，全量求和还是 O(n²)）。
+    const eventBytes = JSON.stringify(event).length;
+    if (eventBytes > STREAM_MIRROR_MAX_BATCH_BYTES) {
       // 单次 mirror batch 过大时，RPC/base64/JSON 会在链路上多次复制，导致 host 堆内存打满。
       // owner 仍依赖 mirror seq 流渲染主动发送端，所以这里对 owner 做小批次分片；observer
       // 不消费正文流，只收到 snapshot invalidation/remoteGenerating 状态。
       this.deliverOversizedStreamBatchFallback(batch, event);
       return;
     }
-    this.rememberReplayBatch(batch, event);
+    this.rememberReplayBatch(batch, event, eventBytes);
     this.deliverStreamBatch(batch, event);
 
     if (event.terminal) {
@@ -527,6 +549,8 @@ export class TaskRealtimeBus {
     // 这里只给 owner 发送连续小批次；observer 和 late subscriber 统一走快照补齐，避免大 payload 扩散。
     batch.replayUnavailable = true;
     batch.replay = [];
+    batch.replayEventBytes = [];
+    batch.replayBytesTotal = 0;
     for (const chunk of this.splitOversizedBatchForOwner(batch, event)) {
       this.deliverStreamBatchToHost(batch.ownerHostId, batch, chunk, "relay_owner");
     }
@@ -726,20 +750,30 @@ export class TaskRealtimeBus {
     });
   }
 
-  private rememberReplayBatch(batch: PendingStreamBatch, event: TaskStreamMirrorBatchEvent): void {
+  private rememberReplayBatch(
+    batch: PendingStreamBatch,
+    event: TaskStreamMirrorBatchEvent,
+    eventBytes: number,
+  ): void {
     // 无上限 replay 在长任务中会线性占用主进程内存。
     // 这里恢复批次数+字节数双阈值，超限后由 replayVisibleRunsToHost 触发 stream_mirror_gap 并走快照补齐。
+    // 字节增量记账（push 加、shift 减）：此前每次 flush 都对全部 replay 批次重新
+    // JSON.stringify 求和，长任务下是 O(批次²) 的重复序列化。依据
+    // specs/stream-mirror-replay-byte-accounting.md。
     batch.replay.push(event);
+    batch.replayEventBytes.push(eventBytes);
+    batch.replayBytesTotal += eventBytes;
     while (batch.replay.length > STREAM_MIRROR_MAX_REPLAY_BATCHES) {
       batch.replay.shift();
+      const removedBytes = batch.replayEventBytes.shift();
+      if (removedBytes !== undefined) batch.replayBytesTotal -= removedBytes;
     }
-    while (this.replayBytes(batch.replay) > STREAM_MIRROR_MAX_REPLAY_BYTES) {
-      batch.replay.shift();
+    while (batch.replayBytesTotal > STREAM_MIRROR_MAX_REPLAY_BYTES) {
+      const removed = batch.replay.shift();
+      const removedBytes = batch.replayEventBytes.shift();
+      if (removedBytes !== undefined) batch.replayBytesTotal -= removedBytes;
+      if (removed === undefined) break;
     }
-  }
-
-  private replayBytes(replay: TaskStreamMirrorBatchEvent[]): number {
-    return replay.reduce((total, replayEvent) => total + JSON.stringify(replayEvent).length, 0);
   }
 
   private replayVisibleRunsToHost(hostId: string, workspaceKeys: Iterable<string>): void {

@@ -50,8 +50,9 @@ import {
   resolveWorkflowRunGraph,
 } from "@/v4/workflowRunCardJoin.js";
 import type { PaneWorkspaceScope } from "@/v4/paneLayoutStore.js";
+import type { ConversationStoreState } from "@/v4/conversationProjectionStore.js";
 import type { SessionLease } from "@/v4/sessionDataLayer.js";
-import { useConversationProjection } from "@/v4/useConversationProjection.js";
+import { useConversationProjectionValue } from "@/v4/useConversationProjection.js";
 import { useV4Conversation, V4PaneConversationProvider } from "@/v4/V4ConversationContext.js";
 
 /**
@@ -61,6 +62,10 @@ import { useV4Conversation, V4PaneConversationProvider } from "@/v4/V4Conversati
 const EMPTY_QUESTIONS: readonly WorkflowRunPendingQuestion[] = [];
 /** 同理。`artifacts` 键在零产物时缺席，而它是产物 hook 重查 journal 的依赖之一。 */
 const EMPTY_ARTIFACTS: readonly WorkflowRunArtifactSummary[] = [];
+
+// 模块级 selector：本面板只消费 snapshot 的子结构（workflowRuns / rows.window），
+// 切片订阅把 sessionPlans、plansLoading 等无关字段更新隔离在外。
+const selectSnapshot = (state: ConversationStoreState) => state.snapshot;
 
 const WorkflowRunContent = memo(function WorkflowRunContent({
   tab,
@@ -88,8 +93,7 @@ const WorkflowRunContent = memo(function WorkflowRunContent({
     setLease(nextLease);
     return () => nextLease.release();
   }, [layer, tab.parentSessionId]);
-  const state = useConversationProjection(lease);
-  const snapshot = state.snapshot;
+  const snapshot = useConversationProjectionValue(lease, selectSnapshot);
   // 打开请求里的 workspace 作用域（actor / 脚本 / 产物 / 后继 tab 都带同一份）。
   const { remoteSessionId, workspaceIdentity, workspacePath } = tab;
   const tabScope = useMemo(

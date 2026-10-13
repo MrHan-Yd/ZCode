@@ -18,13 +18,18 @@ import type {
 } from "@/lib/workspaceSidePane.js";
 import { formatTaskRelativeTime } from "@/lib/taskListItemPresentation.js";
 import type { PaneWorkspaceScope } from "@/v4/paneLayoutStore.js";
+import type { ConversationStoreState } from "@/v4/conversationProjectionStore.js";
 import type { SessionLease } from "@/v4/sessionDataLayer.js";
 import { V4PaneConversationProvider, useV4Conversation } from "@/v4/V4ConversationContext.js";
-import { useConversationProjection } from "@/v4/useConversationProjection.js";
+import { useConversationProjectionValue } from "@/v4/useConversationProjection.js";
 
 type DirectoryItem = RunningSubagentSummary | ZCodeSessionEndedSubagent;
 
 const EMPTY_RUNNING: readonly RunningSubagentSummary[] = [];
+
+// 模块级 selector：返回 state 内部引用（结构共享保证未变化时引用稳定）。
+const selectSubagents = (state: ConversationStoreState) => state.snapshot?.subagents;
+const selectSnapshotReady = (state: ConversationStoreState) => state.snapshot !== null;
 
 function buildSubagentDirectoryOpenRequest(
   tab: SubagentDirectorySidePaneTab,
@@ -133,15 +138,17 @@ const SubagentDirectoryContents = memo(function SubagentDirectoryContents({
   const { intl } = useZCodeIntl();
   const { layer } = useV4Conversation();
   const [lease, setLease] = useState<SessionLease | null>(null);
-  const projection = useConversationProjection(lease);
-  const subagents = projection.snapshot?.subagents;
+  // 切片订阅：主会话流式输出（row.delta 每帧更新 snapshot）不再触发本面板重渲染，
+  // 仅 subagents 状态变化时更新。
+  const subagents = useConversationProjectionValue(lease, selectSubagents);
+  const snapshotReady = useConversationProjectionValue(lease, selectSnapshotReady);
   useEffect(() => {
     const nextLease = layer.acquire(tab.parentSessionId);
     setLease(nextLease);
     return () => nextLease.release();
   }, [layer, tab.parentSessionId]);
   const directory = useSessionSubagents({
-    enabled: projection.snapshot !== null,
+    enabled: snapshotReady,
     workspacePath: tab.workspacePath,
     workspaceIdentity: tab.workspaceIdentity,
     remoteSessionId: tab.remoteSessionId,
