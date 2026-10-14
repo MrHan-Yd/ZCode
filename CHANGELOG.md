@@ -1,5 +1,22 @@
 # Changelog
 
+## [3.17.8](https://github.com/MrHan-Yd/ZCode/compare/v3.17.7...v3.17.8) (2026-10-14)
+
+### Features
+
+* **settings:** 使用统计摘要条改为今日 Token 数与 Cache 命中率 ([92506f3](https://github.com/MrHan-Yd/ZCode/commit/92506f345f785584c64e68a499c3e511a851800e))
+  * 摘要条改为 累计 / 峰值 / 今日 / Cache 命中率 / 最长聊天时长，最长聊天时长移到最右
+  * 移除「当前连续天数」「最长连续天数」两格，快照字段保留供热力图等继续使用
+  * 今日 Token 数取热力图 endDate 那一天的当日累计，与 Token 活动 tooltip 同源，不新增协议字段
+  * 三格 token 复用同一 compact 格式化，单位与小数位保持一致（如 24.4 亿 / 2.1 亿）
+  * 取值与顺序抽成 view model 并补单测，锁定列顺序、今日取数口径与加载态占位
+
+* **settings:** 子智能体颜色标记扩到 12 色 ([fcb5bd6](https://github.com/MrHan-Yd/ZCode/commit/fcb5bd66cd4bbbde97b35f7db85e2b2add9af5e7))
+  * 新增 teal/indigo/fuchsia/lime，并按色环顺序重排，单行色板不再只有 8 个可选
+  * shared 联合类型、services 与 CLI 的 frontmatter 校验、UI 类名映射、双语标签四处同步，漏一处会让颜色存得下却显示不出或被静默丢弃
+  * 色板列宽改为固定 1.5rem 的模板列，圆点与选中高亮不再随颜色数量错位
+  * 补充色板一致性单测（映射表 key 反查色板、文案齐全）与规格文档
+
 ## [3.17.7](https://github.com/MrHan-Yd/ZCode/compare/v3.17.6...v3.17.7) (2026-10-14)
 
 ### Features
