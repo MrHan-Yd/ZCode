@@ -20,7 +20,19 @@ export type AgentMemoryScope = "user" | "project" | "local";
 
 export interface AgentProfile {
   background?: boolean;
-  color?: "red" | "blue" | "green" | "yellow" | "purple" | "orange" | "pink" | "cyan";
+  color?:
+    | "red"
+    | "blue"
+    | "green"
+    | "yellow"
+    | "purple"
+    | "orange"
+    | "pink"
+    | "cyan"
+    | "teal"
+    | "indigo"
+    | "fuchsia"
+    | "lime";
   description: string;
   disallowedTools?: readonly string[];
   injectAgentsMd?: boolean;
@@ -57,6 +69,10 @@ const VALID_COLORS = new Set<NonNullable<AgentProfile["color"]>>([
   "orange",
   "pink",
   "cyan",
+  "teal",
+  "indigo",
+  "fuchsia",
+  "lime",
 ]);
 
 const VALID_PERMISSION_MODES = new Set<AgentPermissionMode>(["auto", "plan"]);

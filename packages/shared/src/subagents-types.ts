@@ -36,7 +36,11 @@ export type AgentColor =
   | "purple"
   | "orange"
   | "pink"
-  | "cyan";
+  | "cyan"
+  | "teal"
+  | "indigo"
+  | "fuchsia"
+  | "lime";
 
 export type SubagentsListMode = "allRuntimeScopes" | "settingsUserOnly";
 

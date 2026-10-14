@@ -1064,12 +1064,15 @@ function SubagentForm({
           </FormFieldLabel>
           <div
             role="radiogroup"
-            className="relative inline-grid w-56 grid-cols-8 rounded-lg border border-input-border bg-input p-1"
+            className="relative inline-grid rounded-lg border border-input-border bg-input p-1"
+            // 每个色块固定 1.5rem，宽度随调色板长度增长；用内联模板列，
+            // 避免为每个颜色数量预生成 grid-cols-* 工具类。
+            style={{ gridTemplateColumns: `repeat(${AGENT_COLORS.length}, 1.5rem)` }}
           >
             <span
               className="pointer-events-none absolute top-1 size-6 rounded-full border border-border-hover bg-surface shadow-xs transition-[left]"
               style={{
-                left: `calc(0.25rem + ((100% - 0.5rem) / ${AGENT_COLORS.length}) * ${selectedColorIndex})`,
+                left: `calc(0.25rem + 1.5rem * ${selectedColorIndex})`,
               }}
               aria-hidden="true"
             />

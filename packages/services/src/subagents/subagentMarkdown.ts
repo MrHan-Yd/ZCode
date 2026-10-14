@@ -20,6 +20,10 @@ const VALID_COLORS = new Set<AgentColor>([
   "orange",
   "pink",
   "cyan",
+  "teal",
+  "indigo",
+  "fuchsia",
+  "lime",
 ]);
 
 const VALID_PERMISSION_MODES = new Set<AgentPermissionMode>(["auto", "plan"]);
