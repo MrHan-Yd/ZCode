@@ -1003,7 +1003,11 @@ body {
   [data-zcode-tool-stream-animate="true"],
   [data-zcode-chat-loading-animate="true"],
   [data-zcode-collapsible-animate-close="true"][data-state="closed"],
-  [data-zcode-collapsible-animate-close="true"][data-state="closed"] > * {
+  [data-zcode-collapsible-animate-close="true"][data-state="closed"] > *,
+  /* 提交弹窗文件分组的展开/收起：沿用同一套标记约定，reduce 下只切换状态、不播关键帧。
+     外层是 CollapsibleContent 的高度动画，内层子 div 是同节奏的淡入淡出。 */
+  [data-zcode-commit-file-group="true"] [data-slot="collapsible-content"],
+  [data-zcode-commit-file-group="true"] [data-slot="collapsible-content"] > * {
     animation: none;
   }
 }

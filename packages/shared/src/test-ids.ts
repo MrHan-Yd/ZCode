@@ -66,14 +66,18 @@ export const TID_GIT_COMMIT_MESSAGE_INPUT = "git-commit-message-input";
 export const TID_GIT_COMMIT_GENERATE_BUTTON = "git-commit-generate-button";
 /** 设置页「提交消息模型」选择器 */
 export const TID_GIT_COMMIT_MESSAGE_MODEL_TRIGGER = "settings-git-commit-message-model";
-/** Git 提交弹窗包含未暂存更改开关 */
-export const TID_GIT_COMMIT_INCLUDE_UNSTAGED = "git-commit-include-unstaged";
 /** Git 提交弹窗可提交文件清单 */
 export const TID_GIT_COMMIT_FILE_LIST = "git-commit-file-list";
 /** Git 提交弹窗文件清单的全选开关 */
 export const TID_GIT_COMMIT_SELECT_ALL = "git-commit-select-all";
 /** Git 提交弹窗文件清单行（动态后缀为文件 repo 相对路径） */
 export const TID_GIT_COMMIT_FILE_ITEM = "git-commit-file-item";
+/** Git 提交弹窗文件清单分组（动态后缀为分组 id：staged / changes / untracked） */
+export const TID_GIT_COMMIT_FILE_GROUP = "git-commit-file-group";
+/** Git 提交弹窗文件清单分组的全选开关（动态后缀为分组 id） */
+export const TID_GIT_COMMIT_FILE_GROUP_SELECT_ALL = "git-commit-file-group-select-all";
+/** Git 提交弹窗文件清单分组的折叠开关（动态后缀为分组 id） */
+export const TID_GIT_COMMIT_FILE_GROUP_TOGGLE = "git-commit-file-group-toggle";
 /** Git 提交弹窗底部 Command 动作列表 */
 export const TID_GIT_COMMIT_ACTION_COMMAND = "git-commit-action-command";
 /** Git 提交弹窗底部动作项（动态后缀为动作 id） */

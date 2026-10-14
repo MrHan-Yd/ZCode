@@ -1,4 +1,4 @@
-import type { GitPullIssueCode, GitRepositorySummary } from "@zcode/shared";
+import type { GitFileChange, GitPullIssueCode, GitRepositorySummary } from "@zcode/shared";
 import { isGitPullIssueCode } from "@zcode/shared";
 import type { GitBranchCommitPreviewFile } from "@/git-branch-switcher/display.js";
 
@@ -97,29 +97,15 @@ export function resolveGitPullErrorMessageId(code: GitPullIssueCode | null): str
   }
 }
 
-/**
- * 同一个文件可能同时出现在 staged 与 unstaged。提交弹窗按 `stagePath` 去重，
- * 否则同一路径会渲染两行勾选，取消其中一行后另一行仍会把它带回提交范围。
- */
-export function dedupeCommitPreviewFiles(
-  files: readonly GitBranchCommitPreviewFile[],
-): GitBranchCommitPreviewFile[] {
-  const fileByStagePath = new Map<string, GitBranchCommitPreviewFile>();
-  for (const file of files) {
-    if (!fileByStagePath.has(file.stagePath)) {
-      fileByStagePath.set(file.stagePath, file);
-    }
-  }
-
-  return Array.from(fileByStagePath.values()).sort((left, right) =>
-    left.repoRelativePath.localeCompare(right.repoRelativePath),
-  );
+/** 行 key 只要 `stagePath`，所以选择/排除类纯函数对「行」和「预览文件」都成立。 */
+interface CommitStagePathHolder {
+  stagePath: string;
 }
 
-export function excludeCommitPreviewFiles(
-  files: readonly GitBranchCommitPreviewFile[],
+export function excludeCommitPreviewFiles<T extends CommitStagePathHolder>(
+  files: readonly T[],
   excludedPaths: ReadonlySet<string>,
-): GitBranchCommitPreviewFile[] {
+): T[] {
   if (excludedPaths.size === 0) {
     return [...files];
   }
@@ -128,14 +114,14 @@ export function excludeCommitPreviewFiles(
 }
 
 export function collectCommitPreviewStagePaths(
-  files: readonly GitBranchCommitPreviewFile[],
+  files: readonly CommitStagePathHolder[],
 ): string[] {
   // 与 GitCommitRequest.paths 同一坐标系；重复路径只会拉长 git 参数列表，这里统一去重。
   return Array.from(new Set(files.map((file) => file.stagePath)));
 }
 
 export function resolveCommitPreviewSelectionState(
-  files: readonly GitBranchCommitPreviewFile[],
+  files: readonly CommitStagePathHolder[],
   excludedPaths: ReadonlySet<string>,
 ): "all" | "partial" | "none" {
   const selectedCount = files.reduce(
@@ -154,8 +140,141 @@ export function resolveCommitPreviewSelectionState(
  * 清单是唯一展示待提交文件路径的地方：只要还有可提交文件就必须渲染，只有 1 个文件时也不例外。
  * 曾经按「多于 1 个文件」隐藏清单，导致单文件场景下用户只能看到数量、看不到文件名。
  */
-export function shouldShowCommitFileList(files: readonly GitBranchCommitPreviewFile[]): boolean {
+export function shouldShowCommitFileList(files: readonly CommitStagePathHolder[]): boolean {
   return files.length > 0;
+}
+
+export type GitCommitFileGroupId = "staged" | "changes" | "untracked";
+
+/** 组间顺序固定：先看已暂存的，再看未暂存的已跟踪改动，最后是未跟踪文件。 */
+const COMMIT_FILE_GROUP_ORDER: readonly GitCommitFileGroupId[] = [
+  "staged",
+  "changes",
+  "untracked",
+];
+
+export interface GitCommitFileRow {
+  stagePath: string;
+  repoRelativePath: string;
+  workspaceRelativePath: string;
+  kind: GitFileChange["kind"];
+  group: GitCommitFileGroupId;
+  /**
+   * 索引里已暂存、但工作区还有未纳入本次提交的改动。
+   * 这类行只能按索引内容提交：一旦对它 `git add`，没勾选的余量也会被带进提交。
+   */
+  hasUnstagedRemainder: boolean;
+  added: number;
+  removed: number;
+}
+
+export interface GitCommitFileGroup {
+  id: GitCommitFileGroupId;
+  files: GitCommitFileRow[];
+}
+
+/**
+ * 把两份 per-source 预览合成提交清单的行。
+ *
+ * 归属互斥（同一路径只占一行，不准在两处各出现一次）：**索引里有改动的文件只进
+ * 「已暂存的更改」**，哪怕它同时还有未暂存的修改——那部分用 `hasUnstagedRemainder`
+ * 标记，而不是再渲染一行。因为这个约束，未暂存的余量不会出现在清单里，只提交余量
+ * 需要先在 Git 面板把它暂存。
+ *
+ * 判定"同一文件"用的是 `stagePath`：两份 per-source 预览由同一个 `git status` 条目
+ * 派生（`toAbsolutePath(repoRoot, entry.path)`），所以同一文件的 staged / unstaged
+ * 记录 `stagePath` 必然相同。
+ *
+ * 索引里没有改动的文件才按跟踪状态分流：未跟踪进「未进行版本管理的文件」，其余进「更改」。
+ * 空组由 `groupCommitFileRows` 过滤；这里保证行按 repo 相对路径有序。
+ */
+export function buildCommitFileRows(options: {
+  stagedFiles: readonly GitBranchCommitPreviewFile[];
+  unstagedFiles: readonly GitBranchCommitPreviewFile[];
+}): GitCommitFileRow[] {
+  const stagedStagePaths = new Set(options.stagedFiles.map((file) => file.stagePath));
+  const unstagedStagePaths = new Set(options.unstagedFiles.map((file) => file.stagePath));
+  const rows: GitCommitFileRow[] = [];
+
+  for (const file of options.stagedFiles) {
+    rows.push({
+      stagePath: file.stagePath,
+      repoRelativePath: file.repoRelativePath,
+      workspaceRelativePath: file.workspaceRelativePath,
+      kind: file.kind,
+      group: "staged",
+      hasUnstagedRemainder: unstagedStagePaths.has(file.stagePath),
+      added: file.added,
+      removed: file.removed,
+    });
+  }
+
+  for (const file of options.unstagedFiles) {
+    if (stagedStagePaths.has(file.stagePath)) {
+      continue;
+    }
+
+    rows.push({
+      stagePath: file.stagePath,
+      repoRelativePath: file.repoRelativePath,
+      workspaceRelativePath: file.workspaceRelativePath,
+      kind: file.kind,
+      group: file.isUntracked ? "untracked" : "changes",
+      hasUnstagedRemainder: false,
+      added: file.added,
+      removed: file.removed,
+    });
+  }
+
+  return rows.sort((left, right) => left.repoRelativePath.localeCompare(right.repoRelativePath));
+}
+
+/**
+ * 按固定顺序分组，空组直接过滤掉：出现一个点了没有任何内容的空表头比不显示更容易误导。
+ * 组内顺序沿用入参顺序（`buildCommitFileRows` 已按 repo 相对路径排好），这里不再重排。
+ */
+export function groupCommitFileRows(rows: readonly GitCommitFileRow[]): GitCommitFileGroup[] {
+  return COMMIT_FILE_GROUP_ORDER.map((id) => ({
+    id,
+    files: rows.filter((row) => row.group === id),
+  })).filter((group) => group.files.length > 0);
+}
+
+export interface GitCommitRequestMode {
+  /** 本次提交涉及的全部路径（`GitCommitRequest.paths`）。 */
+  paths: string[];
+  /** 需要先 `git add` 的路径：提交它们工作区当前的内容。 */
+  worktreePaths: string[];
+  /** 只提交索引里已暂存内容的路径；同时用于把生成消息的 diff 限制在已暂存那份。 */
+  stagedPaths: string[];
+  /** 是否走"只提交索引内容"的提交实现（`GitCommitRequest.stagedOnly`）。 */
+  stagedOnly: boolean;
+}
+
+/**
+ * 从勾选后的行推导提交请求参数。
+ *
+ * `paths` 每行一路径，所以天然去重。两种模式共存的可行性来自：`git add` 只作用于
+ * `worktreePaths`，索引模式路径的索引内容原样保留，之后一次性提交这批路径。
+ *
+ * `stagedOnly` 的取值刻意保留快路径：没有任何部分暂存时 `worktreePaths` 非空且
+ * `stagedPaths` 为空，落到普通 `git add` + pathspec 提交（与改动前一致）；只有在
+ * "没有任何要 add 的路径"或"存在带余量的已暂存行"时才需要 plumbing。
+ */
+export function resolveCommitRequestMode(
+  rows: readonly GitCommitFileRow[],
+): GitCommitRequestMode {
+  const worktreePaths = rows.filter((row) => row.group !== "staged").map((row) => row.stagePath);
+  const stagedPaths = rows
+    .filter((row) => row.group === "staged" && row.hasUnstagedRemainder)
+    .map((row) => row.stagePath);
+
+  return {
+    paths: rows.map((row) => row.stagePath),
+    worktreePaths,
+    stagedPaths,
+    stagedOnly: worktreePaths.length === 0 || stagedPaths.length > 0,
+  };
 }
 
 /**

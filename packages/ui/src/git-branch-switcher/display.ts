@@ -26,6 +26,8 @@ export interface GitBranchCommitPreviewFile {
   repoRelativePath: string;
   workspaceRelativePath: string;
   kind: GitFileChange["kind"];
+  /** 未被 Git 跟踪（`git status --porcelain` 的 `??`）。提交弹窗据此分组为「未进行版本管理的文件」。 */
+  isUntracked: boolean;
   added: number;
   removed: number;
 }
@@ -147,6 +149,7 @@ export function buildGitBranchCommitPreviewFiles(
         repoRelativePath: change.repoRelativePath,
         workspaceRelativePath: change.workspaceRelativePath,
         kind: change.kind,
+        isUntracked: change.isUntracked,
         added: change.added,
         removed: change.removed,
       });
@@ -160,6 +163,9 @@ export function buildGitBranchCommitPreviewFiles(
       added: existing.added + change.added,
       removed: existing.removed + change.removed,
       kind: existing.kind === change.kind ? existing.kind : "modified",
+      // 只要有一条记录说明它已被跟踪，就不再算未跟踪：`??` 只可能出现在 unstaged 源，
+      // 一旦它同时出现在 staged 源就说明文件已进入版本管理，分组必须跟着变。
+      isUntracked: existing.isUntracked && change.isUntracked,
     });
   }
 
@@ -168,7 +174,9 @@ export function buildGitBranchCommitPreviewFiles(
   );
 }
 
-export function getGitBranchCommitTotals(files: readonly GitBranchCommitPreviewFile[]): {
+export function getGitBranchCommitTotals(
+  files: readonly Pick<GitBranchCommitPreviewFile, "added" | "removed">[],
+): {
   fileCount: number;
   totalAdded: number;
   totalRemoved: number;
@@ -204,6 +212,7 @@ export function selectGitBranchAffectedFiles(options: {
         repoRelativePath,
         workspaceRelativePath: repoRelativePath,
         kind: "modified",
+        isUntracked: false,
         added: 0,
         removed: 0,
       },

@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import test from "node:test";
 import type { GitFileChange } from "@zcode/shared";
-import { filterCommitMessageFilesByCurrentSession } from "../src/git/commitMessageFileScope.js";
+import {
+  filterCommitMessageFilesByCurrentSession,
+  filterCommitMessageFilesForStagedOnly,
+} from "../src/git/commitMessageFileScope.js";
 
 const WORKSPACE_PATH = "/tmp/repo/apps/web";
 const REPO_ROOT = "/tmp/repo";
@@ -114,4 +117,84 @@ test("排除路径用本机绝对路径形式时命中（覆盖 Windows 反斜�
     }),
     [],
   );
+});
+
+function stagedFiles(options: {
+  files: GitFileChange[];
+  stagedOnlyPaths?: string[];
+}): string[] {
+  return filterCommitMessageFilesForStagedOnly({
+    files: options.files,
+    workspacePath: WORKSPACE_PATH,
+    repoRoot: REPO_ROOT,
+    workspaceInRepoPath: WORKSPACE_IN_REPO_PATH,
+    stagedOnlyPaths: options.stagedOnlyPaths,
+  }).map((file) => `${file.repoRelativePath}:${file.section}`);
+}
+
+function sectionChange(repoRelativePath: string, section: GitFileChange["section"]): GitFileChange {
+  return {
+    ...change(repoRelativePath),
+    section,
+    isStaged: section === "staged",
+  };
+}
+
+// 部分暂存的文件在取材列表里同时有 staged 与 unstaged 两条记录，只提交索引内容时
+// 必须丢掉未暂存那条，否则消息会描述并未提交的余量。
+test("stagedOnlyPaths 命中时只保留该路径的已暂存记录", () => {
+  const partial = [
+    sectionChange("apps/web/src/a.ts", "staged"),
+    sectionChange("apps/web/src/a.ts", "unstaged"),
+  ];
+
+  assert.deepEqual(
+    stagedFiles({ files: partial, stagedOnlyPaths: ["apps/web/src/a.ts"] }),
+    ["apps/web/src/a.ts:staged"],
+  );
+});
+
+test("stagedOnlyPaths 接收仓库绝对路径，同样命中同一文件", () => {
+  const partial = [
+    sectionChange("apps/web/src/a.ts", "staged"),
+    sectionChange("apps/web/src/a.ts", "unstaged"),
+  ];
+
+  assert.deepEqual(
+    stagedFiles({ files: partial, stagedOnlyPaths: ["/tmp/repo/apps/web/src/a.ts"] }),
+    ["apps/web/src/a.ts:staged"],
+  );
+});
+
+test("未命中 stagedOnlyPaths 的路径两条记录都保留", () => {
+  const mixed = [
+    sectionChange("apps/web/src/a.ts", "staged"),
+    sectionChange("apps/web/src/a.ts", "unstaged"),
+    sectionChange("apps/web/src/b.ts", "unstaged"),
+  ];
+
+  assert.deepEqual(
+    stagedFiles({ files: mixed, stagedOnlyPaths: ["apps/web/src/a.ts"] }),
+    ["apps/web/src/a.ts:staged", "apps/web/src/b.ts:unstaged"],
+  );
+});
+
+test("未传 stagedOnlyPaths 时不做任何过滤，行为不变", () => {
+  const mixed = [
+    sectionChange("apps/web/src/a.ts", "staged"),
+    sectionChange("apps/web/src/a.ts", "unstaged"),
+  ];
+
+  assert.deepEqual(stagedFiles({ files: mixed }), [
+    "apps/web/src/a.ts:staged",
+    "apps/web/src/a.ts:unstaged",
+  ]);
+});
+
+test("stagedOnlyPaths 为空数组等同于不过滤", () => {
+  const mixed = [sectionChange("apps/web/src/a.ts", "unstaged")];
+
+  assert.deepEqual(stagedFiles({ files: mixed, stagedOnlyPaths: [] }), [
+    "apps/web/src/a.ts:unstaged",
+  ]);
 });

@@ -110,3 +110,32 @@ export function filterCommitMessageFilesByCurrentSession(params: {
     return excludedScope === null || !isCommitMessageFileInScope(file, excludedScope);
   });
 }
+
+/**
+ * 只提交索引内容的路径（提交侧对它们不做 `git add`）：丢掉同一路径"未暂存"那条记录。
+ *
+ * `files` 里一个部分暂存的文件会同时有 staged 与 unstaged 两条记录，且路径相同。
+ * 如果只提交索引里那半段，另一条必须从消息的取材范围里去掉，否则消息会描述并未提交的余量。
+ * 归一化与 excludePaths 共用，绝对 / workspace 相对 / repo 相对都能命中。
+ */
+export function filterCommitMessageFilesForStagedOnly(params: {
+  files: readonly GitFileChange[];
+  workspacePath: string;
+  repoRoot: string;
+  workspaceInRepoPath: string;
+  stagedOnlyPaths?: readonly string[];
+}): GitFileChange[] {
+  const stagedOnlyScope = buildCommitMessageFileScope({
+    workspacePath: params.workspacePath,
+    repoRoot: params.repoRoot,
+    workspaceInRepoPath: params.workspaceInRepoPath,
+    currentSessionFilePaths: params.stagedOnlyPaths,
+  });
+  if (stagedOnlyScope === null) {
+    return [...params.files];
+  }
+
+  return params.files.filter(
+    (file) => file.section === "staged" || !isCommitMessageFileInScope(file, stagedOnlyScope),
+  );
+}

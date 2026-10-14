@@ -223,6 +223,11 @@ export interface GitGenerateCommitMessageRequest extends GitRepositoryRequest {
    * 消息描述的 diff 范围必须与实际提交范围一致，否则会把并未提交的改动写进消息。
    */
   excludePaths?: string[];
+  /**
+   * 只提交索引内容的路径（本次提交中这些路径不做 `git add`）。生成消息时只用它们
+   * 已暂存的那份 diff，不再叠加未暂存的余量——否则消息会描述并未提交的改动。
+   */
+  stagedPaths?: string[];
   conversationContext?: GitCommitMessageConversationContext;
   /**
    * 调用方当前会话正在使用的模型。缺省时服务退回 Host 的 preferredSelection，

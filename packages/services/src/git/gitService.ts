@@ -1,7 +1,10 @@
 import { resolve } from "node:path";
 import type { GitBranchComparison, GitFileChange, GitChangeSectionId } from "@zcode/shared";
 import { isPathInWorkspaceScope, normalizeGitPath, toWorkspaceRelativeGitPath } from "./config.js";
-import { filterCommitMessageFilesByCurrentSession } from "./commitMessageFileScope.js";
+import {
+  filterCommitMessageFilesByCurrentSession,
+  filterCommitMessageFilesForStagedOnly,
+} from "./commitMessageFileScope.js";
 import type { IGitService } from "./git.js";
 import type { GitCommitMessageGenerator } from "./gitCommitMessageGenerator.js";
 import {
@@ -260,13 +263,22 @@ export function createGitService(options?: {
       const status = await repo.getStatus(params.workspacePath);
       const unstagedChanges = includeUnstaged ? getChangesForSource(status, "unstaged") : [];
       const stagedChanges = getChangesForSource(status, "staged");
-      const files = filterCommitMessageFilesByCurrentSession({
+      const sessionScopedFiles = filterCommitMessageFilesByCurrentSession({
         files: [...unstagedChanges, ...stagedChanges],
         workspacePath: params.workspacePath,
         repoRoot: status.resolution.repoRoot,
         workspaceInRepoPath: status.resolution.workspaceInRepoPath,
         currentSessionFilePaths: params.currentSessionFilePaths,
         excludePaths: params.excludePaths,
+      });
+      // 只提交索引内容的路径要去掉它们的"未暂存"记录：那份余量不在本次提交里，
+      // 写进消息就是在描述并未提交的改动。
+      const files = filterCommitMessageFilesForStagedOnly({
+        files: sessionScopedFiles,
+        workspacePath: params.workspacePath,
+        repoRoot: status.resolution.repoRoot,
+        workspaceInRepoPath: status.resolution.workspaceInRepoPath,
+        stagedOnlyPaths: params.stagedPaths,
       });
       if (files.length === 0) {
         throw new Error("There are no changes available to commit.");

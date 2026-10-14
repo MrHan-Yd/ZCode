@@ -21,6 +21,11 @@ import { Button } from "@/components/ui/button.js";
 import { Checkbox } from "@/components/ui/checkbox.js";
 import { Command, CommandItem, CommandList, CommandShortcut } from "@/components/ui/command.js";
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible.js";
+import {
   Dialog,
   DialogContent,
   DialogDescription,
@@ -39,15 +44,19 @@ import {
 import { GitBranchSwitcher } from "@/GitBranchSwitcher.js";
 import { hasGitCommitIdentity } from "@/git-branch-switcher/switchAssist.js";
 import {
+  buildCommitFileRows,
   canUseGitActionMenu,
   canPushGitBranch,
   collectCommitPreviewStagePaths,
-  dedupeCommitPreviewFiles,
   excludeCommitPreviewFiles,
+  groupCommitFileRows,
   resolveCommitPreviewSelectionState,
+  resolveCommitRequestMode,
   resolveGitActionMenuPrimaryAction,
   shouldShowCommitFileList,
   splitCommitPreviewFilePath,
+  type GitCommitFileGroupId,
+  type GitCommitFileRow,
 } from "@/git-action-menu/display.js";
 import {
   filterCommitPreviewFilesByCurrentSession,
@@ -55,7 +64,7 @@ import {
 } from "@/git-action-menu/currentSessionFileScope.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useSettings } from "@/hooks/useSettingService.js";
-import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { useZCodeIntl, type IntlInstance } from "@/i18n/IntlProvider.js";
 import { getErrorMessage } from "@/lib/errorMessage.js";
 import { runUserAction } from "@/lib/userActionTelemetry.js";
 import { formatCommandShortcutLabel, matchesPrimaryShortcut } from "@/lib/keyboardShortcuts.js";
@@ -63,7 +72,7 @@ import { logger } from "@/logger.js";
 import {
   AlertCircleIcon,
   ArrowUpFromLine,
-  CheckIcon,
+  ChevronDownIcon,
   CloudUploadIcon,
   GitBranchIcon,
   GitCommitIcon,
@@ -94,19 +103,60 @@ const TID_GIT_COMMIT_ACTION_COMMAND = "git-commit-action-command";
 const TID_GIT_COMMIT_ACTION_ITEM = "git-commit-action-item";
 const TID_GIT_COMMIT_DIALOG = "git-commit-dialog";
 const TID_GIT_COMMIT_FILE_ITEM = "git-commit-file-item";
+const TID_GIT_COMMIT_FILE_GROUP = "git-commit-file-group";
+const TID_GIT_COMMIT_FILE_GROUP_SELECT_ALL = "git-commit-file-group-select-all";
+const TID_GIT_COMMIT_FILE_GROUP_TOGGLE = "git-commit-file-group-toggle";
 const TID_GIT_COMMIT_FILE_LIST = "git-commit-file-list";
 const TID_GIT_COMMIT_GENERATE_BUTTON = "git-commit-generate-button";
-const TID_GIT_COMMIT_INCLUDE_UNSTAGED = "git-commit-include-unstaged";
 const TID_GIT_COMMIT_MESSAGE_INPUT = "git-commit-message-input";
 const TID_GIT_COMMIT_SELECT_ALL = "git-commit-select-all";
 
 /** 默认排除集合。始终作为不可变值使用：所有写入路径都构造新 Set，不会就地修改它。 */
 const EMPTY_COMMIT_EXCLUDED_PATHS: ReadonlySet<string> = new Set<string>();
 
+/** 默认折叠集合：空集表示全部展开。同样只作为不可变值使用。 */
+const EMPTY_COMMIT_COLLAPSED_FILE_GROUPS: ReadonlySet<GitCommitFileGroupId> = new Set<
+  GitCommitFileGroupId
+>();
+
 type CommitDialogActionId = (typeof COMMIT_DIALOG_ACTION_IDS)[number];
 
 function gitCommitActionItemTestId(actionId: CommitDialogActionId): string {
   return `${TID_GIT_COMMIT_ACTION_ITEM}-${actionId}`;
+}
+
+/** 分组 id 到文案 key。分组标题与 a11y 文案共用同一处映射，避免两处各写一份 switch。 */
+const COMMIT_FILE_GROUP_LABEL_IDS: Record<GitCommitFileGroupId, string> = {
+  staged: "git.actionMenu.commitDialog.fileList.group.staged",
+  changes: "git.actionMenu.commitDialog.fileList.group.changes",
+  untracked: "git.actionMenu.commitDialog.fileList.group.untracked",
+};
+
+/**
+ * 清单计数文案：全部选中时只显示总数，部分选中时显示「已选/总数」。
+ * 整体「全选」行与各分组行共用同一口径，用户不必为两种行分别解读计数含义。
+ */
+function formatCommitFileCountLabel(options: {
+  intl: IntlInstance;
+  numberFormatter: Intl.NumberFormat;
+  selectedCount: number;
+  totalCount: number;
+  allSelected: boolean;
+}): string {
+  if (options.allSelected) {
+    return options.intl.formatMessage(
+      { id: "git.actionMenu.commitDialog.changesValue" },
+      { count: options.numberFormatter.format(options.totalCount) },
+    );
+  }
+
+  return options.intl.formatMessage(
+    { id: "git.actionMenu.commitDialog.changesValueSelected" },
+    {
+      selected: options.numberFormatter.format(options.selectedCount),
+      total: options.numberFormatter.format(options.totalCount),
+    },
+  );
 }
 
 function isCommitDialogActionId(value: string): value is CommitDialogActionId {
@@ -134,59 +184,46 @@ interface GitCommitDialogProps {
   error: string | null;
   mutationPending: boolean;
   generationPending: boolean;
-  includeUnstaged: boolean;
   /** 本次不参与提交的文件（key 为 `stagePath`）；空集表示全部提交。 */
   excludedStagePaths: ReadonlySet<string>;
   pushEnabled: boolean;
   onRefreshGit: () => void;
   onOpenChange: (nextOpen: boolean) => void;
   onMessageChange: (nextValue: string) => void;
-  onIncludeUnstagedChange: (nextValue: boolean) => void;
   onToggleFileSelection: (stagePath: string) => void;
   onSetAllFilesSelected: (selected: boolean) => void;
+  /** 按 stagePath 批量勾选 / 取消勾选，用于分组行的组级全选。 */
+  onSetFilesSelected: (stagePaths: readonly string[], selected: boolean) => void;
   onGenerateMessage: () => void;
   onSubmit: () => void;
   onSubmitAndPush: () => void;
   onPushOnly: () => void;
 }
 
-function getCommitDialogFiles(
-  state: GitCommitDialogState,
-  includeUnstaged: boolean,
-): GitCommitPreviewFile[] {
-  return includeUnstaged ? [...state.unstagedFiles, ...state.stagedFiles] : state.stagedFiles;
-}
-
 /**
- * 弹窗可勾选的文件：staged 与 unstaged 合并后按 `stagePath` 去重。
- * 同一路径只有一行勾选，勾选结果才能原样映射回 `GitCommitRequest.paths`。
+ * 弹窗可勾选的行：由两份 per-source 预览按归属规则合成，一行一路径。
+ * 归属互斥（同一文件不占两行）由 `buildCommitFileRows` 保证，勾选结果才能原样映射回
+ * `GitCommitRequest.paths`。
  */
-function getCommitDialogSelectableFiles(
-  state: GitCommitDialogState,
-  includeUnstaged: boolean,
-): GitCommitPreviewFile[] {
-  return dedupeCommitPreviewFiles(getCommitDialogFiles(state, includeUnstaged));
+function getCommitDialogRows(state: GitCommitDialogState): GitCommitFileRow[] {
+  return buildCommitFileRows({
+    stagedFiles: state.stagedFiles,
+    unstagedFiles: state.unstagedFiles,
+  });
 }
 
-function getCommitDialogSelectedFiles(
+function getCommitDialogSelectedRows(
   state: GitCommitDialogState,
-  includeUnstaged: boolean,
   excludedPaths: ReadonlySet<string>,
-): GitCommitPreviewFile[] {
-  return excludeCommitPreviewFiles(
-    getCommitDialogSelectableFiles(state, includeUnstaged),
-    excludedPaths,
-  );
+): GitCommitFileRow[] {
+  return excludeCommitPreviewFiles(getCommitDialogRows(state), excludedPaths);
 }
 
 function getCommitDialogStagePaths(
   state: GitCommitDialogState,
-  includeUnstaged: boolean,
   excludedPaths: ReadonlySet<string> = EMPTY_COMMIT_EXCLUDED_PATHS,
 ): string[] {
-  return collectCommitPreviewStagePaths(
-    getCommitDialogSelectedFiles(state, includeUnstaged, excludedPaths),
-  );
+  return collectCommitPreviewStagePaths(getCommitDialogSelectedRows(state, excludedPaths));
 }
 
 function CommitCommandActionItem({
@@ -230,6 +267,139 @@ function CommitCommandActionItem({
   );
 }
 
+function commitSelectionCheckboxValue(
+  state: "all" | "partial" | "none",
+): boolean | "indeterminate" {
+  if (state === "all") {
+    return true;
+  }
+  return state === "partial" ? "indeterminate" : false;
+}
+
+function CommitFileRow({
+  file,
+  selected,
+  disabled,
+  numberFormatter,
+  remainderLabel,
+  onToggle,
+}: {
+  file: GitCommitFileRow;
+  selected: boolean;
+  disabled: boolean;
+  numberFormatter: Intl.NumberFormat;
+  /** `hasUnstagedRemainder` 行的提示文案；为空表示不需要提示。 */
+  remainderLabel: string | null;
+  onToggle: (stagePath: string) => void;
+}) {
+  const { directory, fileName } = splitCommitPreviewFilePath(file.repoRelativePath);
+  return (
+    <label
+      data-testid={`${TID_GIT_COMMIT_FILE_ITEM}-${file.repoRelativePath}`}
+      // pl-8 与分组行的复选框左边缘对齐（4px 行首 + 20px 折叠箭头 + 8px 间距）。
+      className="flex h-7 cursor-pointer items-center gap-2 rounded-md pr-2 pl-8 hover:bg-menu-hover"
+      title={file.repoRelativePath}
+    >
+      <Checkbox
+        checked={selected}
+        disabled={disabled}
+        onCheckedChange={() => {
+          onToggle(file.stagePath);
+        }}
+      />
+      {/* 目录先截断，文件名优先保留：同名文件靠文件名区分。
+          目录只收缩不伸展（不能给 flex-1，否则短目录会把文件名挤到行尾）；
+          文件名 shrink-0 + max-w-full，只在自身就超出整行时才截断。 */}
+      <span className="flex min-w-0 flex-1 items-center gap-1 font-mono text-ui-base">
+        {directory ? (
+          <span className="min-w-0 truncate text-foreground-subtlest">{directory}/</span>
+        ) : null}
+        <span
+          className={cn(
+            "max-w-full shrink-0 truncate",
+            selected ? "text-foreground" : "text-foreground-subtle",
+          )}
+        >
+          {fileName}
+        </span>
+      </span>
+      {/* 说明这行为什么只显示索引里的行数：它工作区还有未暂存的改动，本次不提交。
+          纯文字提示不是第二个勾选框——同一路径不能占两行。 */}
+      {remainderLabel ? (
+        <span className="shrink-0 truncate text-ui-sm text-foreground-subtlest">
+          {remainderLabel}
+        </span>
+      ) : null}
+      <span className="shrink-0 font-mono text-ui-base">
+        <span className="text-diff-added">+{numberFormatter.format(file.added)}</span>{" "}
+        <span className="text-diff-removed">-{numberFormatter.format(file.removed)}</span>
+      </span>
+    </label>
+  );
+}
+
+/**
+ * 分组标题行：折叠箭头 + 组级三态复选框 + 组名 + 组计数。
+ *
+ * 箭头是 CollapsibleTrigger，与包着 Checkbox 的 label 是兄弟节点：点箭头只折叠，点复选框只改勾选，
+ * 两者不能互相嵌套，否则一次点击会同时触发折叠与整组勾选。
+ */
+function CommitFileGroupHeader({
+  groupId,
+  label,
+  selectionState,
+  countLabel,
+  collapsed,
+  disabled,
+  selectAllLabel,
+  toggleLabel,
+  onSetSelected,
+}: {
+  groupId: GitCommitFileGroupId;
+  label: string;
+  selectionState: "all" | "partial" | "none";
+  countLabel: string;
+  collapsed: boolean;
+  disabled: boolean;
+  selectAllLabel: string;
+  toggleLabel: string;
+  onSetSelected: (groupId: GitCommitFileGroupId, selected: boolean) => void;
+}) {
+  return (
+    <div className="flex h-7 items-center gap-2 rounded-md pr-2 pl-1 text-ui-base hover:bg-menu-hover">
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          data-testid={`${TID_GIT_COMMIT_FILE_GROUP_TOGGLE}-${groupId}`}
+          aria-label={toggleLabel}
+          className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-sm text-foreground-subtlest transition-colors hover:text-foreground"
+        >
+          {/* 与 CollapsibleContent 的 300ms 高度动画同节奏，箭头和面板看起来是同一次手势。 */}
+          <ChevronDownIcon
+            className={cn(
+              "size-4 transition-transform duration-300 ease-in-out",
+              collapsed && "-rotate-90",
+            )}
+          />
+        </button>
+      </CollapsibleTrigger>
+      <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+        <Checkbox
+          data-testid={`${TID_GIT_COMMIT_FILE_GROUP_SELECT_ALL}-${groupId}`}
+          checked={commitSelectionCheckboxValue(selectionState)}
+          disabled={disabled}
+          onCheckedChange={(nextChecked) => {
+            onSetSelected(groupId, nextChecked === true);
+          }}
+          aria-label={selectAllLabel}
+        />
+        <span className="min-w-0 flex-1 truncate font-medium text-foreground-subtle">{label}</span>
+        <span className="shrink-0 font-normal text-foreground-subtlest">{countLabel}</span>
+      </label>
+    </div>
+  );
+}
+
 function GitCommitDialog({
   open,
   loading,
@@ -239,15 +409,14 @@ function GitCommitDialog({
   error,
   mutationPending,
   generationPending,
-  includeUnstaged,
   excludedStagePaths,
   pushEnabled,
   onRefreshGit,
   onOpenChange,
   onMessageChange,
-  onIncludeUnstagedChange,
   onToggleFileSelection,
   onSetAllFilesSelected,
+  onSetFilesSelected,
   onGenerateMessage,
   onSubmit,
   onSubmitAndPush,
@@ -255,27 +424,33 @@ function GitCommitDialog({
 }: GitCommitDialogProps) {
   const { intl, locale } = useZCodeIntl();
   const [selectedActionId, setSelectedActionId] = useState<CommitDialogActionId>("commit");
+  // 折叠是纯展示状态：只决定分组下的文件行渲不渲染，不参与勾选与提交范围计算。
+  const [collapsedGroupIds, setCollapsedGroupIds] = useState<ReadonlySet<GitCommitFileGroupId>>(
+    EMPTY_COMMIT_COLLAPSED_FILE_GROUPS,
+  );
   const messageTextareaRef = useRef<HTMLTextAreaElement | null>(null);
   const messageInputFocusedOnOpenRef = useRef(false);
   const numberFormatter = new Intl.NumberFormat(locale);
   const hasIdentity = hasGitCommitIdentity(state?.identity ?? null);
   const messageReady = message.trim().length > 0;
   const actionPending = mutationPending || generationPending;
-  const selectableFiles = state ? getCommitDialogSelectableFiles(state, includeUnstaged) : [];
-  const selectedFiles = state
-    ? getCommitDialogSelectedFiles(state, includeUnstaged, excludedStagePaths)
-    : [];
-  const stagePaths = collectCommitPreviewStagePaths(selectedFiles);
-  const dirtyFileCount = state ? getCommitDialogStagePaths(state, true).length : 0;
-  const { fileCount, totalAdded, totalRemoved } = getGitBranchCommitTotals(selectedFiles);
-  const selectionState = resolveCommitPreviewSelectionState(selectableFiles, excludedStagePaths);
+  const selectableRows = state ? getCommitDialogRows(state) : [];
+  const selectedRows = state ? getCommitDialogSelectedRows(state, excludedStagePaths) : [];
+  const stagePaths = collectCommitPreviewStagePaths(selectedRows);
+  const dirtyFileCount = selectableRows.length;
+  const { totalAdded, totalRemoved } = getGitBranchCommitTotals(selectedRows);
+  const selectionState = resolveCommitPreviewSelectionState(selectableRows, excludedStagePaths);
+  // 分组只是 selectableRows 的派生视图：勾选、计数、stagePaths 仍以整表为准。
+  const selectableFileGroups = groupCommitFileRows(selectableRows);
+  const unstagedRemainderLabel = intl.formatMessage({
+    id: "git.actionMenu.commitDialog.fileList.group.staged.unstagedRemainder",
+  });
   const displayChangeSummary = state?.activeTaskChangeSummary ?? null;
   const displayAdded = displayChangeSummary?.added ?? totalAdded;
   const displayRemoved = displayChangeSummary?.removed ?? totalRemoved;
   const hasSelectedChanges = stagePaths.length > 0;
-  const hasUnstagedChanges = Boolean(state?.unstagedFiles.length);
   // 清单是唯一展示待提交文件路径的地方：只要还有可提交文件就必须渲染，只有 1 个文件时也不例外。
-  const showFileList = shouldShowCommitFileList(selectableFiles);
+  const showFileList = shouldShowCommitFileList(selectableRows);
   const commitActionDisabled =
     actionPending || !hasSelectedChanges || (!hasIdentity && state?.identity !== null);
   const pushOnlyDisabled = actionPending || !pushEnabled;
@@ -327,6 +502,8 @@ function GitCommitDialog({
   useEffect(() => {
     if (open) {
       setSelectedActionId("commit");
+      // 折叠是上一次会话留下的临时 UI 状态，重新打开弹窗一律回到全部展开。
+      setCollapsedGroupIds(EMPTY_COMMIT_COLLAPSED_FILE_GROUPS);
     }
   }, [open]);
 
@@ -363,6 +540,38 @@ function GitCommitDialog({
       setSelectedActionId(firstEnabledAction.id);
     }
   }, [actionPending, commitActions, loading, open, selectedActionId, state]);
+
+  const setFileGroupCollapsed = useCallback(
+    (groupId: GitCommitFileGroupId, collapsed: boolean) => {
+      setCollapsedGroupIds((current) => {
+        // 幂等：Radix 只在真的切换时回调，但折叠态回写仍按「已是目标值就不新建集合」处理。
+        if (current.has(groupId) === collapsed) {
+          return current;
+        }
+        const next = new Set(current);
+        if (collapsed) {
+          next.add(groupId);
+        } else {
+          next.delete(groupId);
+        }
+        return next;
+      });
+    },
+    [],
+  );
+
+  const handleFileGroupSelected = useCallback(
+    (groupId: GitCommitFileGroupId, selected: boolean) => {
+      const group = selectableFileGroups.find((candidate) => candidate.id === groupId);
+      if (!group) {
+        return;
+      }
+
+      // 组级勾选只改本组路径：其他组的排除项原样保留，整体全选状态自然落到 partial。
+      onSetFilesSelected(collectCommitPreviewStagePaths(group.files), selected);
+    },
+    [onSetFilesSelected, selectableFileGroups],
+  );
 
   const triggerSelectedAction = useCallback(() => {
     const selectedAction = commitActions.find((action) => action.id === selectedActionId);
@@ -535,73 +744,12 @@ function GitCommitDialog({
               </div>
             </div>
 
-            <div className="shrink-0 px-2.5 pb-2">
-              <button
-                type="button"
-                role="checkbox"
-                data-testid={TID_GIT_COMMIT_INCLUDE_UNSTAGED}
-                aria-checked={includeUnstaged}
-                disabled={actionPending || !hasUnstagedChanges}
-                onClick={() => onIncludeUnstagedChange(!includeUnstaged)}
-                className={cn(
-                  "flex h-8 w-full items-center gap-2 rounded-lg px-2 text-left text-ui-base font-medium transition-colors",
-                  actionPending || !hasUnstagedChanges
-                    ? "cursor-default text-foreground-subtle"
-                    : "cursor-pointer text-foreground hover:bg-menu-hover",
-                )}
-              >
-                <span className="flex size-5 shrink-0 items-center justify-center">
-                  <span
-                    className={cn(
-                      "flex size-4 items-center justify-center rounded-sm border",
-                      includeUnstaged
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-background text-transparent",
-                    )}
-                  >
-                    <CheckIcon className="size-3.5" />
-                  </span>
-                </span>
-                <span className="min-w-0 flex-1 truncate">
-                  {intl.formatMessage({
-                    id: "git.actionMenu.commitDialog.includeUnstaged",
-                  })}
-                </span>
-                <span className="shrink-0 text-ui-base font-normal text-foreground-subtle">
-                  {selectionState === "all"
-                    ? intl.formatMessage(
-                        {
-                          id: "git.actionMenu.commitDialog.changesValue",
-                        },
-                        {
-                          count: numberFormatter.format(fileCount),
-                        },
-                      )
-                    : intl.formatMessage(
-                        {
-                          id: "git.actionMenu.commitDialog.changesValueSelected",
-                        },
-                        {
-                          selected: numberFormatter.format(fileCount),
-                          total: numberFormatter.format(selectableFiles.length),
-                        },
-                      )}
-                </span>
-              </button>
-            </div>
-
             {showFileList ? (
               <div className="shrink-0 px-2.5 pb-2" data-testid={TID_GIT_COMMIT_FILE_LIST}>
                 <label className="flex h-7 cursor-pointer items-center gap-2 rounded-md px-2 text-ui-base text-foreground-subtle hover:bg-menu-hover">
                   <Checkbox
                     data-testid={TID_GIT_COMMIT_SELECT_ALL}
-                    checked={
-                      selectionState === "all"
-                        ? true
-                        : selectionState === "partial"
-                          ? "indeterminate"
-                          : false
-                    }
+                    checked={commitSelectionCheckboxValue(selectionState)}
                     disabled={actionPending}
                     onCheckedChange={(nextChecked) => {
                       onSetAllFilesSelected(nextChecked === true);
@@ -617,52 +765,72 @@ function GitCommitDialog({
 
                 {/* 高度按视口取上限：文件多时清单内部滚动，表头计数与底部提交动作始终留在视野内。 */}
                 <div className="max-h-[min(40vh,18rem)] overflow-x-hidden overflow-y-auto overscroll-contain pr-1">
-                  {selectableFiles.map((file) => {
-                    const isSelected = !excludedStagePaths.has(file.stagePath);
-                    const { directory, fileName } = splitCommitPreviewFilePath(
-                      file.repoRelativePath,
+                  {selectableFileGroups.map((group) => {
+                    const groupLabel = intl.formatMessage({
+                      id: COMMIT_FILE_GROUP_LABEL_IDS[group.id],
+                    });
+                    const groupSelectionState = resolveCommitPreviewSelectionState(
+                      group.files,
+                      excludedStagePaths,
                     );
+                    const groupSelectedCount = group.files.reduce(
+                      (count, row) => (excludedStagePaths.has(row.stagePath) ? count : count + 1),
+                      0,
+                    );
+                    const collapsed = collapsedGroupIds.has(group.id);
                     return (
-                      <label
-                        key={file.stagePath}
-                        data-testid={`${TID_GIT_COMMIT_FILE_ITEM}-${file.repoRelativePath}`}
-                        className="flex h-7 cursor-pointer items-center gap-2 rounded-md px-2 hover:bg-menu-hover"
-                        title={file.repoRelativePath}
+                      // 折叠走仓库既有的 Collapsible（tw-animate-css 的 300ms 高度关键帧）。
+                      // 弹窗高度是 auto，跟着内容高度逐帧变化，所以展开/收起时弹窗本身的伸缩
+                      // 也是平滑的——不需要、也不应该再给 DialogContent 加 height transition。
+                      <Collapsible
+                        key={group.id}
+                        data-testid={`${TID_GIT_COMMIT_FILE_GROUP}-${group.id}`}
+                        // 标记给 prefers-reduced-motion 用：reduce 下只切状态、不播高度关键帧。
+                        data-zcode-commit-file-group="true"
+                        open={!collapsed}
+                        onOpenChange={(nextOpen) => {
+                          setFileGroupCollapsed(group.id, !nextOpen);
+                        }}
                       >
-                        <Checkbox
-                          checked={isSelected}
+                        <CommitFileGroupHeader
+                          groupId={group.id}
+                          label={groupLabel}
+                          selectionState={groupSelectionState}
+                          countLabel={formatCommitFileCountLabel({
+                            intl,
+                            numberFormatter,
+                            selectedCount: groupSelectedCount,
+                            totalCount: group.files.length,
+                            allSelected: groupSelectionState === "all",
+                          })}
+                          collapsed={collapsed}
                           disabled={actionPending}
-                          onCheckedChange={() => {
-                            onToggleFileSelection(file.stagePath);
-                          }}
+                          selectAllLabel={intl.formatMessage(
+                            { id: "git.actionMenu.commitDialog.fileList.group.selectAll" },
+                            { group: groupLabel },
+                          )}
+                          toggleLabel={intl.formatMessage(
+                            { id: "git.actionMenu.commitDialog.fileList.group.toggle" },
+                            { group: groupLabel },
+                          )}
+                          onSetSelected={handleFileGroupSelected}
                         />
-                        {/* 目录先截断，文件名优先保留：同名文件靠文件名区分。
-                            目录只收缩不伸展（不能给 flex-1，否则短目录会把文件名挤到行尾）；
-                            文件名 shrink-0 + max-w-full，只在自身就超出整行时才截断。 */}
-                        <span className="flex min-w-0 flex-1 items-center gap-1 font-mono text-ui-base">
-                          {directory ? (
-                            <span className="min-w-0 truncate text-foreground-subtlest">
-                              {directory}/
-                            </span>
-                          ) : null}
-                          <span
-                            className={cn(
-                              "max-w-full shrink-0 truncate",
-                              isSelected ? "text-foreground" : "text-foreground-subtle",
-                            )}
-                          >
-                            {fileName}
-                          </span>
-                        </span>
-                        <span className="shrink-0 font-mono text-ui-base">
-                          <span className="text-diff-added">
-                            +{numberFormatter.format(file.added)}
-                          </span>{" "}
-                          <span className="text-diff-removed">
-                            -{numberFormatter.format(file.removed)}
-                          </span>
-                        </span>
-                      </label>
+                        <CollapsibleContent>
+                          {group.files.map((row) => (
+                            <CommitFileRow
+                              key={row.stagePath}
+                              file={row}
+                              selected={!excludedStagePaths.has(row.stagePath)}
+                              disabled={actionPending}
+                              numberFormatter={numberFormatter}
+                              remainderLabel={
+                                row.hasUnstagedRemainder ? unstagedRemainderLabel : null
+                              }
+                              onToggle={onToggleFileSelection}
+                            />
+                          ))}
+                        </CollapsibleContent>
+                      </Collapsible>
                     );
                   })}
                 </div>
@@ -984,7 +1152,6 @@ export function GitActionMenu({
   const [commitDialogState, setCommitDialogState] = useState<GitCommitDialogState | null>(null);
   const [commitMessage, setCommitMessage] = useState("");
   const [commitError, setCommitError] = useState<string | null>(null);
-  const [commitIncludeUnstaged, setCommitIncludeUnstaged] = useState(true);
   const [commitMessageGenerationPending, setCommitMessageGenerationPending] = useState(false);
   const [pushDialogOpen, setPushDialogOpen] = useState(false);
   const [pushError, setPushError] = useState<string | null>(null);
@@ -1009,6 +1176,28 @@ export function GitActionMenu({
       return next;
     });
   }, []);
+
+  const setCommitFilesSelected = useCallback(
+    (stagePaths: readonly string[], selected: boolean) => {
+      if (stagePaths.length === 0) {
+        return;
+      }
+
+      // 只改这批路径的排除项：组级勾选不应连带影响其他分组已经取消勾选的文件。
+      setCommitExcludedStagePaths((current) => {
+        const next = new Set(current);
+        for (const stagePath of stagePaths) {
+          if (selected) {
+            next.delete(stagePath);
+          } else {
+            next.add(stagePath);
+          }
+        }
+        return next;
+      });
+    },
+    [],
+  );
 
   const actionAvailable = canUseGitActionMenu(gitSummary);
   const currentBranchLabel = useMemo(
@@ -1071,19 +1260,9 @@ export function GitActionMenu({
     setCommitDialogState(null);
     setCommitMessage("");
     setCommitError(null);
-    setCommitIncludeUnstaged(true);
     setCommitMessageGenerationPending(false);
     clearCommitExcludedStagePaths();
   }, [clearCommitExcludedStagePaths]);
-
-  const handleCommitIncludeUnstagedChange = useCallback(
-    (nextValue: boolean) => {
-      setCommitIncludeUnstaged(nextValue);
-      // 切换范围后可勾选集合本身变了，沿用旧的排除项会让"取消勾选"以难以预期的方式延续到新集合。
-      clearCommitExcludedStagePaths();
-    },
-    [clearCommitExcludedStagePaths],
-  );
 
   const setAllCommitFilesSelected = useCallback(
     (selected: boolean) => {
@@ -1092,11 +1271,9 @@ export function GitActionMenu({
         return;
       }
 
-      setCommitExcludedStagePaths(
-        new Set(getCommitDialogStagePaths(commitDialogState, commitIncludeUnstaged)),
-      );
+      setCommitExcludedStagePaths(new Set(getCommitDialogStagePaths(commitDialogState)));
     },
-    [clearCommitExcludedStagePaths, commitDialogState, commitIncludeUnstaged],
+    [clearCommitExcludedStagePaths, commitDialogState],
   );
 
   const closePushDialog = useCallback(() => {
@@ -1143,7 +1320,6 @@ export function GitActionMenu({
           stagedFiles,
           unstagedFiles,
         });
-        setCommitIncludeUnstaged(unstagedFiles.length > 0);
         // 重新拉取后文件集合可能已变化（打开弹窗、切换分支刷新），旧的排除项不再对应同一批文件。
         clearCommitExcludedStagePaths();
         setCommitDialogLoading(false);
@@ -1177,7 +1353,6 @@ export function GitActionMenu({
     setCommitDialogState(null);
     setCommitMessage("");
     setCommitError(null);
-    setCommitIncludeUnstaged(true);
     await loadCommitDialogState({ resetMessage: true });
   }, [loadCommitDialogState]);
 
@@ -1207,20 +1382,20 @@ export function GitActionMenu({
   const generateCommitMessage = useCallback(
     async (
       state: GitCommitDialogState,
-      includeUnstaged: boolean,
       excludedPaths: ReadonlySet<string>,
     ): Promise<string> => {
-      const files = getCommitDialogSelectedFiles(state, includeUnstaged, excludedPaths);
+      const selectedRows = getCommitDialogSelectedRows(state, excludedPaths);
+      const { stagedPaths } = resolveCommitRequestMode(selectedRows);
       const currentSessionFilePaths = getCurrentSessionFilePaths(state.activeTaskChangeSummary);
       const { selection: modelSelection, source: selectionSource } =
         resolveCommitMessageSelection();
       logger.info("[GitActionMenu] 开始生成提交消息", {
         workspacePath,
         branchName: gitSummary.branchName,
-        selectedFileCount: files.length,
+        selectedFileCount: selectedRows.length,
         excludedFileCount: excludedPaths.size,
+        stagedPathCount: stagedPaths.length,
         currentSessionFileCount: currentSessionFilePaths?.length ?? 0,
-        includeUnstaged,
         conversationMessageCount: commitMessageConversationContext?.messages.length ?? 0,
         selectionSource,
         modelSelection: modelSelection
@@ -1232,9 +1407,12 @@ export function GitActionMenu({
         workspacePath,
         ...(workspaceIdentity ? { workspaceIdentity } : {}),
         locale,
-        includeUnstaged,
+        // 弹窗的文件清单已经把"哪些文件、按哪种内容提交"表达完整了，生成的 diff 一律包含
+        // 未暂存来源；只提交索引内容的路径靠 stagedPaths 单独收窄。
+        includeUnstaged: true,
         // 消息必须只描述实际提交的文件，否则会写出并未提交的改动。
         ...(excludedPaths.size > 0 ? { excludePaths: Array.from(excludedPaths) } : {}),
+        ...(stagedPaths.length > 0 ? { stagedPaths } : {}),
         ...(currentSessionFilePaths ? { currentSessionFilePaths } : {}),
         ...(modelSelection ? { selection: modelSelection } : {}),
         ...(commitMessageConversationContext
@@ -1266,11 +1444,7 @@ export function GitActionMenu({
       return;
     }
 
-    const stagePaths = getCommitDialogStagePaths(
-      commitDialogState,
-      commitIncludeUnstaged,
-      commitExcludedStagePaths,
-    );
+    const stagePaths = getCommitDialogStagePaths(commitDialogState, commitExcludedStagePaths);
     if (stagePaths.length === 0) {
       setCommitError(
         intl.formatMessage({
@@ -1286,7 +1460,6 @@ export function GitActionMenu({
     try {
       const nextCommitMessage = await generateCommitMessage(
         commitDialogState,
-        commitIncludeUnstaged,
         commitExcludedStagePaths,
       );
       setCommitMessage(nextCommitMessage);
@@ -1307,7 +1480,6 @@ export function GitActionMenu({
     }
   }, [
     commitExcludedStagePaths,
-    commitIncludeUnstaged,
     commitDialogState,
     generateCommitMessage,
     gitSummary.branchName,
@@ -1358,14 +1530,9 @@ export function GitActionMenu({
         return;
       }
 
-      const includeUnstaged = commitIncludeUnstaged;
-      const stagePaths = getCommitDialogStagePaths(
-        commitDialogState,
-        includeUnstaged,
-        commitExcludedStagePaths,
-      );
-      const pathsToStage = includeUnstaged ? stagePaths : [];
-      if (stagePaths.length === 0) {
+      const selectedRows = getCommitDialogSelectedRows(commitDialogState, commitExcludedStagePaths);
+      const { paths, worktreePaths, stagedOnly } = resolveCommitRequestMode(selectedRows);
+      if (paths.length === 0) {
         setCommitError(
           intl.formatMessage({
             id: "git.actionMenu.commitDialog.error.noChanges",
@@ -1381,7 +1548,6 @@ export function GitActionMenu({
         try {
           nextCommitMessage = await generateCommitMessage(
             commitDialogState,
-            includeUnstaged,
             commitExcludedStagePaths,
           );
           setCommitMessage(nextCommitMessage);
@@ -1411,23 +1577,25 @@ export function GitActionMenu({
         logger.info("[GitActionMenu] 开始提交当前更改", {
           workspacePath,
           branchName: gitSummary.branchName,
-          selectedPathCount: stagePaths.length,
+          selectedPathCount: paths.length,
           excludedPathCount: commitExcludedStagePaths.size,
-          stagedPathCount: pathsToStage.length,
-          includeUnstaged,
+          worktreePathCount: worktreePaths.length,
+          stagedOnly,
           pushAfterCommit: Boolean(options?.pushAfterCommit),
         });
-        if (pathsToStage.length > 0) {
+        // 只 add 工作区模式的路径：索引模式的路径必须保持索引内容，否则没勾选的未暂存余量
+        // 会被 git add 一起带进本次提交。
+        if (worktreePaths.length > 0) {
           await gitService.stagePaths({
             workspacePath,
-            paths: pathsToStage,
+            paths: worktreePaths,
           });
         }
         await gitService.commit({
           workspacePath,
           message: nextCommitMessage,
-          paths: stagePaths,
-          stagedOnly: !includeUnstaged,
+          paths,
+          stagedOnly,
         });
         committed = true;
 
@@ -1478,7 +1646,6 @@ export function GitActionMenu({
     [
       closeCommitDialog,
       commitExcludedStagePaths,
-      commitIncludeUnstaged,
       commitDialogState,
       commitMessage,
       generateCommitMessage,
@@ -1607,7 +1774,6 @@ export function GitActionMenu({
         error={commitError}
         mutationPending={mutationPending}
         generationPending={commitMessageGenerationPending}
-        includeUnstaged={commitIncludeUnstaged}
         excludedStagePaths={commitExcludedStagePaths}
         pushEnabled={pushEnabled}
         onRefreshGit={refreshCommitDialogAfterBranchChange}
@@ -1617,9 +1783,9 @@ export function GitActionMenu({
           }
         }}
         onMessageChange={setCommitMessage}
-        onIncludeUnstagedChange={handleCommitIncludeUnstagedChange}
         onToggleFileSelection={toggleCommitFileSelection}
         onSetAllFilesSelected={setAllCommitFilesSelected}
+        onSetFilesSelected={setCommitFilesSelected}
         onGenerateMessage={() => {
           void handleGenerateCommitMessage();
         }}
