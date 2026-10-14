@@ -1,5 +1,33 @@
 # Changelog
 
+## [3.17.6](https://github.com/MrHan-Yd/ZCode/compare/v3.17.5...v3.17.6) (2026-10-14)
+
+### Features
+
+* 提交弹窗按暂存状态分组，去掉「包含未暂存的更改」开关 ([f399fe9](https://github.com/MrHan-Yd/ZCode/commit/f399fe957994194fda26b99a236ade4e07327d05))
+  * 清单按「已暂存的更改 / 更改 / 未进行版本管理的文件」分组，逐文件勾选本身就决定提交范围，原来那个二元开关与控制清单内容重复，直接删除
+  * 有已暂存内容的文件只出现在「已暂存的更改」一组，工作区剩余改动用「另有未暂存改动」标注，不再重复占一行
+  * 只勾「已暂存的更改」即只提交索引里已暂存的内容；部分暂存的文件（git add -p）只提交已暂存那半段，未暂存的留在工作区，与 git commit 的原生语义一致
+  * 只对工作区模式的路径 git add，其余路径保持索引内容，两种模式在同一次提交中共存；无部分暂存时仍走原来的 git add + pathspec 快路径
+  * 分组可折叠，展开/收起带 300ms 高度过渡，弹窗高度随之平滑伸缩，prefers-reduced-motion 下关闭
+  * 生成提交消息时限定只提交索引内容的路径只取已暂存 diff，避免描述并未提交的改动
+
+
+### Performance
+
+* 优化流式渲染与工具结果截断 ([e8da222](https://github.com/MrHan-Yd/ZCode/commit/e8da2220e5e21f9a26bf2db466f9c8ce823c82c6))
+  * 降低流式 mirror flush 间隔并增加积压阈值，提升打字流畅度
+  * realtime 消息在 host 入口短路，减少重复 Zod 校验
+  * 工具结果预览支持 head-tail 双向截断，默认策略改为 artifact
+  * 行级 delta 增加快照增长字节上界计量
+  * 侧栏组件用 useCallback 稳定回调，减少重渲染
+  * 补充 lint 忽略目录
+
+
+### Documentation
+
+* 补充 README 的 v3.17.5 更新说明 ([2cb2e48](https://github.com/MrHan-Yd/ZCode/commit/2cb2e487b49c5d4042c88a843d31b1d24545e42c))
+
 ## [3.17.5](https://github.com/MrHan-Yd/ZCode/compare/v3.17.4...v3.17.5) (2026-10-12)
 
 ### Features
