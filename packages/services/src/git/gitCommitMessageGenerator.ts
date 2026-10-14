@@ -15,7 +15,9 @@ const MAX_DIFF_CHARS_PER_FILE = 2_000;
 const MAX_CONVERSATION_CONTEXT_MESSAGES = 12;
 const MAX_CONVERSATION_CONTEXT_CHARS = 4_000;
 const MAX_CONVERSATION_CONTEXT_CHARS_PER_MESSAGE = 600;
-const MAX_COMMIT_MESSAGE_CHARS = 1_000;
+// 生成提交消息的整条上界：超限判不合规（不裁剪）。500 是产品口径——约定首行 ≤ 50、正文几行，
+// 这个额度足够写完影响与原因，又不至于让历史里堆一大段散文。见 specs/git-commit-message-format.md。
+const MAX_COMMIT_MESSAGE_CHARS = 500;
 const COMMIT_MESSAGE_QUERY_SOURCE = "git_commit_message";
 
 const CONVENTIONAL_COMMIT_RE =

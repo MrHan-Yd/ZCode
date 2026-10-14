@@ -4,7 +4,9 @@ import type { GitFileChange } from "@zcode/shared";
 import { GitCommitMessageGenerator } from "../src/git/gitCommitMessageGenerator.js";
 
 const WORKSPACE_PATH = "/tmp/workspace";
-const MAX_COMMIT_MESSAGE_CHARS = 1_000;
+// 与 gitCommitMessageGenerator.ts 的 MAX_COMMIT_MESSAGE_CHARS 保持一致：这组用例钉的就是
+// "上限是多少、超限怎么处理"这条契约，常量改了这里要跟着改。
+const MAX_COMMIT_MESSAGE_CHARS = 500;
 
 const files: GitFileChange[] = [
   {
