@@ -278,6 +278,33 @@ export function resolveCommitRequestMode(
 }
 
 /**
+ * 机器生成的提交消息是在哪批勾选下写出来的（勾选快照 key）。勾选一变，那份消息描述的就是上一批
+ * 文件，必须作废——否则提交时会把并未提交的文件写进消息。
+ *
+ * 排序 + 去重是刻意为之：勾选是集合语义，同一组路径无论以什么顺序勾上、中间是否重复触发，
+ * 都应得到同一个 key，才不会因为集合遍历顺序的差异把消息误判成过期。
+ */
+export function buildCommitMessageSelectionKey(paths: Iterable<string>): string {
+  return Array.from(new Set(paths)).sort().join("\u0000");
+}
+
+/**
+ * 输入框里那份消息是否已经对不上当前勾选（规则 9）。
+ *
+ * `generatedSelectionKey` 为 null 有两种含义：消息还不存在，或者它已经被用户编辑过（属于用户内容）。
+ * 两种都不该被勾选变化清空——只有"机器生成、且勾选变了"才作废。
+ */
+export function isGeneratedCommitMessageStale(options: {
+  generatedSelectionKey: string | null;
+  currentSelectionKey: string;
+}): boolean {
+  return (
+    options.generatedSelectionKey !== null &&
+    options.generatedSelectionKey !== options.currentSelectionKey
+  );
+}
+
+/**
  * 提交弹窗行宽有限，长路径必须能被截断，但**文件名不能被截掉**——同名文件分布在不同目录时，
  * 文件名才是区分依据。所以把路径拆成「目录（可截断）+ 文件名（优先保留）」两段渲染。
  */

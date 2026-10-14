@@ -7,9 +7,11 @@ import {
 } from "../src/git-branch-switcher/display.js";
 import {
   buildCommitFileRows,
+  buildCommitMessageSelectionKey,
   collectCommitPreviewStagePaths,
   excludeCommitPreviewFiles,
   groupCommitFileRows,
+  isGeneratedCommitMessageStale,
   resolveCommitPreviewSelectionState,
   resolveCommitRequestMode,
   shouldShowCommitFileList,
@@ -351,4 +353,55 @@ test("预览文件保留 isUntracked，未跟踪与已暂存同路径时按已�
   ]);
   assert.equal(mergedPreview?.isUntracked, false);
   assert.equal(mergedPreview?.added, 2);
+});
+
+// 生成的消息只在它生成时那批勾选下有效：key 一样才说明消息还对得上本次提交范围。
+test("勾选快照 key 忽略顺序与重复，不同集合得到不同 key", () => {
+  const first = buildCommitMessageSelectionKey(["/repo/a.ts", "/repo/b.ts"]);
+  assert.equal(buildCommitMessageSelectionKey(["/repo/b.ts", "/repo/a.ts"]), first);
+  assert.equal(buildCommitMessageSelectionKey(["/repo/b.ts", "/repo/a.ts", "/repo/a.ts"]), first);
+  assert.notEqual(buildCommitMessageSelectionKey(["/repo/a.ts"]), first);
+  assert.notEqual(buildCommitMessageSelectionKey(["/repo/a.ts", "/repo/b.ts", "/repo/c.ts"]), first);
+});
+
+test("全部勾选（空排除集合）的 key 与部分勾选不同，且空集合自身稳定", () => {
+  assert.equal(buildCommitMessageSelectionKey(new Set<string>()), "");
+  assert.equal(buildCommitMessageSelectionKey([]), "");
+  assert.notEqual(buildCommitMessageSelectionKey(["/repo/a.ts"]), "");
+});
+
+// 规则 9：机器生成的消息只在它生成时那批勾选下有效。
+test("勾选变了才作废机器消息；用户内容（key 为 null）与未变更的勾选都不作废", () => {
+  assert.equal(
+    isGeneratedCommitMessageStale({ generatedSelectionKey: "/repo/a.ts", currentSelectionKey: "" }),
+    true,
+  );
+  assert.equal(
+    isGeneratedCommitMessageStale({
+      generatedSelectionKey: "/repo/a.ts",
+      currentSelectionKey: "/repo/a.ts\u0000/repo/b.ts",
+    }),
+    true,
+  );
+  assert.equal(
+    isGeneratedCommitMessageStale({
+      generatedSelectionKey: "/repo/a.ts",
+      currentSelectionKey: "/repo/a.ts",
+    }),
+    false,
+  );
+  // null = 没有机器消息或用户已编辑过，两种都不能被勾选变化清掉。
+  assert.equal(
+    isGeneratedCommitMessageStale({ generatedSelectionKey: null, currentSelectionKey: "/repo/a.ts" }),
+    false,
+  );
+  assert.equal(
+    isGeneratedCommitMessageStale({ generatedSelectionKey: null, currentSelectionKey: "" }),
+    false,
+  );
+  // 全部勾选下生成（key 为空串）也是有效快照，不能因为空串被判成 null 而漏掉作废。
+  assert.equal(
+    isGeneratedCommitMessageStale({ generatedSelectionKey: "", currentSelectionKey: "/repo/a.ts" }),
+    true,
+  );
 });

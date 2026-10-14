@@ -45,11 +45,13 @@ import { GitBranchSwitcher } from "@/GitBranchSwitcher.js";
 import { hasGitCommitIdentity } from "@/git-branch-switcher/switchAssist.js";
 import {
   buildCommitFileRows,
+  buildCommitMessageSelectionKey,
   canUseGitActionMenu,
   canPushGitBranch,
   collectCommitPreviewStagePaths,
   excludeCommitPreviewFiles,
   groupCommitFileRows,
+  isGeneratedCommitMessageStale,
   resolveCommitPreviewSelectionState,
   resolveCommitRequestMode,
   resolveGitActionMenuPrimaryAction,
@@ -1160,6 +1162,28 @@ export function GitActionMenu({
   const [commitExcludedStagePaths, setCommitExcludedStagePaths] = useState<ReadonlySet<string>>(
     EMPTY_COMMIT_EXCLUDED_PATHS,
   );
+  // 输入框里那份机器生成的消息是为哪批勾选写的。勾选一变，这份消息描述的就是上一批文件，
+  // 留着它提交就会写出并未提交的改动，所以按规则 9 作废。
+  const [generatedCommitMessageSelectionKey, setGeneratedCommitMessageSelectionKey] = useState<
+    string | null
+  >(null);
+  const commitSelectionKey = useMemo(
+    () => buildCommitMessageSelectionKey(commitExcludedStagePaths),
+    [commitExcludedStagePaths],
+  );
+
+  useEffect(() => {
+    const stale = isGeneratedCommitMessageStale({
+      generatedSelectionKey: generatedCommitMessageSelectionKey,
+      currentSelectionKey: commitSelectionKey,
+    });
+    if (!stale) {
+      return;
+    }
+
+    setGeneratedCommitMessageSelectionKey(null);
+    setCommitMessage("");
+  }, [commitSelectionKey, generatedCommitMessageSelectionKey]);
 
   const clearCommitExcludedStagePaths = useCallback(() => {
     setCommitExcludedStagePaths(EMPTY_COMMIT_EXCLUDED_PATHS);
@@ -1259,6 +1283,7 @@ export function GitActionMenu({
     setCommitDialogLoading(false);
     setCommitDialogState(null);
     setCommitMessage("");
+    setGeneratedCommitMessageSelectionKey(null);
     setCommitError(null);
     setCommitMessageGenerationPending(false);
     clearCommitExcludedStagePaths();
@@ -1292,6 +1317,7 @@ export function GitActionMenu({
       setCommitError(null);
       if (options?.resetMessage) {
         setCommitMessage("");
+        setGeneratedCommitMessageSelectionKey(null);
       }
 
       try {
@@ -1426,6 +1452,8 @@ export function GitActionMenu({
         providerId: result.providerId,
         model: result.model,
       });
+      // 记住这份消息是按哪批勾选写的：勾选若在生成期间或之后变化，它会立刻被作废（spec 规则 9）。
+      setGeneratedCommitMessageSelectionKey(buildCommitMessageSelectionKey(excludedPaths));
       return result.message;
     },
     [
@@ -1541,7 +1569,13 @@ export function GitActionMenu({
         return;
       }
 
-      let nextCommitMessage = commitMessage.trim();
+      // 作废判断放在写入口：勾选刚变、effect 还没跑到时按回车，也不能把上一批勾选的消息提交出去。
+      // 判定为过期就按"消息为空"处理，走下面同一条重新生成路径（spec 规则 9）。
+      const messageStale = isGeneratedCommitMessageStale({
+        generatedSelectionKey: generatedCommitMessageSelectionKey,
+        currentSelectionKey: commitSelectionKey,
+      });
+      let nextCommitMessage = messageStale ? "" : commitMessage.trim();
       if (!nextCommitMessage) {
         setCommitError(null);
         setCommitMessageGenerationPending(true);
@@ -1648,7 +1682,9 @@ export function GitActionMenu({
       commitExcludedStagePaths,
       commitDialogState,
       commitMessage,
+      commitSelectionKey,
       generateCommitMessage,
+      generatedCommitMessageSelectionKey,
       gitService,
       gitSummary.branchName,
       intl,
@@ -1782,7 +1818,11 @@ export function GitActionMenu({
             closeCommitDialog();
           }
         }}
-        onMessageChange={setCommitMessage}
+        onMessageChange={(nextValue) => {
+          // 用户动过文本后，这份消息就是用户内容：不再随勾选变化被作废（spec 规则 9）。
+          setGeneratedCommitMessageSelectionKey(null);
+          setCommitMessage(nextValue);
+        }}
         onToggleFileSelection={toggleCommitFileSelection}
         onSetAllFilesSelected={setAllCommitFilesSelected}
         onSetFilesSelected={setCommitFilesSelected}

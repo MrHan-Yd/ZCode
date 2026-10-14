@@ -21,6 +21,9 @@ const COMMIT_MESSAGE_QUERY_SOURCE = "git_commit_message";
 const CONVENTIONAL_COMMIT_RE =
   /^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\([^)]+\))?!?: .{1,100}$/;
 
+/** 生成物不合规的原因：长度超限单独一档，便于日志区分"写歪了"和"写太长了"。 */
+type GitCommitMessageValidationFailureReason = "empty" | "invalid" | "too-long";
+
 interface GitCommitMessageCurrentModelProvider {
   readCurrentModel(params: {
     workspacePath: string;
@@ -239,6 +242,10 @@ function buildGitCommitMessageGenerationPrompt(params: {
     "- Keep the Conventional Commit type and optional scope in English.",
     "- Write the subject and any body in the current language.",
     "- Keep the subject under 72 characters.",
+    // 长度上限写进提示词，和校验用的是同一个常量：超限会被判为不可用（不是被裁剪），
+    // 所以这里必须让模型看得见确切数字。见 specs/git-commit-message-format.md。
+    `- Keep the whole message, subject and body together, within ${MAX_COMMIT_MESSAGE_CHARS} characters.`,
+    "- Prefer the subject alone; add a body only for information the subject cannot carry.",
     "- Use the current session conversation context only to infer user intent.",
     "- Do not mention the conversation, chat, prompt, or user request explicitly.",
     "- Do not explain your reasoning.",
@@ -276,13 +283,19 @@ function readRuntimeLocale(): string | undefined {
   }
 }
 
+/**
+ * 校验模型生成的提交消息：只做判定，任何情况下都不裁剪模型输出。
+ *
+ * 之前这里会把超长输出 `slice` 到 1000 字符，裁剪点常落在句子中间，提交历史里留下一句
+ * 断掉的话——用户看到的是"一条看着正常的消息"，而不是"生成失败"。现在长度上限改由提示词
+ * 约束（模型可见），超限直接判不合规，让失败显性化。见 specs/git-commit-message-format.md。
+ */
 function validateGeneratedGitCommitMessage(
   rawMessage: string,
-): { ok: true; message: string } | { ok: false; reason: "empty" | "invalid"; preview?: string } {
-  const message = stripGeneratedCommitMessageDecorations(rawMessage)
-    .trim()
-    .slice(0, MAX_COMMIT_MESSAGE_CHARS)
-    .trim();
+):
+  | { ok: true; message: string }
+  | { ok: false; reason: GitCommitMessageValidationFailureReason; preview?: string } {
+  const message = stripGeneratedCommitMessageDecorations(rawMessage).trim();
   if (!message) {
     return { ok: false, reason: "empty" };
   }
@@ -290,6 +303,13 @@ function validateGeneratedGitCommitMessage(
   const subject = message.split(/\r?\n/, 1)[0]?.trim() ?? "";
   if (!CONVENTIONAL_COMMIT_RE.test(subject)) {
     return { ok: false, reason: "invalid", preview: subject || message.slice(0, 120) };
+  }
+  if (message.length > MAX_COMMIT_MESSAGE_CHARS) {
+    return {
+      ok: false,
+      reason: "too-long",
+      preview: `${message.slice(0, 120)}…（${message.length} 字符，上限 ${MAX_COMMIT_MESSAGE_CHARS}）`,
+    };
   }
   return { ok: true, message };
 }

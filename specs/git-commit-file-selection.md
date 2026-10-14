@@ -27,6 +27,9 @@
 7. 勾选集合是**弹窗会话内的临时状态**：关闭弹窗、打开弹窗、切换分支刷新后一律重置为全选。不持久化、不跨会话记忆。
 8. 只要存在可提交行就渲染清单，**含只有 1 个文件的情况**：清单是唯一展示待提交文件路径的地方，隐藏它会让用户只看到一个数量、无法确认具体提交的是哪个文件。
 9. 自动生成提交消息的 diff 范围与勾选一致：被排除的文件不写进消息；`stagedPaths` 里的路径只取已暂存 diff，不把并未提交的未暂存余量写进消息。
+   - **消息跟着勾选作废**：机器生成的那份消息只在它生成时那批勾选下有效。勾选一变（逐文件、组级、整体全选），若消息仍是机器写的那份（用户没编辑过），立即清空——下次「提交」按当前勾选重新生成，与「消息为空时提交」同一条代码路径。用户在输入框里动过文本后，那是用户自己的内容，不再随勾选变化清空。
+   - **两个执行点**，缺一不可：勾选变化时由 effect 清空输入框（用户看得见）；提交入口自己再判一次过期（过期即按"消息为空"处理）。只靠 effect 会留下"勾选刚变、effect 还没跑就按回车"的同帧竞态，那一帧会把上一批勾选的消息提交出去。
+   - 这条口径的意义：生成的提交消息是"本次要提交什么"的描述，它不是用户内容。留着上一批勾选的消息，提交时就会写出并未提交的改动（例如只勾了「更改」却把未勾选的未跟踪文件写进消息）。
 10. 每个组头一行复选框，三态口径与整体「全选」一致（全选 / 部分选中 / 全不选），点击只作用于该组文件，不影响其他组；组头右侧计数按组内口径显示「N 个文件」或「已选/N 个文件」。
 11. 组头可折叠：折叠只隐藏该组文件行，**不改变勾选状态**。折叠集合是弹窗会话内的临时 UI 状态，关闭弹窗即重置为全部展开，不持久化。
 12. 折叠用仓库既有的 `Collapsible`（tw-animate-css 的 `animate-collapsible-down/up`，300ms ease-in-out，基于 `--radix-collapsible-content-height`），箭头旋转同节奏。**弹窗高度的伸缩由这次内容动画连带驱动**（`DialogContent` / `form` 高度都是 auto），不再单独给弹窗加 height transition——对 auto 高度再加 transition 只会引入一层无法收敛的二次动画。遵循仓库约定，`prefers-reduced-motion: reduce` 下通过 `data-zcode-commit-file-group` 标记关闭这两层关键帧。
@@ -36,6 +39,7 @@
 - **弹窗文件数据**（`stagedFiles` / `unstagedFiles`，两份 per-source 预览）由 `GitActionMenu` 持有。
 - **排除集合**（`commitExcludedStagePaths`）由 `GitActionMenu` 持有，key 为 `GitCommitFileRow.stagePath`（= `GitFileChange.path`，仓库内绝对路径），与 `GitCommitRequest.paths` 同一坐标系，不做二次路径变换。因为归属规则保证一行一路径，key 仍可用裸路径。
 - 弹窗组件只读该集合并回调，不复制状态；唯一写入路径是 `onToggleFileSelection` / `onSetAllFilesSelected` / `onSetFilesSelected`。
+- **机器消息的勾选快照**（`generatedCommitMessageSelectionKey`）由 `GitActionMenu` 持有：它记录输入框里那份消息是为哪批勾选生成的（`buildCommitMessageSelectionKey(排除集合)`）。勾选 key 与它不一致时清空消息并清掉它本身（规则 9）；用户编辑文本时同步清掉（此后消息算用户内容）。生成成功时写入，是唯一写入点。
 - **行、分组与提交模式都是派生视图**，没有独立状态：
   - `buildCommitFileRows({ stagedFiles, unstagedFiles })` 按规则 4 合成行并排序；
   - `groupCommitFileRows(rows)` 只负责按组切分渲染；
@@ -81,6 +85,15 @@ function resolveCommitRequestMode(rows: readonly GitCommitFileRow[]): {
   stagedPaths: string[];
   stagedOnly: boolean;
 };
+
+/** 勾选快照 key：同一组路径在任何顺序 / 重复下得到同一个 key（规则 9 作废判断用）。 */
+function buildCommitMessageSelectionKey(paths: Iterable<string>): string;
+
+/** 输入框里那份消息是否已对不上当前勾选。key 为 null（无机器消息 / 用户已编辑）一律不算过期。 */
+function isGeneratedCommitMessageStale(options: {
+  generatedSelectionKey: string | null;
+  currentSelectionKey: string;
+}): boolean;
 ```
 
 ```ts
@@ -110,6 +123,8 @@ interface GitGenerateCommitMessageRequest {
 10. 折叠「未进行版本管理的文件」→ 该组文件行以 300ms 高度动画收起，组头复选框、计数与整体全选状态都不变；再展开后勾选与折叠前一致。清单未超出高度上限时，弹窗高度同步伸缩。
 11. 提交消息为空时点提交 → 生成的消息描述范围与勾选一致；带余量标记的路径不会被描述它未暂存的那部分。
 12. 清单已经超出高度上限（`min(40vh, 18rem)`）时折叠某一组 → 弹窗高度不变，只在清单内部滚动区域变化（此时没有可伸缩的弹窗高度，属预期）。
+13. 生成消息后改变勾选（勾上/取消任意一行、任一组的组头全选、整体全选）→ 机器写的那份消息被清空，✨ 按钮回到「生成」，提交时按当前勾选重新生成；用户在输入框里编辑过的消息（哪怕只改一个字）在勾选变化后原样保留。
+14. 生成消息后不改勾选直接提交 → 复用刚生成的消息，不重复请求模型。
 
 ## 布局约束
 
