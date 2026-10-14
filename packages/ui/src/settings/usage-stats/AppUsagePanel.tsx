@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button.js";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useAppUsageStats } from "@/hooks/useUsageStats.js";
+import { buildAppUsageSummaryStripItems } from "@/settings/usage-stats/appUsageSummaryStripViewModel.js";
 import { UsageChartLoadBoundary } from "@/settings/usage-stats/UsageChartLoadBoundary.js";
 import { UsageHeatmap } from "@/settings/usage-stats/UsageHeatmap.js";
 import { UsageStatsErrorNotice } from "@/settings/usage-stats/UsageStatsErrorNotice.js";
@@ -13,8 +14,6 @@ import {
   USAGE_STATS_TABS_LIST_CLASS,
   USAGE_STATS_TABS_TRIGGER_CLASS,
   UsageEmptyState,
-  formatCompactNumber,
-  formatSummaryCompactTokenUsage,
 } from "@/settings/usage-stats/usageStatsUiParts.js";
 
 // Recharts 会在模块初始化阶段触发 decimal.js-light 的 LN10 校验，
@@ -132,30 +131,12 @@ export function AppUsagePanel() {
 
 function AppUsageLifetimeSummaryStrip({ snapshot }: { snapshot: AppUsageSnapshot | null }) {
   const { intl, locale } = useZCodeIntl();
-  const items = [
-    {
-      label: intl.formatMessage({ id: "settings.usage.lifetimeTotalTokens" }),
-      value: snapshot ? formatSummaryCompactTokenUsage(locale, snapshot.summary.totalTokens) : "--",
-    },
-    {
-      label: intl.formatMessage({ id: "settings.usage.lifetimePeakTokens" }),
-      value: snapshot
-        ? formatSummaryCompactTokenUsage(locale, snapshot.summary.peakDayTokens)
-        : "--",
-    },
-    {
-      label: intl.formatMessage({ id: "settings.usage.longestSession" }),
-      value: snapshot ? formatAppUsageDuration(snapshot.summary.longestSessionMs, intl) : "--",
-    },
-    {
-      label: intl.formatMessage({ id: "settings.usage.currentStreak" }),
-      value: snapshot ? formatAppUsageDays(snapshot.summary.currentStreakDays, intl, locale) : "--",
-    },
-    {
-      label: intl.formatMessage({ id: "settings.usage.longestStreak" }),
-      value: snapshot ? formatAppUsageDays(snapshot.summary.longestStreakDays, intl, locale) : "--",
-    },
-  ];
+  const items = buildAppUsageSummaryStripItems({
+    intl,
+    locale,
+    snapshot,
+    formatDurationMs: (durationMs) => formatAppUsageDuration(durationMs, intl),
+  });
 
   return (
     <section className="flex flex-col overflow-hidden rounded-xl bg-surface sm:flex-row sm:items-center">
@@ -172,16 +153,6 @@ function AppUsageLifetimeSummaryStrip({ snapshot }: { snapshot: AppUsageSnapshot
       ))}
     </section>
   );
-}
-
-function formatAppUsageDays(
-  days: number,
-  intl: ReturnType<typeof useZCodeIntl>["intl"],
-  locale: string,
-): string {
-  return `${formatCompactNumber(locale, days)} ${intl.formatMessage({
-    id: "settings.usage.duration.day",
-  })}`;
 }
 
 export function formatAppUsageDuration(

@@ -3721,6 +3721,7 @@ const enUS: Record<string, string> = {
   "settings.usage.activityTitle": "Activity",
   "settings.usage.lifetimeTotalTokens": "Total tokens",
   "settings.usage.lifetimePeakTokens": "Peak tokens",
+  "settings.usage.lifetimeTodayTokens": "Today's tokens",
   "settings.usage.currentStreak": "Current streak",
   "settings.usage.longestStreak": "Longest streak",
   "settings.usage.cacheHitRate": "Cache hit rate",

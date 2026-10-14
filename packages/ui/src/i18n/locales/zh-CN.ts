@@ -3499,6 +3499,7 @@ const zhCN: Record<string, string> = {
   "settings.usage.activityTitle": "活跃度",
   "settings.usage.lifetimeTotalTokens": "累计 Token 数",
   "settings.usage.lifetimePeakTokens": "峰值 Token 数",
+  "settings.usage.lifetimeTodayTokens": "今日 Token 数",
   "settings.usage.currentStreak": "当前连续天数",
   "settings.usage.longestStreak": "最长连续天数",
   "settings.usage.cacheHitRate": "Cache 命中率",
