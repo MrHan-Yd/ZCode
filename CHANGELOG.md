@@ -1,5 +1,29 @@
 # Changelog
 
+## [3.17.7](https://github.com/MrHan-Yd/ZCode/compare/v3.17.6...v3.17.7) (2026-10-14)
+
+### Features
+
+* **git:** 提交消息按勾选作废并禁止超长裁剪 ([a1acf4e](https://github.com/MrHan-Yd/ZCode/commit/a1acf4e0a4f8d43278c5da15496e5dcdc69d59a3))
+  * 机器生成的提交消息仅在生成时那批勾选下有效，勾选变化且消息未被编辑时清空输入框
+  * 提交入口自行判定消息过期，避免同帧竞态提交上一批勾选的消息
+  * 提交消息长度上限写入提示词，超限直接判为不合规，不再静默裁剪模型输出
+  * 补充勾选快照 key、消息过期判定与消息格式的单元测试及规格文档
+
+
+### Chores
+
+* **git:** 提交消息长度上限收紧到 500 字符 ([e6f9efa](https://github.com/MrHan-Yd/ZCode/commit/e6f9efa645a9fe74a0927c31c46be1af5e522c22))
+  * 整条消息上限从 1000 调到 500：约定首行 ≤ 50、正文几行，500 字符足够写完影响与原因
+  * 提示词与校验共用同一常量，模型看到的数字随之变为 500
+
+
+### Documentation
+
+* 补充 README 的 v3.17.6 更新说明 ([1dd4fff](https://github.com/MrHan-Yd/ZCode/commit/1dd4fff1108188c72dd9c801bd722ad93eaf91ff))
+
+* 添加提交文件分组与暂存语义实现计划 ([db324ac](https://github.com/MrHan-Yd/ZCode/commit/db324ac27e1af846558fca733c1acc92a9dbf1c8))
+
 ## [3.17.6](https://github.com/MrHan-Yd/ZCode/compare/v3.17.5...v3.17.6) (2026-10-14)
 
 ### Features
