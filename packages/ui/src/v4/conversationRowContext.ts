@@ -173,6 +173,12 @@ export interface ConversationRowRenderContext {
     target: ConversationRowTarget,
     options: ConversationFileChangesRequestOptions,
   ) => Promise<V4ConversationFileChangesResult>;
+  /**
+   * 冷恢复没能算出文件变更摘要的轮（turnId）。投影在 files === 0 时不挂 fileChanges，
+   * 客户端无法自行区分「没改文件」与「摘要缺失」；只有这份缺口清单里的轮才值得按需回填。
+   * 见 `useTurnFileChangeSummaryBackfill`。
+   */
+  fileChangeSummaryUnavailableTurnIds?: ReadonlySet<string>;
   previewFileRewind?: (
     target: ConversationRowTarget,
   ) => Promise<V4ConversationFileRewindPreviewResult>;

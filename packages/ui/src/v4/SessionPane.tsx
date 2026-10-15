@@ -2164,6 +2164,15 @@ export function SessionPane({
     [sessionId, snapshot?.config, snapshot?.sessionId],
   );
 
+  // 冷恢复漏算文件变更摘要的轮（turnId）。投影在 files === 0 时不挂 fileChanges，客户端无法
+  // 区分「没改文件」与「摘要缺失」，只有这份缺口清单里的轮才值得按需回填（见
+  // useTurnFileChangeSummaryBackfill）。该数组不进 delta，引用在其余键原样带过时保持稳定，
+  // 所以 Set 只在缺口真正变化时重建，不破坏 rowContext 的 memo。
+  const unavailableFileChangeTurnIds = useMemo(
+    () => new Set(snapshot?.fileChangeSummaryUnavailableTurnIds ?? []),
+    [snapshot?.fileChangeSummaryUnavailableTurnIds],
+  );
+
   const rowContext = useMemo<ConversationRowRenderContext>(
     () => ({
       workspacePath,
@@ -2218,6 +2227,7 @@ export function SessionPane({
       workflowGraphByToolCallId,
       workflowDraftByToolCallId,
       fetchFileChanges: handleFetchFileChanges,
+      fileChangeSummaryUnavailableTurnIds: unavailableFileChangeTurnIds,
       previewFileRewind: workspaceFileRewindEnabled ? handlePreviewFileRewind : undefined,
       applyFileRewind: workspaceFileRewindEnabled ? handleApplyFileRewind : undefined,
       readAttachment: attachmentRead,
@@ -2277,6 +2287,7 @@ export function SessionPane({
       handleApplyFileRewind,
       attachmentRead,
       attachmentReadRange,
+      unavailableFileChangeTurnIds,
     ],
   );
 

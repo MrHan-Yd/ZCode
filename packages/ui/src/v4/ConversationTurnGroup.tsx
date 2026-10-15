@@ -50,6 +50,7 @@ import {
   type AssistantCodeCommentCard,
 } from "@/lib/assistantCodeComment.js";
 import { useAssistantPreviewCardsForAssistantTextRow } from "@/v4/useAssistantPreviewCardsForRow.js";
+import { useTurnFileChangeSummaryBackfill } from "@/v4/useTurnFileChangeSummaryBackfill.js";
 import { shouldShowTurnChatLoading } from "@/v4/chatLoadingVisibility.js";
 import {
   buildAssistantWorkRenderItems,
@@ -1110,6 +1111,22 @@ function ConversationTurnGroupImpl({
 }: ConversationTurnGroupProps) {
   const isOfficeMode = useIsOfficeMode();
   const { intl } = useZCodeIntl();
+  // 冷恢复漏算文件变更摘要的轮：只在 host 给出的缺口清单里回填，其余轮一次请求都不发。
+  const turnFileChanges = useTurnFileChangeSummaryBackfill({
+    header: unit.header,
+    isRunning: unit.isRunning,
+    unavailableTurnIds: context.fileChangeSummaryUnavailableTurnIds,
+    fetchFileChanges: context.fetchFileChanges,
+  });
+  // 轮尾面板读的是 header.fileChanges，回填后要给它一份等价 header；
+  // identity 只在两者之一变化时更新，不破坏下游 memo。
+  const headerWithFileChanges = useMemo(
+    () =>
+      turnFileChanges !== undefined && unit.header !== undefined
+        ? { ...unit.header, fileChanges: turnFileChanges }
+        : unit.header,
+    [turnFileChanges, unit.header],
+  );
   const visibleUserRows = useMemo(() => unit.visibleUserInputs, [unit.visibleUserInputs]);
   const firstReasoningRowId = useMemo(
     () => unit.assistantWorkRows.find((row) => row.kind === "reasoning")?.rowId,
@@ -1219,12 +1236,12 @@ function ConversationTurnGroupImpl({
       unit.workStatus?.state === "running";
   const hasAssistantTurnContent =
     hasAssistantWorkContent ||
-    Boolean(unit.header?.fileChanges) ||
+    Boolean(turnFileChanges) ||
     canRenderAssistantActions ||
     hasHookActions ||
     workflowTurnDigests.length > 0;
   const editWorkspaceRewindAvailability = useMemo<EditWorkspaceRewindAvailability>(() => {
-    const fileChanges = unit.header?.fileChanges;
+    const fileChanges = turnFileChanges;
     if (!fileChanges || fileChanges.files <= 0) return { enabled: false, reason: "noFiles" };
     if (fileChanges.state === "reverted") return { enabled: false, reason: "reverted" };
     if (unit.isRunning) return { enabled: false, reason: "running" };
@@ -1232,7 +1249,7 @@ function ConversationTurnGroupImpl({
       return { enabled: false, reason: "unavailable" };
     }
     return { enabled: true, reason: "available" };
-  }, [unit.header?.actions?.canRewindFiles, unit.header?.fileChanges, unit.isRunning]);
+  }, [turnFileChanges, unit.header?.actions?.canRewindFiles, unit.isRunning]);
 
   // workflow 通知卡开头的轮去掉轮顶 padding：卡片只贴上一轮 pb-5 的常规流内间距。
   const startsWithWorkflowNotificationCard =
@@ -1399,8 +1416,8 @@ function ConversationTurnGroupImpl({
               完成后的结果摘要，必须等回复结束再跟随最终 assistant 正文收尾。 */}
           <CronAutomationTurnCards cards={cronAutomationTurnCards} context={context} />
           <OffPeakTurnCards cards={offPeakTurnCards} context={context} />
-          {!isOfficeMode && unit.header?.fileChanges ? (
-            <ConversationFileSummaryPanel header={unit.header} context={context} />
+          {!isOfficeMode && headerWithFileChanges?.fileChanges ? (
+            <ConversationFileSummaryPanel header={headerWithFileChanges} context={context} />
           ) : null}
           {unit.browserTurnEndRows.length > 0 ? (
             // 自动截图表达轮次结束时页面最终状态；放在 assistant work 内会
