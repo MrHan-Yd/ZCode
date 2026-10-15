@@ -1,5 +1,55 @@
 # Changelog
 
+## [3.18.0](https://github.com/MrHan-Yd/ZCode/compare/v3.17.9...v3.18.0) (2026-10-15)
+
+### Features
+
+* **conversation-ui:** 文件变更胶囊按缺口清单按需回填 ([ad6d016](https://github.com/MrHan-Yd/ZCode/commit/ad6d016437506c3b74342c938c49a122602a4a38))
+  * 判定与映射抽成纯模块 turnFileChangeSummaryBackfillModel（可差分测试），
+  * 复用既有 conversationFileChanges RPC 与 SessionPane 的 fileChangesRequestCache：终态结果
+  * 回填出来的轮与正常 hydrate 的轮不可区分：files > 0 补 state: active（与投影同口径），
+  * 不在缺口清单里的轮一次请求都不发——这正是该信号存在的理由
+  * 接入点在 ConversationTurnGroupImpl（轮尾面板渲染、hasAssistantTurnContent、
+
+* **session-performance:** 支持子会话统计与批量查询 ([95d4a88](https://github.com/MrHan-Yd/ZCode/commit/95d4a882209b60292dc54c2febbee9d79ab0834b))
+  * 性能聚合按会话自身 query_source 取值，子会话读 subagent
+  * 新增 sessionPerformanceBatch 协议入口与批量客户端方法
+  * 状态面板与子智能体速度展示接入批量统计
+  * 补充实时输出 token 与子代理速度计算及测试
+  * 更新会话性能统计规格文档
+
+
+### Bug Fixes
+
+* **runtime:** 辅助文本生成统一走流式传输 ([bb1ec2a](https://github.com/MrHan-Yd/ZCode/commit/bb1ec2a2a31af4c9a5f0ac8823b7f39644db039d))
+
+* **session-hydration:** 文件变更摘要缺口显式下发，供客户端按需回填 ([393f74a](https://github.com/MrHan-Yd/ZCode/commit/393f74a053aa75916806c7d77666fcb1fc7ea831))
+  * snapshot 新增 additive 字段 fileChangeSummaryUnavailableTurnIds：静态只读派生元数据，
+  * bridge 在既有 onArtifactError 里收集失败 messageId → loadPersistedEvents 返回值 →
+  * 空清单不补种：补种会重算 wire 字节上界，没有缺口时是纯浪费
+
+
+### Performance
+
+* 优化冷恢复与增量渲染热路径 ([c6c414f](https://github.com/MrHan-Yd/ZCode/commit/c6c414fb8f6ebb2ee41c8b55f627bcf68aaa6a6a))
+  * 冷恢复三段只读查询改为 Promise.all 并发，首帧不再串行等待
+  * nowMs 时钟推进只重建运行中 turn，完成态 unit 引用保持稳定
+  * 冷差分不可得时回退结构化 patch，避免静默 0/0 错值
+  * 补充误差异常与增量渲染测试及性能/渲染规格说明
+
+
+### Chores
+
+* **session-hydration:** 冷恢复三段查询各自计时（只观测，不改行为） ([f9d51e4](https://github.com/MrHan-Yd/ZCode/commit/f9d51e455949d5473283c715ee8c3c83091158c7))
+  * timedStep 包裹 file-changes / context-usage / subagents，走既有
+  * 行为完全不变：包裹前后调用的入参与返回值逐一相同，异常照常透出（计时在 finally）
+  * 按 AGENTS.md，debug 生产不落盘，读数需在 pnpm dev:desktop / dev:web 下抓 stderr
+
+
+### Documentation
+
+* 补充 README 的 v3.17.9 更新说明 ([76347e3](https://github.com/MrHan-Yd/ZCode/commit/76347e3254711ba88aea2b201bd8284e91b2d751))
+
 ## [3.17.9](https://github.com/MrHan-Yd/ZCode/compare/v3.17.8...v3.17.9) (2026-10-15)
 
 ### Features
