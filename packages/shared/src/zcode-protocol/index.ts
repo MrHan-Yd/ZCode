@@ -3573,6 +3573,10 @@ export const zcodeProtocolMethods = {
   sessionEvents: "session/events",
   sessionDebug: "session/debug",
   sessionPerformance: "session/performance",
+  // 批量版：一次读多个会话的同一份累计（子智能体速度按 1 秒覆盖全部运行中子代理）。
+  // 独立方法而不是改 session/performance 的参数形状：旧 CLI 解析不了新参数会让会话统计
+  // 入口一起降级，这里只让面板上的子智能体速度缺席（specs/session-performance-stats.md 规则 7）。
+  sessionPerformanceBatch: "session/performanceBatch",
   sessionSubscribe: "session/subscribe",
   // @deprecated（部分）：send 主路径已收敛 v4 sendText；仅剩 adapter 附件
   // 回退分支消费（v4 attachmentRef 上传/寄存命令面未建模），待附件命令面落地后移除。

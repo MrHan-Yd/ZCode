@@ -1,4 +1,13 @@
 import type { SessionPerformanceSummary } from "@zcode/shared";
+import type { IntlInstance } from "@/i18n/IntlProvider.js";
+
+/**
+ * 「{n} tok/s」的唯一格式化入口。工具条入口、会话统计面板与状态面板里的子智能体行都走它，
+ * 避免同一个单位在两处写出不同的取整或后缀。
+ */
+export function formatSessionSpeedValue(speed: number, intl: IntlInstance): string {
+  return intl.formatMessage({ id: "chat.sessionStats.speedValue" }, { speed: Math.round(speed) });
+}
 
 /**
  * 会话统计里「输出速度」的显示投影：集中决定每个显示面读哪个口径。

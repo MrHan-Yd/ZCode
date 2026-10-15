@@ -6,6 +6,8 @@ import { runSqliteSessionMigrations } from "../src/storage/session-store/migrati
 import { querySessionPerformance } from "../src/storage/session-store/repositories/usage.js";
 
 const SESSION_ID = "session-performance-test";
+/** 主会话口径：只有主链请求算这个会话自己的输出。 */
+const MAIN_TURN = ["main_turn"] as const;
 
 function createDb(): DatabaseSync {
   const db = new DatabaseSync(":memory:");
@@ -95,7 +97,7 @@ test("会话性能聚合只算主链成功请求，TPS 用首输出之后的生�
     outputTokens: 9_000,
   });
 
-  const result = await querySessionPerformance(db, { sessionID: SESSION_ID as never });
+  const result = await querySessionPerformance(db, { sessionID: SESSION_ID as never, querySources: MAIN_TURN });
 
   assert.equal(result.modelMs, 15_000);
   assert.equal(result.modelRequestCount, 2);
@@ -117,7 +119,7 @@ test("时长不大于首 token 等待的请求只进模型用时，不进 TPS", 
   // duration <= ttft 时没有可用的生成时长；用请求总时长顶替会把速度算低。
   insertModelRow(db, { id: "c", durationMs: 1_000, ttftMs: 1_000, outputTokens: 300 });
 
-  const result = await querySessionPerformance(db, { sessionID: SESSION_ID as never });
+  const result = await querySessionPerformance(db, { sessionID: SESSION_ID as never, querySources: MAIN_TURN });
 
   assert.equal(result.modelMs, 11_000);
   assert.equal(result.tpsOutputTokens, 800);
@@ -128,7 +130,7 @@ test("时长不大于首 token 等待的请求只进模型用时，不进 TPS", 
 
 test("空会话返回零值，平均与速度不可用而不是 0", async () => {
   const db = createDb();
-  const result = await querySessionPerformance(db, { sessionID: SESSION_ID as never });
+  const result = await querySessionPerformance(db, { sessionID: SESSION_ID as never, querySources: MAIN_TURN });
 
   assert.equal(result.modelMs, 0);
   assert.equal(result.toolMs, 0);
@@ -137,5 +139,49 @@ test("空会话返回零值，平均与速度不可用而不是 0", async () => 
   assert.equal(averageTtftMs(result.ttftSumMs, result.ttftCount), null);
   // 没有生成时长时给 null：0 tok/s 会被读成"模型卡住了"。
   assert.equal(calculateOutputTps(result.tpsOutputTokens, result.generationMs), null);
+  db.close();
+});
+
+test("子会话的请求只在 subagent 口径下算数，主链口径读出来是 0", async () => {
+  const db = createDb();
+  const CHILD_SESSION = "subagent-child-session";
+  insertSession(db, CHILD_SESSION);
+  // 子代理的模型请求记在子会话 id 上，query_source 是 subagent——不是 main_turn。
+  insertModelRow(db, {
+    id: "child-1",
+    sessionID: CHILD_SESSION,
+    querySource: "subagent",
+    durationMs: 6_000,
+    ttftMs: 1_000,
+    outputTokens: 500,
+  });
+  insertModelRow(db, {
+    id: "child-2",
+    sessionID: CHILD_SESSION,
+    querySource: "subagent",
+    durationMs: 4_000,
+    ttftMs: 1_000,
+    outputTokens: 300,
+  });
+
+  const asChild = await querySessionPerformance(db, {
+    sessionID: CHILD_SESSION as never,
+    querySources: ["subagent"],
+  });
+  // 组装口径：1000 / 2 平均 TTFT，800 token / 8 秒生成 = 100 tok/s。
+  assert.equal(asChild.modelRequestCount, 2);
+  assert.equal(asChild.tpsOutputTokens, 800);
+  assert.equal(asChild.generationMs, 8_000);
+  assert.equal(averageTtftMs(asChild.ttftSumMs, asChild.ttftCount), 1_000);
+  assert.equal(calculateOutputTps(asChild.tpsOutputTokens, asChild.generationMs), 100);
+
+  // 同一批行用主链口径读：全 0，而不是"这个子智能体很慢"。这正是加批次支持前
+  // 拿子会话 id 调单会话入口会得到的结果，也是必须按会话种类选口径的理由。
+  const asMainTurn = await querySessionPerformance(db, {
+    sessionID: CHILD_SESSION as never,
+    querySources: MAIN_TURN,
+  });
+  assert.equal(asMainTurn.modelRequestCount, 0);
+  assert.equal(calculateOutputTps(asMainTurn.tpsOutputTokens, asMainTurn.generationMs), null);
   db.close();
 });

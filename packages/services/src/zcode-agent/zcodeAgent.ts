@@ -1,6 +1,7 @@
 import type {
   BackgroundBashOutputResult,
   SessionDebugSnapshot,
+  SessionPerformanceBatchResult,
   SessionPerformanceSnapshot,
 } from "@zcode/shared";
 /* eslint-disable max-lines -- ZCode agent service 接口集中声明 protocol/session/workspace 方法，拆分会增加 service descriptor 迁移成本。 */
@@ -147,6 +148,14 @@ import type {
 
 export interface ZCodeAgentSessionTarget extends ZCodeAgentWorkspaceTarget {
   sessionId: string;
+}
+
+/**
+ * 批量会话统计的入参：**没有** `sessionId`，因为一次读多个会话（父会话 + 运行中的子会话）。
+ * 路由只靠 workspace 身份，与 `readSessionDebug` / `readSessionPerformance` 用同一套 target 解析。
+ */
+export interface ZCodeAgentSessionPerformanceBatchParams extends ZCodeAgentWorkspaceTarget {
+  sessionIds: readonly string[];
 }
 
 export interface ZCodeAgentResumeSessionParams extends ZCodeAgentSessionTarget {
@@ -601,6 +610,10 @@ export interface IZCodeAgentService {
   ): Promise<ZCodeMessageWithParts[]>;
   readSessionDebug(params: ZCodeAgentSessionTarget): Promise<SessionDebugSnapshot>;
   readSessionPerformance(params: ZCodeAgentSessionTarget): Promise<SessionPerformanceSnapshot>;
+  /** 批量版：一次读多个会话的同一份累计（子智能体速度用，见 specs/session-performance-stats.md 规则 7）。 */
+  readSessionPerformanceBatch(
+    params: ZCodeAgentSessionPerformanceBatchParams,
+  ): Promise<SessionPerformanceBatchResult>;
   readSessionEvents(params: ZCodeAgentReadSessionEventsParams): Promise<ZCodeSessionEvent[]>;
   readWorkspacePresentation(
     params: ZCodeAgentReadWorkspacePresentationParams,

@@ -2,6 +2,7 @@ import { requestPluginReferenceCatalog } from "#src/zcode-agent/pluginReferenceC
 import {
   localTtftFactsSchema,
   sessionDebugSnapshotSchema,
+  sessionPerformanceBatchResultSchema,
   sessionPerformanceSnapshotSchema,
   type LocalTtftFacts,
 } from "@zcode/shared";
@@ -3730,6 +3731,19 @@ export function createZCodeAgentService(
         zcodeProtocolMethods.sessionPerformance,
         { sessionId: params.sessionId },
         sessionPerformanceSnapshotSchema,
+      );
+    },
+
+    /**
+     * 批量版：一次覆盖父会话与运行中的子会话（子智能体速度用）。
+     * 与单会话入口同一 target 解析与只读客户端；没有 sessionId，路由只靠 workspace 身份。
+     */
+    async readSessionPerformanceBatch(params) {
+      const client = await getReadOnlyClient(params, "existing-only");
+      return client.request(
+        zcodeProtocolMethods.sessionPerformanceBatch,
+        { sessionIds: [...params.sessionIds] },
+        sessionPerformanceBatchResultSchema,
       );
     },
 

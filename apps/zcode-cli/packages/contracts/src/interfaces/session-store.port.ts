@@ -1071,13 +1071,23 @@ export interface TaskUsageQueryResult {
  * 会话性能聚合的原始计量。这里只做求和，平均与速率由协议层用共享口径换算，
  * 避免"平均"和"生成时长"两套除法散落在适配器里。
  */
+export type SessionPerformanceQuerySource = "main_turn" | "subagent";
+
 export interface SessionPerformanceQueryInput {
   sessionID: SessionId;
+  /**
+   * 计入该会话**自身**累计的 `model_usage.query_source` 集合。
+   *
+   * 主会话是 `['main_turn']`；子智能体的子会话是 `['subagent']`——子代理的模型请求记在
+   * 子会话 id 上、`query_source = 'subagent'`，用主链口径去读会得到全 0（不是"它很慢"，
+   * 是"一本都没读到"）。裁决在协议层按该会话有没有 `parentID` 做，客户端不下发口径。
+   */
+  querySources: readonly SessionPerformanceQuerySource[];
 }
 
 export interface SessionPerformanceQueryResult {
   sessionID: SessionId;
-  /** 主链模型请求总时长（含首 token 等待）。 */
+  /** 该会话自身模型请求总时长（含首 token 等待）。 */
   modelMs: number;
   /** 该会话工具调用执行时长之和（不含权限等待）。 */
   toolMs: number;

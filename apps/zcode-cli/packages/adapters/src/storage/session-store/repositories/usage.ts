@@ -677,13 +677,19 @@ export async function queryTaskUsage(
 
 /**
  * 会话性能累计：只读聚合 `model_usage` / `tool_usage` 的既有列，不引入新的写入路径。
- * 模型侧只取成功完成的主链请求——失败/取消的请求可能带着残缺的 usage 与时间计量，
+ * 模型侧只取成功完成的**该会话自身**请求——失败/取消的请求可能带着残缺的 usage 与时间计量，
  * 混进 TPS 会同时污染分子与分母。工具侧按已落库调用累加，重叠并发的工具各算各的时长。
+ *
+ * 「自身请求」是哪些 `query_source` 由调用方给（`input.querySources`）：主会话是主链
+ * `main_turn`，子智能体的子会话是 `subagent`。写死成 `main_turn` 会让子会话读出全 0。
  */
 export async function querySessionPerformance(
   db: DatabaseSync,
   input: SessionPerformanceQueryInput,
 ): Promise<SessionPerformanceQueryResult> {
+  // 口径是闭集且最多两个值：占位符按排序后的固定顺序拼，让同一套参数形状复用同一条
+  // 预编译语句，避免每次都产生新 SQL 触发重编译。
+  const sources = [...new Set(input.querySources)].sort();
   const model = db
     .prepare(
       `select
@@ -700,9 +706,9 @@ export async function querySessionPerformance(
              and duration_ms > time_to_first_token_ms
            then duration_ms - time_to_first_token_ms else 0 end), 0) as generationMs
        from model_usage
-       where session_id = ? and query_source = ? and status = 'completed'`,
+       where session_id = ? and query_source in (${sources.map(() => "?").join(", ")}) and status = 'completed'`,
     )
-    .get(input.sessionID, "main_turn") as {
+    .get(input.sessionID, ...sources) as {
     modelMs: number;
     modelRequestCount: number;
     ttftSumMs: number;

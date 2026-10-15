@@ -101,6 +101,13 @@ import {
 import type { ConversationStatusPanelWorkflowRunTarget } from "@/v4/conversationStatusPanelModel.js";
 import { workflowRunOpenTarget } from "@/v4/conversationStatusPanelModel.js";
 import { shouldShowGitRemoteSummary } from "@/v4/gitToolsEntryVisibility.js";
+import { formatSessionSpeedValue } from "@/v4/composer/sessionStatsSpeeds.js";
+import {
+  resolveLongestRunningSubagent,
+  resolveSubagentSpeedPollIds,
+  resolveSubagentSpeedReadings,
+} from "@/v4/subagentSpeeds.js";
+import { useSessionPerformanceBatch } from "@/hooks/useSessionPerformanceBatch.js";
 import {
   buildConversationGoalIterationSummaries,
   getConversationGoalElapsedSeconds,
@@ -1352,6 +1359,8 @@ function SubagentStatusSection({
   separated,
   title,
   subagents,
+  workspaceIdentity,
+  workspacePath,
 }: {
   endedSubagentCount: number;
   onCancelBackgroundWork?: (workId: string) => void;
@@ -1364,6 +1373,8 @@ function SubagentStatusSection({
   separated: boolean;
   title: string;
   subagents: readonly ConversationStatusPanelRunningSubagent[];
+  workspaceIdentity?: string;
+  workspacePath: string;
 }) {
   const { intl } = useZCodeIntl();
   const [now, setNow] = useState(() => Date.now());
@@ -1376,11 +1387,34 @@ function SubagentStatusSection({
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [subagents.length]);
-  if (subagents.length === 0 && endedSubagentCount <= 0) return null;
-  const longestElapsedMs = subagents.reduce(
-    (longest, item) => Math.max(longest, Math.max(0, now - (item.startedAt ?? now))),
-    0,
+
+  // 每行显示该子会话**自己的**累计平均 TPS（specs/session-performance-stats.md 规则 7）。
+  // 一次批量读覆盖全部运行中的子智能体：请求频率是 1 秒一次，与并发子代理数无关；
+  // 分区卸载（面板收起成胶囊、会话切换）或没有运行中子智能体时不发请求。
+  // `ordered` 按启动序，截断上限因此保留运行最久的那些——与下面 trailing 读的那一个一致。
+  const pollIds = useMemo(
+    () => resolveSubagentSpeedPollIds(ordered.map((item) => item.childSessionId)),
+    [ordered],
   );
+  const { entries: speedEntries } = useSessionPerformanceBatch({
+    workspacePath,
+    workspaceIdentity,
+    sessionIds: pollIds,
+    enabled: ordered.length > 0,
+  });
+  const speeds = useMemo(
+    () => resolveSubagentSpeedReadings(speedEntries, pollIds),
+    [speedEntries, pollIds],
+  );
+
+  if (subagents.length === 0 && endedSubagentCount <= 0) return null;
+  // 收起态 trailing 的时长与速度必须同指一个子智能体：两者都取「运行最久」的那个。
+  // 全部缺 startedAt 时它回落成第一个，时长仍是既有的 1 秒兜底显示。
+  const longestRunning = resolveLongestRunningSubagent(subagents, now);
+  const longestElapsedMs = longestRunning
+    ? Math.max(0, now - (longestRunning.startedAt ?? now))
+    : 0;
+  const longestSpeed = longestRunning ? (speeds.get(longestRunning.childSessionId) ?? null) : null;
 
   return (
     <StatusSection
@@ -1402,6 +1436,15 @@ function SubagentStatusSection({
               )}
             </span>
             <span className="shrink-0">·</span>
+            {/* 读数拿不到（还没有已完成请求 / 旧 CLI 不支持批量读）时整段缺席，不留 0 或 --。 */}
+            {longestSpeed === null ? null : (
+              <>
+                <span className="shrink-0 tabular-nums" data-subagent-speed="true">
+                  {formatSessionSpeedValue(longestSpeed, intl)}
+                </span>
+                <span className="shrink-0">·</span>
+              </>
+            )}
             <span className="shrink-0">
               {formatRunningSubagentCount(intl.formatMessage, subagents.length)}
             </span>
@@ -1417,6 +1460,8 @@ function SubagentStatusSection({
             subagent,
           });
           const canOpenSubagentSession = Boolean(request && onOpenSubagentSession);
+          // 该子会话自己的累计平均 TPS；没有已完成请求（或旧 CLI 不支持批量读）时为 undefined。
+          const speed = speeds.get(subagent.childSessionId);
           return (
             <li
               key={subagent.childSessionId}
@@ -1460,6 +1505,15 @@ function SubagentStatusSection({
                       intl.formatMessage,
                     )}
                   </span>
+                  {/* 该子会话自己的累计平均 TPS；没有已完成请求时不渲染这一段。 */}
+                  {speed === undefined ? null : (
+                    <span
+                      className="text-ui-base tabular-nums text-[var(--color-foreground-subtle)]"
+                      data-subagent-speed="true"
+                    >
+                      {formatSessionSpeedValue(speed, intl)}
+                    </span>
+                  )}
                   {subagent.controlWorkId && subagent.cancellable !== false ? (
                     <RunningWorkCancelButton
                       workId={subagent.controlWorkId}
@@ -2109,6 +2163,8 @@ function ConversationStatusPanelImpl({
               <SubagentStatusSection
                 title={intl.formatMessage({ id: "chat.statusPanel.agents" })}
                 subagents={model.runningSubagentWorks}
+                workspacePath={workspacePath}
+                workspaceIdentity={workspaceIdentity}
                 endedSubagentCount={canRenderEndedAgents ? endedSubagentCount : 0}
                 onCancelBackgroundWork={onCancelBackgroundWork}
                 open={agentSectionOpen}

@@ -14,6 +14,7 @@ import {
 import { useLiveOutputSpeed } from "@/v4/composer/useLiveOutputSpeed.js";
 import {
   canRenderSessionStatsEntry,
+  formatSessionSpeedValue,
   resolveSessionStatsSpeeds,
   type SessionStatsSpeeds,
 } from "@/v4/composer/sessionStatsSpeeds.js";
@@ -39,7 +40,7 @@ function useSettleGrace(running: boolean): boolean {
 }
 
 function formatSpeedValue(speed: number, intl: IntlInstance): string {
-  return intl.formatMessage({ id: "chat.sessionStats.speedValue" }, { speed: Math.round(speed) });
+  return formatSessionSpeedValue(speed, intl);
 }
 
 function formatDurationValue(

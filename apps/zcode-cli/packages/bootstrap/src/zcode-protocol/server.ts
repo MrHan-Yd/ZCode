@@ -1,5 +1,6 @@
 import { querySessionDebug } from "./session-debug.js";
 import { querySessionPerformance } from "./session-performance.js";
+import { querySessionPerformanceBatch } from "./session-performance-batch.js";
 import {
   zcodePluginsCancelOperationParamsSchema,
   zcodeProtocolMethods,
@@ -714,6 +715,8 @@ export class ZCodeProtocolAgentServer {
         return querySessionDebug(this.context, request.params);
       case zcodeProtocolMethods.sessionPerformance:
         return await querySessionPerformance(this.context, request.params);
+      case zcodeProtocolMethods.sessionPerformanceBatch:
+        return await querySessionPerformanceBatch(this.context, request.params);
       case zcodeProtocolMethods.sessionUsage:
         return await getTaskTokenUsage(this.context, request.params);
       default:

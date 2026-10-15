@@ -134,7 +134,10 @@ import {
 } from "@/v4/composer/followupModeSettings.js";
 import { isAppleKeyboardPlatform } from "@/lib/keyboardShortcuts.js";
 import { usePrimaryFollowupModifier } from "@/v4/composer/usePrimaryFollowupModifier.js";
-import { countStreamingOutputTokens } from "@/v4/composer/streamingOutputTokens.js";
+import {
+  createLiveOutputTokenReader,
+  type LiveOutputTokenReader,
+} from "@/v4/composer/liveOutputTokens.js";
 import { consumeV4ComposerDraftWorkspaceTransferRequest } from "@/v4/composer/composerDraftWorkspaceTransfer.js";
 import { useComposerAttachments } from "@/v4/composer/useComposerAttachments.js";
 import type { ConversationDropTargetController } from "@/v4/composer/conversationDropTarget.js";
@@ -2023,17 +2026,17 @@ function ConversationComposerImpl({
   // 避免每个 token 批次都重建 Tooltip/Select 子树。
   const composerUsage = snapshot?.usage ?? null;
   const composerPhase = snapshot?.control.phase ?? null;
-  // 会话统计入口的实时读数：这里只把每帧的估算 token 写进 ref，工具条按 1 秒时钟采样。
+  // 会话统计入口的实时读数：逐帧只把最新快照挂进读数器（O(1)），字符估算留到工具条按
+  // 1 秒时钟采样那一刻——口径、成本与语义边界见 liveOutputTokens.ts 与
+  // specs/session-performance-stats.md 规则 4。
   // 不把数值直接传下去——composer 随流式每帧重渲染，传值会让整条控制簇逐 token 重建。
-  const liveOutputTokensRef = useRef(0);
-  const readLiveOutputTokens = useCallback(() => liveOutputTokensRef.current, []);
-  const streamingOutputTokens = useMemo(
-    () => (composerPhase === "running" ? countStreamingOutputTokens(snapshot) : 0),
-    [composerPhase, snapshot],
+  const liveOutputTokenReaderRef = useRef<LiveOutputTokenReader | null>(null);
+  liveOutputTokenReaderRef.current ??= createLiveOutputTokenReader();
+  liveOutputTokenReaderRef.current.setSnapshot(snapshot, composerPhase === "running");
+  const readLiveOutputTokens = useCallback(
+    () => liveOutputTokenReaderRef.current?.read() ?? 0,
+    [],
   );
-  useEffect(() => {
-    liveOutputTokensRef.current = streamingOutputTokens;
-  }, [streamingOutputTokens]);
   const handleSelectModelTrace = useCallback(
     (nextProvider: string, nextModel: string, sourceModel: ModelSelectionSource | null) =>
       runUserAction({
