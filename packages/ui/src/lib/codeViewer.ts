@@ -23,10 +23,22 @@ import {
 export { buildUnifiedDiff } from "@/lib/toolDiffPreview.js";
 
 export const FILE_VIEWER_MAX_TEXT_BYTES = 256 * 1024;
+
+/**
+ * 消息里的文件链接可能带行号（`Foo.java#L263`）；这里只表达「打开时定位到哪一行」。
+ * requestId 每次点击递增：tab 按路径复用（workspaceSidePane 的 sourceKey 不含行号），
+ * 行号不变的重复点击也要重新滚动，所以定位触发条件不能只看行号。
+ */
+export interface FileCodeViewerLineAnchor {
+  lineNumber: number;
+  requestId: string;
+}
+
 export interface FileCodeViewerSource extends CodeViewerWorkspaceScope {
   type: "file";
   title: string;
   path: string;
+  lineAnchor?: FileCodeViewerLineAnchor;
 }
 
 export interface CodeReviewAnchor {

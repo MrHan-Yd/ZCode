@@ -1,5 +1,6 @@
 import type { CodeCommentPreview, CodeCommentRange } from "@/lib/codeCommentContext.js";
 import type { CodeReviewCodeViewerSource } from "@/lib/codeViewer.js";
+import { isCodeViewerLineRangeVisible } from "@/lib/codeViewerLineAnchor.js";
 
 interface CodeReviewContentProjection {
   focusedRange: CodeCommentRange | null;
@@ -22,8 +23,8 @@ export function resolveCodeReviewContentProjection(
     endLine !== undefined &&
     startLine > 0 &&
     endLine >= startLine;
-  const lineCount = content.split(/\r\n|\r|\n/).length;
-  const rangeIsVisible = hasRange && endLine <= lineCount;
+  // 行区间是否可见与文件链接的行锚点共用同一判定，避免两处各写一遍行数比较。
+  const rangeIsVisible = hasRange && isCodeViewerLineRangeVisible(content, startLine, endLine);
   const comment: CodeCommentPreview = {
     id: review.requestId,
     sourcePath: source.path,

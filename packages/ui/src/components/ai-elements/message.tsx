@@ -72,6 +72,7 @@ import {
 import { STREAMDOWN_CONTROLS } from "@/components/ai-elements/streamdown-controls.js";
 import { resolveMessageLinkOpenTarget } from "@/embeddedBrowserHelpers.js";
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
+import { createFileCodeViewerLineAnchor } from "@/lib/codeViewerLineAnchor.js";
 import { persistLastSelectedEditorId, readLastSelectedEditorId } from "@/lib/editorPreference.js";
 import {
   FileDisplayIcon,
@@ -392,6 +393,11 @@ export interface MessageFileLinkTarget {
   label: string;
   /** 仅用于显式尾随斜杠的目录展示提示；打开第三方应用前必须重新 stat。 */
   pathKind?: NonNullable<OpenInEditorOptions["pathKind"]>;
+  /**
+   * Markdown 链接写出 `Foo.java:263` / `Foo.java#L263` 时解析出的行号。
+   * 只影响打开时的定位，不参与 tab 身份匹配（tab 仍按路径复用）。
+   */
+  lineNumber?: number;
   relativePath?: string;
   workspacePath?: string;
   workspaceIdentity?: string;
@@ -939,6 +945,7 @@ export function buildMessageFileLinkTarget(input: {
   href: string;
   label: string;
   path: string;
+  lineNumber?: number;
   workspacePath?: string;
   workspaceIdentity?: string;
   workspaceRemoteSessionId?: string;
@@ -952,6 +959,10 @@ export function buildMessageFileLinkTarget(input: {
     path: input.path,
     label: input.label,
     pathKind,
+    // 行号 0 或负数没有定位意义（解析层不会产出，但调用方可能手写），按未提供处理。
+    ...(input.lineNumber !== undefined && input.lineNumber > 0
+      ? { lineNumber: input.lineNumber }
+      : {}),
     relativePath: input.workspacePath
       ? getWorkspaceFileRelativePath(input.workspacePath, input.path)
       : input.label,
@@ -1100,7 +1111,9 @@ const MessageFileLinkButton = forwardRef<HTMLButtonElement, MessageFileLinkButto
         ref={ref}
         type="button"
         className={cn(messageFileLinkClassName, "cursor-pointer", className)}
-        title={fileLink.path}
+        // 芯片正文是模型写的标签，可能只有 `:158` 这类简称；悬停提示带上完整路径与行号，
+        // 让用户点之前就知道会落到哪一行。
+        title={fileLink.lineNumber ? `${fileLink.path}:${fileLink.lineNumber}` : fileLink.path}
         onClick={onOpen}
         {...props}
       >
@@ -1460,6 +1473,7 @@ export const MessageResponse = memo(
               href: resolvedHref,
               path: fileLink.path,
               label: labelText,
+              lineNumber: fileLink.lineNumber ?? undefined,
               workspacePath,
               workspaceIdentity,
               workspaceRemoteSessionId,
@@ -1482,6 +1496,9 @@ export const MessageResponse = memo(
                     type: "file",
                     title: getPathLeaf(fileLink.path),
                     path: fileLink.path,
+                    ...(fileLink.lineNumber && fileLink.lineNumber > 0
+                      ? { lineAnchor: createFileCodeViewerLineAnchor(fileLink.lineNumber) }
+                      : {}),
                     workspacePath,
                     workspaceIdentity,
                     workspaceRemoteSessionId,

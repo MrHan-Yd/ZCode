@@ -1509,6 +1509,8 @@ const enUS: Record<string, string> = {
   "codeViewer.comment.commentLabel": "Comment",
   "codeViewer.review.targetLineMissing":
     "The target line does not exist. The comment is shown at the top of the file.",
+  "codeViewer.lineAnchor.targetLineMissing":
+    "The target line does not exist (the file may have changed). Showing the top of the file.",
   "chat.codeComments.one": "1 comment",
   "chat.codeComments.many": "{count} comments",
   "chat.codeComments.remove": "Remove code comments",

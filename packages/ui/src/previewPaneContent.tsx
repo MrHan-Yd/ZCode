@@ -25,6 +25,7 @@ import { PreviewPaneOfficeContent } from "@/previewPaneOfficeContent.js";
 import type { PptxElementReferenceSource } from "@/lib/pptxElementReference.js";
 import type { MediaCodeViewerSource, PptxReferencePreviewNavigation } from "@/lib/codeViewer.js";
 import { resolveCodeReviewContentProjection } from "@/previewPaneCodeReview.js";
+import { resolveFileLineAnchorProjection } from "@/lib/codeViewerLineAnchor.js";
 
 interface PreviewPaneContentProps {
   source: CodeViewerSource;
@@ -408,6 +409,20 @@ export function PreviewPaneContent({
     source.type === "code-review"
       ? resolveCodeReviewContentProjection(source, filePreview.content)
       : null;
+  // 文件链接带行号时只做滚动定位与高亮，不生成评论卡片：评论是 code-review 源的职责。
+  const fileLineAnchor = source.type === "file" ? source.lineAnchor : undefined;
+  const fileLineAnchorProjection = fileLineAnchor
+    ? resolveFileLineAnchorProjection(fileLineAnchor, filePreview.content)
+    : null;
+  const focusedRange =
+    codeReviewProjection?.focusedRange ?? fileLineAnchorProjection?.focusedRange ?? null;
+  const focusRequestId =
+    source.type === "code-review" ? source.review.requestId : fileLineAnchor?.requestId;
+  const targetLineNotice = codeReviewProjection?.targetLineOutOfRange
+    ? intl.formatMessage({ id: "codeViewer.review.targetLineMissing" })
+    : fileLineAnchorProjection?.targetLineOutOfRange
+      ? intl.formatMessage({ id: "codeViewer.lineAnchor.targetLineMissing" })
+      : undefined;
   const isMarkdownFile = fileLanguage === "markdown";
   const isSvgFile = isSvgPath(source.path);
   if (source.type !== "code-review" && isMarkdownFile && markdownViewMode === "preview") {
@@ -439,13 +454,9 @@ export function PreviewPaneContent({
       comments={codeReviewProjection?.inlineComments ?? codeComments}
       topComment={codeReviewProjection?.topComment}
       topCommentShowRange={false}
-      topCommentNotice={
-        codeReviewProjection?.targetLineOutOfRange
-          ? intl.formatMessage({ id: "codeViewer.review.targetLineMissing" })
-          : undefined
-      }
-      focusedRange={codeReviewProjection?.focusedRange}
-      focusRequestId={source.type === "code-review" ? source.review.requestId : undefined}
+      topCommentNotice={targetLineNotice}
+      focusedRange={focusedRange}
+      focusRequestId={focusRequestId}
       enableLineSelection={source.type === "code-review" ? false : enableCodeLineSelection}
       enableGutterUtility={source.type === "code-review" ? false : enableCodeGutterUtility}
       labels={codeCommentLabels}

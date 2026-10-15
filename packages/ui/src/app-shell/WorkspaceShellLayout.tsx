@@ -72,6 +72,7 @@ import { getGitDirtyFileCount } from "@/git-branch-switcher/display.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import { getPathLeaf, toFileUrl } from "@/lib/path.js";
+import { createFileCodeViewerLineAnchor } from "@/lib/codeViewerLineAnchor.js";
 import { shouldOpenAssistantHtmlInBrowser } from "@/lib/assistantPreviewCards.js";
 import { setWorkspaceSidebarResizeActive } from "@/lib/workspaceSidebarResizeState.js";
 import { buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
@@ -1258,6 +1259,21 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
       if (workspaceReadOnlyReason && target.serviceScope !== "base-local") {
         return;
       }
+      // 行锚点在本次打开动作内生成一次：两个打开分支（stat 成功、stat 失败兜底）
+      // 共用同一个 requestId，避免重复点击同一行时因多次取号而看起来像新定位。
+      const lineAnchor =
+        target.lineNumber !== undefined && target.lineNumber > 0
+          ? createFileCodeViewerLineAnchor(target.lineNumber)
+          : undefined;
+      const buildFileViewerSource = () => ({
+        type: "file" as const,
+        title: getPathLeaf(target.path),
+        path: target.path,
+        ...(lineAnchor ? { lineAnchor } : {}),
+        workspacePath: target.workspacePath,
+        workspaceIdentity: target.workspaceIdentity,
+        workspaceRemoteSessionId: target.workspaceRemoteSessionId,
+      });
       try {
         const fileService = selectWorkspacePathFileService(
           target,
@@ -1278,14 +1294,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
             handleOpenBrowserUrl(toFileUrl(target.path));
             return;
           }
-          handleOpenCodeViewer({
-            type: "file",
-            title: getPathLeaf(target.path),
-            path: target.path,
-            workspacePath: target.workspacePath,
-            workspaceIdentity: target.workspaceIdentity,
-            workspaceRemoteSessionId: target.workspaceRemoteSessionId,
-          });
+          handleOpenCodeViewer(buildFileViewerSource());
           return;
         }
 
@@ -1338,14 +1347,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
         if (shouldFallbackWorkspacePathToCodeViewer(target)) {
           // markdown file link 可能指向已不存在的路径。
           // stat 失败时仍交给 CodeViewer 展示具体读文件错误，避免点击完全无反馈。
-          handleOpenCodeViewer({
-            type: "file",
-            title: getPathLeaf(target.path),
-            path: target.path,
-            workspacePath: target.workspacePath,
-            workspaceIdentity: target.workspaceIdentity,
-            workspaceRemoteSessionId: target.workspaceRemoteSessionId,
-          });
+          handleOpenCodeViewer(buildFileViewerSource());
         }
         toast(intl.formatMessage({ id: "workspaceFileTree.openFailed" }));
       }

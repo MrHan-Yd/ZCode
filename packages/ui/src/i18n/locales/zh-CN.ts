@@ -1391,6 +1391,7 @@ const zhCN: Record<string, string> = {
   "codeViewer.comment.contextLabel": "代码上下文",
   "codeViewer.comment.commentLabel": "评论",
   "codeViewer.review.targetLineMissing": "目标行不存在，评论已展示在文件顶部。",
+  "codeViewer.lineAnchor.targetLineMissing": "目标行不存在（文件可能已改动），已展示文件开头。",
   "chat.codeComments.one": "1 条评论",
   "chat.codeComments.many": "{count} 条评论",
   "chat.codeComments.remove": "移除代码评论",
