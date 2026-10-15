@@ -23,8 +23,27 @@
 - **增量路径**：公共前缀/后缀 diff（行引用比较）找出变化区间 → 变化行所属 turn 全部
   标记 dirty；仅 dirty turn 重建 draft 并 materialize，其余 turn 复用缓存 unit
   （对象引用不变）。
-- **全量回退**：options（`nowMs`/`sessionPhase`）变化或 snapshot 整体替换
-  （前缀后缀为 0，diff 自动退化）时走 uncached 路径。
+- **时钟推进路径**：`nowMs` 变化（UI 每秒 tick）时，只有 `isRunning` 的 turn 被追加进 dirty
+  集合。行与 `sessionPhase` 都没变且无运行中 turn 时，只推进缓存里的 `nowMs` 基线，一个 unit
+  都不重建。
+- **全量回退**：`sessionPhase` 变化或 snapshot 整体替换（前缀后缀为 0，diff 自动退化）时走
+  uncached 路径。
+
+### `nowMs` 只影响运行中的 turn
+
+`nowMs` 的唯一消费点是运行中工时：`resolveConversationTurnWorkDurationMs` 与
+`resolveSegmentDurationMs`（`conversationTurnWorkSegments.ts`）都只在 running 时才读它，
+完成态时长来自 header 的 `activeMs` / `endedAt`。`resolveTurnRunning` 只依赖 header 与
+`sessionPhase`，与 `nowMs` 无关，因此 `unit.isRunning` 精确刻画了「哪些 unit 依赖时钟」。
+
+- **等价依据**：rows 引用与 `sessionPhase` 相同时，非运行 turn 的 unit 在任意 `nowMs` 下
+  逐字段相同，复用其缓存对象等于用新 `nowMs` 重建；运行中 turn 被标脏后用新 `nowMs` 重建。
+  故增量结果 ≡ uncached 结果。
+- **收益**：会话在运行（`hasRunningUnit`）时 `ConversationTimeline` 每秒 tick 一次；改前每次
+  tick 都要对已加载全部 rows 走一次全量重建，改后只重建运行中的那一个 turn。
+
+`normalizeRenderUnitPosition` 只读 `options.sessionPhase`（不读 `nowMs`），因此位置归一化对
+复用的 unit 仍然幂等。
 
 ## 不变量与正确性论证
 
@@ -49,6 +68,9 @@
 
 ## 验收
 
-- 差分测试全绿（随机 append/upsert/delta/removed 序列 × 300 轮，含头部裁剪与整 turn 移除）；
-  另有固定用例覆盖「同一帧两个调用点以不同 options 各持缓存槽」的引用稳定性。
+- 差分测试全绿（随机 append/upsert/delta/removed 序列 × 300 轮，含头部裁剪与整 turn 移除；
+  随机序列每轮把 `nowMs` 推进 1s，等价于 UI 每秒 tick，因此纯时钟路径被反复覆盖）；
+  另有固定用例覆盖「同一帧两个调用点以不同 options 各持缓存槽」的引用稳定性、
+  「时钟推进只重建运行中 turn（完成态 unit 引用稳定）」与「无运行中 turn 时时钟推进不重建任何
+  unit」。
 - `pnpm typecheck`、`pnpm lint`、`pnpm architecture:check --changed` 通过。

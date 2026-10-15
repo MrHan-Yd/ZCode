@@ -48,16 +48,38 @@ function createRenderUnitsCache(
   };
 }
 
+const EMPTY_TURN_ID_SET: ReadonlySet<string> = new Set();
+
+function materializeCachedUnits(cache: RenderUnitsCache): ConversationTurnRenderUnit[] {
+  return cache.turnOrder
+    .map((turnId) => cache.unitByTurnId.get(turnId))
+    .filter((unit): unit is ConversationTurnRenderUnit => unit !== undefined);
+}
+
+/**
+ * nowMs 的唯一消费点是运行中工时（`resolveConversationTurnWorkDurationMs` 与
+ * `resolveSegmentDurationMs` 都只在 running 时才读它），完成态 unit 的时长来自 header
+ * 时间戳，与时钟无关。所以 UI 每秒 tick 换 nowMs 时，只有 `isRunning` 的 turn 需要重建。
+ */
+function runningTurnIds(cache: RenderUnitsCache): ReadonlySet<string> {
+  const running = cache.turnOrder.filter(
+    (turnId) => cache.unitByTurnId.get(turnId)?.isRunning === true,
+  );
+  return running.length === 0 ? EMPTY_TURN_ID_SET : new Set(running);
+}
+
 function rebuildRenderUnitsIncremental(
   rows: readonly ConversationRow[],
   cache: RenderUnitsCache,
   nowMs: number | undefined,
   sessionPhase: SessionPhase | undefined,
+  additionalDirty: ReadonlySet<string> = EMPTY_TURN_ID_SET,
 ): { units: ConversationTurnRenderUnit[]; turnOrder: string[] } {
   // 1) 公共前缀/后缀 diff（引用比较）：变化区间内的行所属 turn 全部重建。
   //    tail window 滑动挤头、row.removed 裁尾、row.delta 换行引用都由这一步统一覆盖；
   //    snapshot 整体替换退化为全量重建（前缀后缀为 0）。
-  const dirty = new Set<string>();
+  //    additionalDirty 是行没有变化、但 unit 仍必须重建的 turn（时钟推进时的运行中轮）。
+  const dirty = new Set<string>(additionalDirty);
   const minLen = Math.min(rows.length, cache.rows.length);
   let prefix = 0;
   while (prefix < minLen && rows[prefix] === cache.rows[prefix]) {
@@ -137,13 +159,19 @@ export function createConversationTurnRenderUnitsBuilder(): ConversationTurnRend
     const sessionPhase = options.sessionPhase;
     // 捕获成 const：闭包内的回调里 `let` 的窄化会失效（TS18047）。
     const cache = renderUnitsCache;
-    if (cache !== null && cache.nowMs === nowMs && cache.sessionPhase === sessionPhase) {
-      if (cache.rows === rows) {
-        return cache.turnOrder
-          .map((turnId) => cache.unitByTurnId.get(turnId))
-          .filter((unit): unit is ConversationTurnRenderUnit => unit !== undefined);
+    if (cache !== null && cache.sessionPhase === sessionPhase) {
+      const nowMsChanged = cache.nowMs !== nowMs;
+      if (cache.rows === rows && !nowMsChanged) {
+        return materializeCachedUnits(cache);
       }
-      const rebuilt = rebuildRenderUnitsIncremental(rows, cache, nowMs, sessionPhase);
+      const clockDirty = nowMsChanged ? runningTurnIds(cache) : EMPTY_TURN_ID_SET;
+      // 行未变、又没有运行中的 turn：nowMs 只影响运行态工时，全部 unit 原引用复用，
+      // 只推进时钟基线——否则大会话每秒都要凭 O(rows) 重建整个已加载窗口。
+      if (cache.rows === rows && clockDirty.size === 0) {
+        renderUnitsCache = { ...cache, nowMs };
+        return materializeCachedUnits(cache);
+      }
+      const rebuilt = rebuildRenderUnitsIncremental(rows, cache, nowMs, sessionPhase, clockDirty);
       renderUnitsCache = {
         rows,
         nowMs,

@@ -225,6 +225,49 @@ test("sessionPhase 变化：退化为全量且结果一致", () => {
   assert.equal(incremental[0]?.isRunning, streaming[0]?.isRunning);
 });
 
+test("nowMs 推进（UI 每秒 tick）且行未变：只重建运行中的 turn，完成态引用稳定", () => {
+  // nowMs 是 ConversationTimeline 每秒 tick 的 UI 时钟，只喂「工作中 N 秒」的运行中工时。
+  // 时钟推进不能把已加载的全部 turn 拖回全量重建，但运行中 turn 必须跟着重建。
+  const settled = "turn-settled";
+  const active = "turn-active";
+  const build = createConversationTurnRenderUnitsBuilder();
+  const rows = [
+    turnHeader(settled, "completedSuccess"),
+    userInput(settled, "q1"),
+    assistantText(settled, "a1", "complete"),
+    turnHeader(active, "running"),
+    userInput(active, "q2"),
+    assistantText(active, "streaming...", "streaming"),
+  ];
+  const first = build(rows, { nowMs: 1_767_225_600_000 + 1_000 });
+  const second = build(rows, { nowMs: 1_767_225_600_000 + 2_000 });
+
+  assertUnitsEqual(
+    second,
+    buildConversationTurnRenderUnitsUncached(rows, { nowMs: 1_767_225_600_000 + 2_000 }),
+  );
+  const settledFirst = first.find((unit) => unit.turnId === settled);
+  const settledSecond = second.find((unit) => unit.turnId === settled);
+  assert.equal(settledSecond, settledFirst, "完成态 turn 的 unit 应跨时钟 tick 保持引用稳定");
+  const activeFirst = first.find((unit) => unit.turnId === active);
+  const activeSecond = second.find((unit) => unit.turnId === active);
+  assert.notEqual(activeSecond, activeFirst, "运行中 turn 的 unit 应随时钟重建");
+});
+
+test("行未变、也没有运行中的 turn 时推进 nowMs：全部 unit 引用稳定", () => {
+  const t1 = "turn-1";
+  const build = createConversationTurnRenderUnitsBuilder();
+  const rows = [
+    turnHeader(t1, "completedSuccess"),
+    userInput(t1, "q"),
+    assistantText(t1, "a", "complete"),
+  ];
+  const first = build(rows, { nowMs: 1_000 });
+  const second = build(rows, { nowMs: 2_000 });
+  assert.deepEqual(second, first);
+  assert.equal(second[0], first[0], "无运行中 turn 时时钟推进不应重建任何 unit");
+});
+
 test("随机混合操作序列：增量与全量逐步一致（300 轮）", () => {
   // 确定性伪随机：固定种子，失败可复现。
   let seed = 0x51ed270b;
@@ -281,7 +324,9 @@ test("随机混合操作序列：增量与全量逐步一致（300 轮）", () =
     }
 
     const sessionPhase = phases[random(phases.length)];
-    const options = { sessionPhase };
+    // nowMs 每轮推进 1s：等价于 ConversationTimeline 的每秒 tick，保证纯时钟路径
+    // （行未变、只有 nowMs 变化）在随机序列里被反复覆盖。
+    const options = { sessionPhase, nowMs: 1_767_225_600_000 + round * 1_000 };
     const baseline = buildConversationTurnRenderUnitsUncached(rows, options);
     const incremental = build(rows, options);
     assertUnitsEqual(incremental, baseline);

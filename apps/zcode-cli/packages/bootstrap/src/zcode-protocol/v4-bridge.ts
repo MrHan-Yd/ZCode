@@ -1841,31 +1841,51 @@ export function createConversationV4Gateway(
             }
           : {}),
       });
-      // live ModelComplete.fileChanges 只存在于内存事件；cold merge 以持久
-      // transcript 为正文权威时会压掉该事件，而 transcript 本身没有文件摘要字段。
-      // workspace checkpoint + artifact 才是跨进程持久事实，这里按 user messageId
-      // 重建摘要，再交给 transcript hydration 合成同构 ModelComplete。
-      const fileChangeSummariesByMessageId = await buildColdFileChangeSummaries({
-        events: source.memoryEvents,
-        messageIds: source.messages.map((message) => String(message.info.id)),
-        readArtifact: async (snapshotRef) =>
-          (await record.app.readToolResultArtifact(snapshotRef)).content,
-        onArtifactError: (messageId, error) =>
-          context.logger?.warn("v4 cold file change artifact read failed", {
-            error: error instanceof Error ? error.message : String(error),
-            event: "zcode_protocol.v4.hydrate_file_changes_failed",
-            messageId,
-            module: "bootstrap.zcode_protocol",
-            sessionId,
-          }),
-      });
+      // 三段冷恢复查询彼此没有依赖，并发启动：file change 摘要要读 artifact 并做逐文件
+      // 差分，usage 种子要对全部 messages 做一次 token 估算，子会话种子要查 session store。
+      // 首帧必须等整个 loadPersistedEvents 返回，串行执行会把后两段完整堆在前一段之后；
+      // 并发只是让它们与最慢的一段重叠，取数顺序与结果都不变。
+      //
       // 冷恢复 transcript 不保存模型能力，旧 hydration 自行填 20 万；
       // provider registry 已在 resume 前同步完成，应按恢复/退避后的当前模型精确取值。
       const contextWindow = resolveSessionModelContextWindow(context, record);
-      const usageSeed = sessionUsageSeedFromRuntimeContextUsage(
-        await readSessionContextUsage(context, sessionId, source.messages),
-        contextWindow,
-      );
+      const [fileChangeSummariesByMessageId, contextUsage, subagents] = await Promise.all([
+        // live ModelComplete.fileChanges 只存在于内存事件；cold merge 以持久
+        // transcript 为正文权威时会压掉该事件，而 transcript 本身没有文件摘要字段。
+        // workspace checkpoint + artifact 才是跨进程持久事实，这里按 user messageId
+        // 重建摘要，再交给 transcript hydration 合成同构 ModelComplete。
+        buildColdFileChangeSummaries({
+          events: source.memoryEvents,
+          messageIds: source.messages.map((message) => String(message.info.id)),
+          readArtifact: async (snapshotRef) =>
+            (await record.app.readToolResultArtifact(snapshotRef)).content,
+          onArtifactError: (messageId, error) =>
+            context.logger?.warn("v4 cold file change artifact read failed", {
+              error: error instanceof Error ? error.message : String(error),
+              event: "zcode_protocol.v4.hydrate_file_changes_failed",
+              messageId,
+              module: "bootstrap.zcode_protocol",
+              sessionId,
+            }),
+          // 大文件整段重写会让合并差分触及 5s timeout 并返回 undefined。此时退回逐次写入
+          // 的行数（不是 0/0），但要在日志里留痕，否则「行数口径变了」永远不可观测。
+          onConsolidatedPatchUnavailable: (messageId, path) =>
+            context.logger?.warn("v4 cold file change diff unavailable, fell back", {
+              event: "zcode_protocol.v4.hydrate_file_changes_diff_unavailable",
+              messageId,
+              module: "bootstrap.zcode_protocol",
+              path,
+              sessionId,
+            }),
+        }),
+        readSessionContextUsage(context, sessionId, source.messages),
+        // transcript 可恢复 Agent row，却不能证明 child session 已经落库。
+        // 这里在 gateway 的 raw-event buffer 补回前生成校验种子，既排除旧幽灵引用，
+        // 又避免异步查询覆盖 seed 之后新到达的 live spawn/stop。并发不改变这一点：
+        // await 仍在 gateway 重放 buffer 之前完成。
+        listSessionSubagents(context, { sessionId, endedLimit: 1 }, persistedMessages),
+      ]);
+      const usageSeed = sessionUsageSeedFromRuntimeContextUsage(contextUsage, contextWindow);
       const merged = mergeColdConversationEvents({
         contextWindow,
         fileChangeSummariesByMessageId,
@@ -1894,14 +1914,6 @@ export function createConversationV4Gateway(
           log?.debug("v4 hydrate merged duplicate cold facts", fields);
         }
       }
-      // transcript 可恢复 Agent row，却不能证明 child session 已经落库。
-      // 这里在 gateway 的 raw-event buffer 补回前生成校验种子，既排除旧幽灵引用，
-      // 又避免异步查询覆盖 seed 之后新到达的 live spawn/stop。
-      const subagents = await listSessionSubagents(
-        context,
-        { sessionId, endedLimit: 1 },
-        persistedMessages,
-      );
       return {
         events: merged.events,
         // 与合成事件共用本次查询结果；不在后续回填阶段重新读取另一份容量。

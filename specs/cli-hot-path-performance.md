@@ -60,6 +60,29 @@ Glob 10 组 pattern 与 JS 回退 Grep 8 组请求的完整结果（剥离 `dura
   - 冻结后命中缓存的调用方无法就地污染（已由测试断言 `push` 抛错后结果仍正确）。
 - **实测**（一次工具调用内的 7 次解析）：简单命令 14.8µs → 0.1µs；9k heredoc 110µs → 0µs。
 
+### 3. 冷恢复三段查询并发（`apps/zcode-cli/packages/bootstrap/src/zcode-protocol/v4-bridge.ts`）
+
+冷订阅首帧必须等 `loadPersistedEvents` 整个返回，而它内部依次 `await` 了三段互不依赖的只读查询：
+
+1. `buildColdFileChangeSummaries`——按 workspace checkpoint 读 artifact 并做逐文件差分；
+2. `readSessionContextUsage`——对全部 messages 做一次 token 估算（O(transcript)）；
+3. `listSessionSubagents`——查 session store 的子会话 manifest。
+
+后两段与第一段没有依赖，串行执行会把它们**完整堆在**最贵的差分工作之后，等于是首帧延迟的净增量。
+改为 `Promise.all` 并发，只让它们与最慢的一段重叠。
+
+- **硬约束：输出不变。** 三段都是只读查询，入参分别是 `source.memoryEvents` / `source.messages` /
+  `persistedMessages` 这些已定型的快照；并发不改变任何返回值，`usageSeed`、`subagentsSeed`、
+  `merged.events` 与改动前逐字段相等。
+- **不变量：种子仍早于 buffer 重放。** `listSessionSubagents` 的种子必须在 gateway 重放
+  raw-event buffer **之前**生成（否则异步查询会覆盖 seed 之后新到达的 live spawn/stop）。
+  `Promise.all` 仍在 `loadPersistedEvents` 返回前完成，重放发生在 `hydratePublisher` 里更晚的
+  位置，该顺序不变。
+- **未改动**：未把用量/子会话种子改成「首帧后补种」。publisher 的 `seedUsage` / `seedSubagents`
+  按设计**不产 delta**（`conversation-topic-publisher.ts`），首帧后才补种会让订阅方收不到这两个
+  种子；而 `seedSubagents` 是整体替换 manifest，迟到到 live 之后反而会丢掉刚 spawn 的子会话。
+  并发方案在不改协议语义的前提下拿到了同样的「不额外串行」效果。
+
 ## 回退的改动（实测前提不成立）
 
 ### `estimateTokens` 改为码元计数 —— 真实负载下更慢，已回退
@@ -108,4 +131,7 @@ V8 的正则对**纯 ASCII 文本快速拒绝且零分配**；而手写 `charCod
 ## 验收
 
 - 差分测试 13 个用例全绿（见上）。
+- 冷恢复三段查询并发的结果等价性由「三段均为只读 + 入参已定型」论证；该路径没有单元测试安全网
+  （`apps/zcode-cli` 仅 4 个测试文件，且不覆盖冷订阅），因此**未做实测计时**——量级估计见
+  `specs/session-open-loading-state.md` 的说明。
 - `pnpm typecheck`、`pnpm lint`、`pnpm architecture:check --changed` 结果见提交说明。

@@ -29,6 +29,22 @@ interface WorkspaceCheckpointWithTurn {
 
 type ReadArtifact = (snapshotRef: string) => Promise<string>;
 
+/**
+ * 合并 before→after 的单一差分。
+ *
+ * `diff` 的 `timeout` / `maxEditLength` 命中时 **返回 `undefined`**（见 diff 的
+ * `TimeoutOption` 文档），不是返回空 hunks。调用方必须把 undefined 当成「差分不可得」，
+ * 退回逐次写入的 structuredPatch；吞成 `[]` 会让 `countPatchLines` 得到 0/0，
+ * 等于对一个确实被改过的文件宣称「没有改动」——静默错值。大文件整段重写正是这个场景。
+ */
+type CreateConsolidatedPatch = (
+  path: string,
+  beforeContent: string,
+  afterContent: string,
+) => DiffHunk[] | undefined;
+
+const CONSOLIDATED_PATCH_TIMEOUT_MS = 5_000;
+
 function isSplitProductTurnId(turnId: string | null | undefined): boolean {
   return Boolean(turnId?.includes("~"));
 }
@@ -123,6 +139,8 @@ function readModelCompleteFileChangesFallback(
 async function aggregateWorkspaceCheckpoints(
   checkpoints: readonly WorkspaceCheckpointWithTurn[],
   readArtifact: ReadArtifact,
+  createConsolidatedPatch: CreateConsolidatedPatch = createFinalPatch,
+  onConsolidatedPatchUnavailable?: (path: string) => void,
 ): Promise<V4ConversationFileChangesResult> {
   const byPath = new Map<string, FileChangeAggregate>();
 
@@ -159,17 +177,23 @@ async function aggregateWorkspaceCheckpoints(
 
   const items = Array.from(byPath.values())
     .map((entry) => {
-      const patches =
+      const consolidated =
         entry.afterContent === undefined
-          ? entry.patches
-          : createFinalPatch(entry.path, entry.beforeContent ?? "", entry.afterContent);
+          ? undefined
+          : createConsolidatedPatch(entry.path, entry.beforeContent ?? "", entry.afterContent);
+      if (entry.afterContent !== undefined && consolidated === undefined) {
+        // 差分不可得（超时/超出编辑距离）。退回逐次写入的口径：宁可报逐次相加的行数，
+        // 也不能报 0/0——那是在宣称这个文件没有改动。
+        onConsolidatedPatchUnavailable?.(entry.path);
+      }
+      const patches = consolidated ?? entry.patches;
       const stat =
-        entry.afterContent === undefined
+        consolidated === undefined
           ? {
               additions: entry.fallbackAdditions,
               deletions: entry.fallbackDeletions,
             }
-          : countPatchLines(patches);
+          : countPatchLines(consolidated);
       return {
         path: entry.path,
         additions: stat.additions,
@@ -194,13 +218,21 @@ export async function readConversationFileChangesFromEvents(input: {
   messageIds: readonly string[];
   readArtifact: ReadArtifact;
   targetTurnId?: TurnId | null;
+  /** 测试/闸门注入点：默认用带 timeout 的真实差分。 */
+  createConsolidatedPatch?: CreateConsolidatedPatch;
+  onConsolidatedPatchUnavailable?: (path: string) => void;
 }): Promise<V4ConversationFileChangesResult> {
   const checkpoints = selectWorkspaceCheckpointsForFileSummary(
     input.events,
     input.messageIds,
     input.targetTurnId,
   );
-  const result = await aggregateWorkspaceCheckpoints(checkpoints, input.readArtifact);
+  const result = await aggregateWorkspaceCheckpoints(
+    checkpoints,
+    input.readArtifact,
+    input.createConsolidatedPatch,
+    input.onConsolidatedPatchUnavailable,
+  );
   if (result.items.length > 0) return result;
   return (
     readModelCompleteFileChangesFallback(input.events, input.targetTurnId) ?? {
@@ -217,6 +249,9 @@ export async function buildColdFileChangeSummaries(input: {
   messageIds: readonly string[];
   onArtifactError?: (messageId: string, error: unknown) => void;
   readArtifact: ReadArtifact;
+  /** 测试/闸门注入点：默认用带 timeout 的真实差分。 */
+  createConsolidatedPatch?: CreateConsolidatedPatch;
+  onConsolidatedPatchUnavailable?: (messageId: string, path: string) => void;
 }): Promise<ReadonlyMap<string, TurnFileChangeSummary>> {
   const durableMessageIds = new Set(input.messageIds);
   const checkpointsByMessageId = new Map<string, WorkspaceCheckpointWithTurn[]>();
@@ -240,7 +275,14 @@ export async function buildColdFileChangeSummaries(input: {
         if (!group) continue;
         const [messageId, checkpoints] = group;
         try {
-          const result = await aggregateWorkspaceCheckpoints(checkpoints, input.readArtifact);
+          const result = await aggregateWorkspaceCheckpoints(
+            checkpoints,
+            input.readArtifact,
+            input.createConsolidatedPatch,
+            input.onConsolidatedPatchUnavailable
+              ? (path) => input.onConsolidatedPatchUnavailable?.(messageId, path)
+              : undefined,
+          );
           if (result.items.length === 0) continue;
           summaries.set(messageId, {
             additions: result.additions,
@@ -263,12 +305,16 @@ export async function buildColdFileChangeSummaries(input: {
   return summaries;
 }
 
-function createFinalPatch(path: string, beforeContent: string, afterContent: string): DiffHunk[] {
-  return (
-    structuredPatch(path, path, beforeContent, afterContent, undefined, undefined, {
-      timeout: 5_000,
-    })?.hunks ?? []
-  );
+function createFinalPatch(
+  path: string,
+  beforeContent: string,
+  afterContent: string,
+): DiffHunk[] | undefined {
+  // 命中 timeout 时 structuredPatch 返回 undefined（diff 的 TimeoutOption）；
+  // 这里必须原样透出，不能 `?? []` 把它变成「没有改动」。
+  return structuredPatch(path, path, beforeContent, afterContent, undefined, undefined, {
+    timeout: CONSOLIDATED_PATCH_TIMEOUT_MS,
+  })?.hunks;
 }
 
 function resolveCheckpointAfterContent(
