@@ -1846,6 +1846,10 @@ export function createConversationV4Gateway(
       // 首帧必须等整个 loadPersistedEvents 返回，串行执行会把后两段完整堆在前一段之后；
       // 并发只是让它们与最慢的一段重叠，取数顺序与结果都不变。
       //
+      // 这批轮本该有 fileChanges 却没算出来（artifact 读失败 / 旧形状解析失败）。
+      // 投影在 files === 0 时刻意不挂 fileChanges，客户端因此无法自行区分「没改文件」与
+      // 「摘要缺失」；把失败集合显式下发给客户端，它才能只对这些轮按需回填而不是普发 RPC。
+      const fileChangeSummaryUnavailableMessageIds = new Set<string>();
       // 冷恢复 transcript 不保存模型能力，旧 hydration 自行填 20 万；
       // provider registry 已在 resume 前同步完成，应按恢复/退避后的当前模型精确取值。
       const contextWindow = resolveSessionModelContextWindow(context, record);
@@ -1859,14 +1863,16 @@ export function createConversationV4Gateway(
           messageIds: source.messages.map((message) => String(message.info.id)),
           readArtifact: async (snapshotRef) =>
             (await record.app.readToolResultArtifact(snapshotRef)).content,
-          onArtifactError: (messageId, error) =>
+          onArtifactError: (messageId, error) => {
+            fileChangeSummaryUnavailableMessageIds.add(messageId);
             context.logger?.warn("v4 cold file change artifact read failed", {
               error: error instanceof Error ? error.message : String(error),
               event: "zcode_protocol.v4.hydrate_file_changes_failed",
               messageId,
               module: "bootstrap.zcode_protocol",
               sessionId,
-            }),
+            });
+          },
           // 大文件整段重写会让合并差分触及 5s timeout 并返回 undefined。此时退回逐次写入
           // 的行数（不是 0/0），但要在日志里留痕，否则「行数口径变了」永远不可观测。
           onConsolidatedPatchUnavailable: (messageId, path) =>
@@ -1918,6 +1924,7 @@ export function createConversationV4Gateway(
         events: merged.events,
         // 与合成事件共用本次查询结果；不在后续回填阶段重新读取另一份容量。
         usageSeed,
+        fileChangeSummaryUnavailableMessageIds: [...fileChangeSummaryUnavailableMessageIds],
         // gateway 旧字段名仍叫 synthesized；这里表示投影已由 durable
         // transcript 重物化，需替换 ingest 抢先建的 cold publisher。
         synthesized: merged.usedDurableTranscript,

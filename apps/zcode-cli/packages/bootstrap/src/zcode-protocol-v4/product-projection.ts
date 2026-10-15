@@ -640,6 +640,37 @@ export class ProductProjection {
     };
   }
 
+  /**
+   * 冷恢复时没能算出文件变更摘要的轮。
+   *
+   * 输入是**该轮的用户 messageId**（checkpoint 按它归档，也是冷恢复算摘要的键）。客户端只有
+   * row 上的 turnId，因此这里解析成 turnId 再下发。两条解析路径都要留：
+   * - `rowIdForMessageId`：普通轮有可见 user 行，messageId 存在行索引里；
+   * - 直接按 turnId 命中：有持久消息的轮 productTurnId 就是该 messageId（见
+   *   `getMessageIdsForTurnRow` 的注释），model-only 轮不生成可见 user 行，只能这样兜。
+   *
+   * 与 sharedContextImport 同类：静态只读派生元数据，不进 delta/revision，幂等补种。
+   */
+  seedFileChangeSummaryUnavailable(messageIds: readonly string[]): void {
+    const knownTurnIds = new Set(this.snapshot.rows.window.map((row) => row.turnId));
+    const turnIds = new Set<string>();
+    for (const messageId of messageIds) {
+      const rowId = this.rowIdForMessageId(messageId);
+      const row = rowId === null ? undefined : this.findRow(rowId);
+      if (row) {
+        turnIds.add(row.turnId);
+        continue;
+      }
+      if (knownTurnIds.has(messageId)) turnIds.add(messageId);
+    }
+    const next = [...turnIds].sort();
+    const current = this.snapshot.fileChangeSummaryUnavailableTurnIds ?? [];
+    if (current.length === next.length && current.every((id, index) => id === next[index])) {
+      return;
+    }
+    this.snapshot = { ...this.snapshot, fileChangeSummaryUnavailableTurnIds: next };
+  }
+
   seedUsage(seed: SessionUsageSeed): void {
     const current = this.snapshot.usage;
     const currentContextWindow = current.contextWindow;

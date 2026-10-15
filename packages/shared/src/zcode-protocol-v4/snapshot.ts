@@ -484,6 +484,12 @@ export const conversationSnapshotSchema = z.object({
   meta: sessionMetaStateSchema.default({ title: "", titleSource: "default" }),
   // Additive：旧 CLI/旧快照不带该字段时仍按普通会话处理。
   sharedContextImport: sharedContextImportStateSchema.optional(),
+  // 冷恢复时**本该有**文件变更摘要、却因 artifact 读失败或旧形状解析失败而没算出来的轮。
+  // 投影刻意在 files === 0 时不挂 fileChanges，所以客户端无法从「没有 fileChanges」
+  // 反推「这轮改过文件」；必须由这里显式说明，客户端才能只对这些轮发起按需回填，
+  // 而不是给每个无变更的轮都发一次 RPC。
+  // 与 sharedContextImport 同类：静态只读派生元数据，不进 delta/revision，幂等补种。
+  fileChangeSummaryUnavailableTurnIds: z.array(z.string()).optional(),
   config: sessionConfigStateSchema,
   // 持久化稳定事实供 live 客户端识别一次性提示；旧快照缺字段时不触发。
   modelTransition: sessionModelTransitionSchema.nullable().default(null),

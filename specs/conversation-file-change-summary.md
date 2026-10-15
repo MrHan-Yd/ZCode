@@ -51,6 +51,43 @@ workspace checkpoint + artifact 重建摘要（`buildColdFileChangeSummaries`）
 代价是多次写入同一文件时行数为逐次相加（可能不等于净 before→after），这是该兜底路径既有的
 既有口径，优于宣称 0。
 
+## 缺口清单与按需回填
+
+摘要算不出来时，那一轮**看不到也回退不了**文件变更——预览卡片只管 md/html 文件链接，救不了这条
+路径。所以要让它可恢复。但客户端**无法自行判断该不该恢复**：
+
+投影刻意在 `files === 0` 时不给 turnHeader 挂 `fileChanges`（`product-projection.ts` 的
+`payload.fileChanges.files > 0` 门），于是「没有 fileChanges」既可能是真的没改文件，也可能是摘要
+没算出来。所有看似可用的替代信号都是从这个缺失字段派生的（`canRewindFiles` ← `fileChanges.state
+=== "active"`），按 `toolName` 猜「这轮写过文件」又是本协议明确要消灭的嗅探。因此若不做显式信号，
+UI 只能对**每一个**没有 fileChanges 的轮发一次 RPC——那是个风暴，且绝大多数是白发的。
+
+**信号**：`snapshot.fileChangeSummaryUnavailableTurnIds`（additive、optional，客户端拿到的 turnId
+列表）。与 `sharedContextImport` 同类：静态只读派生元数据，**不进 delta/revision**，hydrate 时幂等
+补种，因此它随首帧快照到达，不需要 delta 投递。
+
+**链路**：
+
+```text
+bridge: onArtifactError(messageId) ──► fileChangeSummaryUnavailableMessageIds
+   └─ loadPersistedEvents 返回值 ──► gateway.seedFileChangeSummaryUnavailable
+        └─ publisher.seedFileChangeSummaryUnavailable ──► projection 解析 messageId → turnId
+             └─ snapshot.fileChangeSummaryUnavailableTurnIds ──► 首帧快照 ──► UI
+```
+
+**投影的解析**（`seedFileChangeSummaryUnavailable`）留两条路径：`rowIdForMessageId`（普通轮有可见
+user 行），以及直接按 turnId 命中（有持久消息的轮 productTurnId 就是该 messageId；model-only 轮没有
+可见 user 行，只能这样兜）。解析不出来的 messageId 静默跳过——它本来就没有对应可见轮。
+
+**客户端规则**（`useTurnFileChangeSummaryBackfill` + `turnFileChangeSummaryBackfillModel`）：仅当
+「在缺口清单里 **且** header 没有 fileChanges **且** 轮已终态 **且** 具备 rowId/entityId **且** 宿主
+提供取数能力」才发一次请求，复用既有 `conversationFileChanges` RPC 与 SessionPane 的
+`fileChangesRequestCache`（终态结果按 logEpoch/rowId/entityId 缓存，虚拟行复挂载不重复取数）。
+
+**不变量**：回填出来的轮必须与正常 hydrate 的轮不可区分——`files > 0` 时补 `state: "active"`（与投影
+同口径），`files === 0` 不补 state（不把没改文件的轮说成可回退）。回填失败只记 warn，UI 保持「没有该
+胶囊」，不抛。
+
 ## 接口
 
 ```ts
@@ -72,6 +109,9 @@ type CreateConsolidatedPatch = (
 - 单测 `apps/zcode-cli/packages/bootstrap/test/coldFileChangeSummaryFallback.test.ts`：
   差分注入 `undefined` 时行数退回 stored patch（+2 −1，非 0/0）且留痕一次；差分可得时用合并结果
   且不留痕。
+- 单测 `packages/ui/test/turnFileChangeSummaryBackfill.test.ts`：只有缺口清单里的终态轮才回填，
+  不在清单里的轮/已有 hydration 摘要的轮/运行中的轮/缺定位或缺取数能力的轮一律不回填；结果映射
+  在 `files > 0` 时补 `active`、`reverted` 原样保留、`files === 0` 不补 state。
 - 真实 `diff` 库的超时返回 `undefined` 行为已单独验证（见上）。
 - `pnpm typecheck`、`apps/zcode-cli/packages/bootstrap` 的 `tsc --noEmit`、
-  `pnpm lint`、`pnpm architecture:check --changed`、bootstrap 全部测试均通过。
+  `pnpm lint`、`pnpm architecture:check --changed`、UI 与 bootstrap 全部测试均通过。

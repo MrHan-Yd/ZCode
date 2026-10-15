@@ -179,6 +179,12 @@ interface PersistedEventsLoadResult {
   sourceEventSeq?: number;
   /** 与本次历史事件使用同一容量的种子；null 表示已查询但没有历史水位。 */
   usageSeed?: SessionUsageSeed | null;
+  /**
+   * 本轮本想算出文件变更摘要、却读写 artifact 失败的轮（用户 messageId）。
+   * 投影刻意在 files === 0 时不挂 fileChanges，客户端无法自行区分「没改文件」与
+   * 「摘要缺失」，所以必须显式下发这份缺口清单。
+   */
+  fileChangeSummaryUnavailableMessageIds?: readonly string[];
 }
 
 type V4GatewayErrorContext = Record<string, unknown>;
@@ -3016,6 +3022,7 @@ export class ConversationV4Gateway {
       if (loaded.sharedContextImport) {
         latestPublisher.seedSharedContextImport(loaded.sharedContextImport);
       }
+      this.seedFileChangeSummaryUnavailable(latestPublisher, loaded);
       await this.seedPublisherUsage(
         sessionId,
         latestPublisher,
@@ -3052,6 +3059,7 @@ export class ConversationV4Gateway {
       publisher.seedSharedContextImport(loaded.sharedContextImport);
     }
     if (loaded.subagentsSeed) publisher.seedSubagents(loaded.subagentsSeed);
+    this.seedFileChangeSummaryUnavailable(publisher, loaded);
     // 同次恢复的种子先应用，再补 live buffer；较新的使用量和选模事件始终获胜。
     if (loaded.usageSeed) publisher.seedUsage(loaded.usageSeed);
     const sourceEventSeq = Math.max(
@@ -3278,6 +3286,19 @@ export class ConversationV4Gateway {
    */
   private hasLiveConversation(sessionId: string): boolean {
     return this.host.sessionExists(sessionId) || this.detachedLiveSessions.has(sessionId);
+  }
+
+  /**
+   * 补种「冷恢复算不出文件变更摘要的轮」。空清单直接返回：补种会重算 wire 字节上界，
+   * 而没有缺口时这笔计算是纯浪费（绝大多数会话都是这条路径）。
+   */
+  private seedFileChangeSummaryUnavailable(
+    publisher: ConversationTopicPublisher,
+    loaded: PersistedEventsLoadResult,
+  ): void {
+    const messageIds = loaded.fileChangeSummaryUnavailableMessageIds;
+    if (!messageIds || messageIds.length === 0) return;
+    publisher.seedFileChangeSummaryUnavailable(messageIds);
   }
 
   private async seedPublisherUsage(

@@ -381,6 +381,15 @@ export class ConversationTopicPublisher {
     this.wireSnapshotBytesUpperBound = this.measureWireSnapshotBytes(this.getWireSnapshot());
   }
 
+  /**
+   * 冷恢复算不出文件变更摘要的轮（入参是该轮的用户 messageId，投影解析成 turnId 后下发）。
+   * 同 seedSharedContextImport：静态只读派生元数据，不产 delta、不进 revision。
+   */
+  seedFileChangeSummaryUnavailable(messageIds: readonly string[]): void {
+    this.projection.seedFileChangeSummaryUnavailable(messageIds);
+    this.wireSnapshotBytesUpperBound = this.measureWireSnapshotBytes(this.getWireSnapshot());
+  }
+
   /** usage 种子注入：冷恢复用持久化 token 水位覆盖 transcript 合成的 0 占位。 */
   seedUsage(seed: SessionUsageSeed): void {
     this.projection.seedUsage(seed);
