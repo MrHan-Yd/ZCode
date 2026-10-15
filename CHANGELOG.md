@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.17.9](https://github.com/MrHan-Yd/ZCode/compare/v3.17.8...v3.17.9) (2026-10-15)
+
+### Features
+
+* **ui:** 聊天文件链接支持跳转到标注行 ([c469c8c](https://github.com/MrHan-Yd/ZCode/commit/c469c8cac545aa308d3bbbc23e12b1059de3745d))
+  * 点击带行号的链接改为打开内置查看器并定位到该行（滚动居中 + 高亮），复用
+  * 行号不参与 tab 身份：同一文件重复点击复用同一 tab 并替换 source，重新定位靠每次
+  * 目标行超出文件行数时不定位，顶部提示目标行不存在，不再静默无反应
+  * 芯片悬停提示补上行号，正文标签仍按模型写的原文显示
+  * 新增 specs/markdown-file-link-line-anchor.md 与 fileLineAnchor 单测
+
 ## [3.17.8](https://github.com/MrHan-Yd/ZCode/compare/v3.17.7...v3.17.8) (2026-10-14)
 
 ### Features
