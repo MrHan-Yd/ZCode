@@ -575,6 +575,29 @@ export function createConversationV4Gateway(
   const log = createProtocolLogger(context.deps)?.child({
     module: "bootstrap.zcode_protocol_v4_gateway",
   });
+  /**
+   * 只观测、不改行为：把一段冷恢复查询的耗时打到 debug 通道。
+   *
+   * 三段查询并发之后，「把文件变更摘要收敛到尾窗」只在 file-changes 是并发块里最长的那段时
+   * 才有价值；只量它自己会误导，所以三段一起量，一次日志就能看出谁在拖首帧。
+   * 按 AGENTS.md，debug 生产不落盘——要读这些数得在 `pnpm dev:desktop` / `dev:web` 下抓 stderr。
+   */
+  const timedStep = async <T>(
+    step: string,
+    fields: Record<string, unknown>,
+    run: () => Promise<T>,
+  ): Promise<T> => {
+    const startedAt = performance.now();
+    try {
+      return await run();
+    } finally {
+      log?.debug("v4 hydrate step duration", {
+        ...fields,
+        durationMs: Math.round(performance.now() - startedAt),
+        step,
+      });
+    }
+  };
   const persistentCommands = new PersistentCommandIndex({
     loadSession: async (sessionId) => {
       const live = context.sessions.get(sessionId);
@@ -1853,43 +1876,50 @@ export function createConversationV4Gateway(
       // 冷恢复 transcript 不保存模型能力，旧 hydration 自行填 20 万；
       // provider registry 已在 resume 前同步完成，应按恢复/退避后的当前模型精确取值。
       const contextWindow = resolveSessionModelContextWindow(context, record);
+      const messageCount = source.messages.length;
       const [fileChangeSummariesByMessageId, contextUsage, subagents] = await Promise.all([
         // live ModelComplete.fileChanges 只存在于内存事件；cold merge 以持久
         // transcript 为正文权威时会压掉该事件，而 transcript 本身没有文件摘要字段。
         // workspace checkpoint + artifact 才是跨进程持久事实，这里按 user messageId
         // 重建摘要，再交给 transcript hydration 合成同构 ModelComplete。
-        buildColdFileChangeSummaries({
-          events: source.memoryEvents,
-          messageIds: source.messages.map((message) => String(message.info.id)),
-          readArtifact: async (snapshotRef) =>
-            (await record.app.readToolResultArtifact(snapshotRef)).content,
-          onArtifactError: (messageId, error) => {
-            fileChangeSummaryUnavailableMessageIds.add(messageId);
-            context.logger?.warn("v4 cold file change artifact read failed", {
-              error: error instanceof Error ? error.message : String(error),
-              event: "zcode_protocol.v4.hydrate_file_changes_failed",
-              messageId,
-              module: "bootstrap.zcode_protocol",
-              sessionId,
-            });
-          },
-          // 大文件整段重写会让合并差分触及 5s timeout 并返回 undefined。此时退回逐次写入
-          // 的行数（不是 0/0），但要在日志里留痕，否则「行数口径变了」永远不可观测。
-          onConsolidatedPatchUnavailable: (messageId, path) =>
-            context.logger?.warn("v4 cold file change diff unavailable, fell back", {
-              event: "zcode_protocol.v4.hydrate_file_changes_diff_unavailable",
-              messageId,
-              module: "bootstrap.zcode_protocol",
-              path,
-              sessionId,
-            }),
-        }),
-        readSessionContextUsage(context, sessionId, source.messages),
+        timedStep("file-changes", { messageCount, sessionId }, () =>
+          buildColdFileChangeSummaries({
+            events: source.memoryEvents,
+            messageIds: source.messages.map((message) => String(message.info.id)),
+            readArtifact: async (snapshotRef) =>
+              (await record.app.readToolResultArtifact(snapshotRef)).content,
+            onArtifactError: (messageId, error) => {
+              fileChangeSummaryUnavailableMessageIds.add(messageId);
+              context.logger?.warn("v4 cold file change artifact read failed", {
+                error: error instanceof Error ? error.message : String(error),
+                event: "zcode_protocol.v4.hydrate_file_changes_failed",
+                messageId,
+                module: "bootstrap.zcode_protocol",
+                sessionId,
+              });
+            },
+            // 大文件整段重写会让合并差分触及 5s timeout 并返回 undefined。此时退回逐次写入
+            // 的行数（不是 0/0），但要在日志里留痕，否则「行数口径变了」永远不可观测。
+            onConsolidatedPatchUnavailable: (messageId, path) =>
+              context.logger?.warn("v4 cold file change diff unavailable, fell back", {
+                event: "zcode_protocol.v4.hydrate_file_changes_diff_unavailable",
+                messageId,
+                module: "bootstrap.zcode_protocol",
+                path,
+                sessionId,
+              }),
+          }),
+        ),
+        timedStep("context-usage", { messageCount, sessionId }, () =>
+          readSessionContextUsage(context, sessionId, source.messages),
+        ),
         // transcript 可恢复 Agent row，却不能证明 child session 已经落库。
         // 这里在 gateway 的 raw-event buffer 补回前生成校验种子，既排除旧幽灵引用，
         // 又避免异步查询覆盖 seed 之后新到达的 live spawn/stop。并发不改变这一点：
         // await 仍在 gateway 重放 buffer 之前完成。
-        listSessionSubagents(context, { sessionId, endedLimit: 1 }, persistedMessages),
+        timedStep("subagents", { sessionId }, () =>
+          listSessionSubagents(context, { sessionId, endedLimit: 1 }, persistedMessages),
+        ),
       ]);
       const usageSeed = sessionUsageSeedFromRuntimeContextUsage(contextUsage, contextWindow);
       const merged = mergeColdConversationEvents({
