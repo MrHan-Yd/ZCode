@@ -27,6 +27,7 @@ import {
   type SessionContextMaterial,
   type TranscriptChunk,
 } from "../../session-context/read-session-context.js";
+import { generateAuxiliaryText } from "../../runtime/helpers/auxiliary-text-generation.js";
 import type { ToolEntry, ToolExecutionContext, ToolHandler } from "../types.js";
 import { auxiliaryModelOptions } from "../../model/auxiliary-model-options.js";
 
@@ -331,7 +332,7 @@ async function generateLiteExtraction(input: {
       traceContext: traceFromContext(input.context),
     },
     () =>
-      model.generateText({
+      generateAuxiliaryText(model, {
         messages,
         tools: [],
         options: {

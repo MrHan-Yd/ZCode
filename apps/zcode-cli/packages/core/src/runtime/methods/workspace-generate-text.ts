@@ -18,7 +18,7 @@ import type { AgentRuntimeInternal } from "../internal.js";
 import { createRefreshRuntimeHeadersBeforeModelAttempt } from "./model-runtime-headers.js";
 import { recordModelUsageFact } from "./usage-observability.js";
 import { createRuntimeModel } from "./runtime-model.js";
-import { normalizeStreamError } from "../helpers/index.js";
+import { generateAuxiliaryText, normalizeStreamError } from "../helpers/index.js";
 import { auxiliaryModelOptions } from "../../model/auxiliary-model-options.js";
 
 const WORKSPACE_GENERATE_TEXT_TIMEOUT_MS = 60_000;
@@ -216,7 +216,10 @@ async function generateWorkspaceTextImpl(
         traceContext: modelTraceContext,
       }),
     },
-    () => model.generateText(modelRequest),
+    // 辅助生成一律走流式：部分 OpenAI-compatible 端点的非流式响应不是 JSON
+    // （SSE 帧或错误页），generateText 会抛无状态码的 Invalid JSON response，
+    // 归一化后只剩「模型请求失败」。见 specs/auxiliary-text-generation-transport.md。
+    () => generateAuxiliaryText(model, modelRequest),
   ).catch(async (error: unknown) => {
     await recordModelUsageFact(this, {
       error,

@@ -16,6 +16,7 @@ import type { AgentRuntimeInternal } from "../internal.js";
 import { createRefreshRuntimeHeadersBeforeModelAttempt } from "./model-runtime-headers.js";
 import { recordModelUsageFact } from "./usage-observability.js";
 import { createRuntimeModel } from "./runtime-model.js";
+import { generateAuxiliaryText } from "../helpers/index.js";
 import { cloneModelSelection } from "../model-selection.js";
 import { auxiliaryModelOptions } from "../../model/auxiliary-model-options.js";
 
@@ -148,7 +149,7 @@ async function generateTitleCandidateImpl(
   };
 
   const resultPromise = runWithModelInvocationContext(invocationContext, () =>
-    model.generateText({
+    generateAuxiliaryText(model, {
       abortSignal: titleAbortSignal,
       messages,
       tools: [],

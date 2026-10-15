@@ -10,6 +10,7 @@ export * from "./compact.js";
 export * from "./compact-media.js";
 export * from "./tool-result.js";
 export * from "./model-errors.js";
+export * from "./auxiliary-text-generation.js";
 export * from "./model-anomaly.js";
 export * from "./turn-errors.js";
 export * from "./project.js";

@@ -17,6 +17,7 @@ import type {
   TraceContext,
 } from "../deps.js";
 import { buildRuntimeProviderRequestMessages, throwIfTurnAborted } from "../helpers/index.js";
+import { generateAuxiliaryText } from "../helpers/auxiliary-text-generation.js";
 import { projectMessagesForModelMediaPolicy } from "../helpers/media-budget.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { isRuntimeAttachmentEntry, type RuntimeMessageEntry } from "../../agent/message-history.js";
@@ -336,7 +337,7 @@ async function generateTargetCompletionVerificationText(
         }),
       };
       return await runWithModelInvocationContext(invocationContext, () =>
-        input.model.generateText({
+        generateAuxiliaryText(input.model, {
           abortSignal: input.abortSignal,
           messages: input.messages,
           // Verifier 继承已绑定的思考配置，不能套用低成本辅助调用的降档和封顶策略。

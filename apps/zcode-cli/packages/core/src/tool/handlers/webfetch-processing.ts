@@ -7,6 +7,7 @@ import {
 } from "@zcode/contracts";
 import type { ToolExecutionContext } from "../types.js";
 import { auxiliaryModelOptions } from "../../model/auxiliary-model-options.js";
+import { generateAuxiliaryText } from "../../runtime/helpers/auxiliary-text-generation.js";
 import { MAX_MODEL_INPUT_CHARS, WEBFETCH_TOOL_NAME } from "./webfetch-constants.js";
 import { truncateContentForModel } from "./webfetch-content.js";
 import { webFetchError } from "./webfetch-errors.js";
@@ -64,7 +65,7 @@ export async function processFetchedContent(
         traceContext: traceFromContext(context),
       },
       () =>
-        model.generateText({
+        generateAuxiliaryText(model, {
           messages,
           tools: [],
           options: {
