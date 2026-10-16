@@ -679,7 +679,17 @@ export class ConversationTopicPublisher {
       if (deltas === null) throw new ProjectionPayloadTooLargeError(candidateBytes);
       this.wireSnapshotBytesUpperBound = nextUpperBound;
     }
-    this.log.push({ seq: event.sequenceNumber, deltas });
+    this.commitDeltas(event.sequenceNumber, deltas);
+  }
+
+  /**
+   * ingest 尾段：delta 记账（有界日志 + 保留窗下界）+ 扇出到各订阅者 flush buffer。
+   *
+   * 抽成私有 helper 是为了让「按需读取补种」这类**非事件**权威 delta 走同一条路径，
+   * 而不是新建平行的扇出实现（单一路径原则）。
+   */
+  private commitDeltas(seq: number, deltas: ConversationDelta[]): void {
+    this.log.push({ seq, deltas });
     while (this.log.length > this.retention) {
       const evicted = this.log.shift();
       if (evicted) this.floorSeq = evicted.seq;
@@ -701,6 +711,63 @@ export class ConversationTopicPublisher {
       subscription.buffer = next.deltas;
       subscription.bufferBytes = next.encodedBytes;
     }
+  }
+
+  /**
+   * 按需读取（`v4/conversation/fileChanges`）成功后的补种：把权威读到的每轮文件摘要写回
+   * 投影并推 delta，使该轮收敛到与 hydrate 轮不可区分（specs/conversation-file-change-summary.md）。
+   *
+   * 与 seedConfig / seedUsage 这类「只改快照、不产 delta」的种子**语义不同**：fileChanges
+   * 派生 `actions.canRewindFiles`，而 UI 的按钮门控读的是客户端自己快照里的
+   * `header.actions`——只改快照不推 delta 的话客户端永远看不到，症状不会消失。
+   *
+   * 单一所有者：row.fileChanges 与派生出的 actions.canRewindFiles 的唯一所有者是
+   * ProductProjection；本方法只把权威读取结果转交投影，不自算、不缓存第二份。
+   *
+   * seq：投影 seq 推进一格并返回给调用方（gateway 需同步自己的 transport 水位）。
+   * 必须推进，否则 delta 帧右端点不大于客户端水位，客户端按「迟到/重复帧」静默丢弃。
+   *
+   * 幂等：同一轮已有 fileChanges（hydrate 已写或已补种过）、`files <= 0`、或目标行
+   * 不再是 turnHeader 时返回 null（no-op，不占 seq、不抬 revision、不推 delta）。
+   *
+   * 字节记账：与 ingest 同一条判据（`conversationRowDeltaGrowthUpperBound`，无法给上界时
+   * 落回精确测量），超限则 fail-closed 返回 null——补种是可选增强，宁可这轮保持现状，
+   * 也不能把快照推过 `logicalFrameAssemblyMaxBytes`。
+   */
+  seedAuthoritativeFileChanges(
+    rowId: number,
+    summary: { files: number; additions: number; deletions: number; state?: "active" | "reverted" },
+  ): number | null {
+    const projectionLimit =
+      PROTOCOL_V4_LIMITS.logicalFrameAssemblyMaxBytes - PROJECTION_TERMINAL_RESERVE_BYTES;
+    // 应用前快照：row.upserted 的差量记账要靠它查旧行字节。
+    const previousSnapshot = this.projection.getSnapshot();
+    const seq = previousSnapshot.seq + 1;
+    let nextUpperBound = this.wireSnapshotBytesUpperBound;
+    const deltas = this.projection.seedAuthoritativeFileChanges(
+      {
+        rowId,
+        seq,
+        additions: summary.additions,
+        deletions: summary.deletions,
+        files: summary.files,
+        ...(summary.state ? { state: summary.state } : {}),
+      },
+      (snapshot, produced) => {
+        const growth = conversationRowDeltaGrowthUpperBound(produced, previousSnapshot);
+        if (growth !== null && this.wireSnapshotBytesUpperBound + growth <= projectionLimit) {
+          nextUpperBound = this.wireSnapshotBytesUpperBound + growth;
+          return true;
+        }
+        const candidateBytes = this.measureWireSnapshotBytes(this.getWireSnapshot(snapshot));
+        nextUpperBound = candidateBytes;
+        return candidateBytes <= projectionLimit;
+      },
+    );
+    if (deltas === null) return null;
+    this.wireSnapshotBytesUpperBound = nextUpperBound;
+    this.commitDeltas(seq, deltas);
+    return seq;
   }
 
   /**

@@ -2444,6 +2444,31 @@ const zhCN: Record<string, string> = {
   "settings.modelSmartConfig.empty":
     "本地还没有规则。点上方「从远端仓库同步」，或直接编辑本地文件后「重新读取」。",
   "settings.modelSmartConfig.localInvalid": "本地文件无法解析：{error}",
+  // 同步配置页：模型智能配置 + GitHub 账号。`settings.modelSmartConfig.title` 被复用为该页第一分区的小标题。
+  "settings.syncConfig.title": "同步配置",
+  "settings.syncConfig.githubSectionTitle": "GitHub 账号",
+  "settings.syncConfig.githubDescription":
+    "登录 GitHub 后，可以在 GitHub 创建私有 gist 用于同步。",
+  "settings.syncConfig.githubSignIn": "登录 GitHub",
+  "settings.syncConfig.githubDeviceHint": "已在浏览器中打开 GitHub，请输入此代码完成授权",
+  "settings.syncConfig.githubUserCodeLabel": "设备码",
+  "settings.syncConfig.githubReopenBrowser": "重新打开浏览器",
+  "settings.syncConfig.githubCancel": "取消",
+  "settings.syncConfig.githubWaiting": "等待授权…",
+  "settings.syncConfig.githubConnectedAs": "已登录：{login}",
+  "settings.syncConfig.githubConnected": "已连接",
+  "settings.syncConfig.githubSignOut": "退出登录",
+  "settings.syncConfig.githubSignedOut": "已退出 GitHub 登录",
+  "settings.syncConfig.githubSignInFailed": "GitHub 授权失败：{error}",
+  "settings.syncConfig.githubDenied": "授权被拒绝。可以重新登录再试一次。",
+  "settings.syncConfig.githubExpired": "设备码已过期，请重新登录。",
+  "settings.syncConfig.githubDeviceFlowDisabled":
+    "当前 GitHub OAuth App 未启用 Device Flow。请到该 OAuth App 设置里勾选 Enable Device Flow 后重试。",
+  "settings.syncConfig.githubNotConfigured":
+    "当前环境未配置 GitHub OAuth App，无法登录 GitHub。",
+  "settings.syncConfig.githubUnavailable": "当前环境不支持 GitHub 账号。",
+  "settings.syncConfig.githubNetworkError": "无法连接本地服务，请稍后重试。",
+  "settings.syncConfig.githubExpiresIn": "设备码剩余有效时间 {seconds} 秒",
   "settings.mcpTitle": "MCP 服务器",
   "settings.mcp.description": "管理 ZCode Agent 使用的 MCP 服务器配置。",
   "settings.mcp.create.open": "新建 MCP 服务器",

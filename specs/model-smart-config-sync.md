@@ -104,6 +104,10 @@ gist(raw JSON) ──[点击「从远端仓库同步」]──▶ {appConfigDir}
   实现位于 `packages/services/src/model-provider/modelSmartConfigService.ts`。
 - `packages/ui/src/settings/ModelSmartConfigSection.tsx` + 设置分区 `modelSmartConfig`。
 
+设置页已扩为「同步配置」双分区：**分区一 = 模型智能配置**（本节，读本地 `model-smart-config.json`
+并手动从远端 gist 同步），**分区二 = GitHub 账号**（OAuth Device Flow 登录、查账号、退出登录，见
+`specs/github-account-auth.md`）。两个分区各自独立读写，互不共享状态。
+
 ## 验收场景
 
 1. 无本地文件时打开设置页「模型智能配置」：显示本地路径与空状态，无网络请求；模型行为与改动前一致。

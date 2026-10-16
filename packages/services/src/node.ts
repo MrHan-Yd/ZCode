@@ -334,6 +334,7 @@ import { ICommandsService } from "./commands/commands.js";
 import { IHooksService } from "./hooks/hooks.js";
 import { IMemoryService } from "./memory/memory.js";
 import { IModelSmartConfigService } from "./model-provider/modelSmartConfig.js";
+import { IGithubAuthService } from "./github/githubAuth.js";
 import { ISettingsSyncService } from "./settings-sync/settingsSync.js";
 import { IFeedbackService } from "./feedback/feedback.js";
 import { IPromptAttachmentTransferService } from "./prompt-attachment-transfer/promptAttachmentTransfer.js";
@@ -424,6 +425,7 @@ import { createCommandsService } from "./commands/commandsService.js";
 import { createHooksService } from "./hooks/hooksService.js";
 import { createMemoryService } from "./memory/memoryService.js";
 import { createModelSmartConfigService } from "./model-provider/modelSmartConfigService.js";
+import { createGithubAuthService } from "./github/githubAuthService.js";
 import { createSettingsSyncService } from "./settings-sync/settingsSyncService.js";
 import {
   createFeedbackService,
@@ -2617,7 +2619,23 @@ export function createLocalServices(options: {
       }),
     )
     .register(IMemoryService, createMemoryService())
-    .register(IModelSmartConfigService, createModelSmartConfigService())
+    // 这两个服务都要出网，必须共用 hostApiNetworkTransport 的 fetch：
+    // Node 的 globalThis.fetch（undici）不认 http_proxy/https_proxy 环境变量，只会直连，
+    // 需要代理才能访问 github.com 的环境下表现为 UND_ERR_CONNECT_TIMEOUT（UI 只看到
+    // "fetch failed"）。hostApiNetworkTransport 按设置里的 httpProxy/noProxy/caCertPath
+    // 逐请求解析 dispatcher，与模型 API 走同一条代理策略。
+    .register(
+      IModelSmartConfigService,
+      createModelSmartConfigService({ fetchImpl: hostApiNetworkTransport.fetch }),
+    )
+    // GitHub 账号授权：token 只经 credentialService 落盘，本服务是 host 侧唯一所有者。
+    .register(
+      IGithubAuthService,
+      createGithubAuthService({
+        credentialService,
+        fetchImpl: hostApiNetworkTransport.fetch,
+      }),
+    )
     .register(ISettingsSyncService, createSettingsSyncService({ settingService }))
     .register(
       IFeedbackService,

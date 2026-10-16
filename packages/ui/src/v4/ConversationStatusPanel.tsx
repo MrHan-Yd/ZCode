@@ -107,6 +107,7 @@ import {
   resolveSubagentSpeedPollIds,
   resolveSubagentSpeedReadings,
 } from "@/v4/subagentSpeeds.js";
+import { resolveSubagentDisplayName } from "@/lib/subagentName.js";
 import { useSessionPerformanceBatch } from "@/hooks/useSessionPerformanceBatch.js";
 import {
   buildConversationGoalIterationSummaries,
@@ -1462,6 +1463,8 @@ function SubagentStatusSection({
           const canOpenSubagentSession = Boolean(request && onOpenSubagentSession);
           // 该子会话自己的累计平均 TPS；没有已完成请求（或旧 CLI 不支持批量读）时为 undefined。
           const speed = speeds.get(subagent.childSessionId);
+          // 标题说的是「让它干什么」，名字说的是「它是谁」；缺名字时整段缺席（见 subagentName.ts）。
+          const displayName = resolveSubagentDisplayName(subagent.subagentType);
           return (
             <li
               key={subagent.childSessionId}
@@ -1499,6 +1502,17 @@ function SubagentStatusSection({
                   {subagent.title}
                 </span>
                 <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-base">
+                  {/* 名字排在时长之前：先认出「是谁在跑」，再看跑了多久。哨兵值/空值整段缺席。
+                      这一行整体 pointer-events-none（整行点击由 z-0 那层透明按钮承接），所以
+                      title 提示在这里永远不会弹——长名只截断，完整名字在打开的子会话页签上。 */}
+                  {displayName === undefined ? null : (
+                    <span
+                      data-subagent-name={displayName}
+                      className="max-w-40 shrink-0 truncate font-mono font-medium text-ui-base text-[var(--color-foreground-subtle)]"
+                    >
+                      {displayName}
+                    </span>
+                  )}
                   <span className="text-ui-base tabular-nums text-[var(--color-foreground-subtle)]">
                     {formatBackgroundTaskElapsedLabel(
                       Math.max(0, now - (subagent.startedAt ?? now)),

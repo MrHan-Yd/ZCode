@@ -257,6 +257,25 @@ export interface SessionSubagentsSeed {
   running: RunningSubagentSummary[];
 }
 
+/**
+ * 按需读取（`v4/conversation/fileChanges`）成功后的补种输入。
+ *
+ * 缺口轮（冷恢复算不出摘要）的投影 row 没有 fileChanges，`actions.canRewindFiles` 因此
+ * 恒缺席，前端就算点亮按钮、预览 RPC 也会被 `resolveRowActionTarget` 同一道守卫拒绝。
+ * 这里把权威读取结果补种回投影，让该轮收敛到与 hydrate 轮不可区分。
+ */
+export interface AuthoritativeFileChangeSeed {
+  /** 目标 turnHeader rowId（由 gateway 从同一次 resolveRowActionTarget 得到）。 */
+  rowId: number;
+  /** 补种后投影 seq（由 publisher 分配；delta 帧右端点必须大于客户端水位）。 */
+  seq: number;
+  additions: number;
+  deletions: number;
+  files: number;
+  /** 同 hydrate 口径：`files > 0` 时缺省 `active`。 */
+  state?: "active" | "reverted";
+}
+
 export interface StableForkCandidate {
   productTurnId: string;
   transcriptTurnId: string;
@@ -669,6 +688,88 @@ export class ProductProjection {
       return;
     }
     this.snapshot = { ...this.snapshot, fileChangeSummaryUnavailableTurnIds: next };
+  }
+
+  /**
+   * 按需读取成功后的文件摘要补种。
+   *
+   * 与 seedConfig / seedUsage / seedFileChangeSummaryUnavailable 这类「只改快照」的种子
+   * 不同：fileChanges 是**真实投影变更**——它派生 `actions.canRewindFiles`，而 UI 的按钮
+   * 门控读的是客户端自己快照里的 `header.actions`，所以必须产 delta 推给订阅者；同时
+   * 「UI action 可见 ⇔ 服务端 target 可解析」必须属于同一次 materialization，因此
+   * actions 复用 `materializeCommandRowActions` 派生（照 `applyEventInternal` /
+   * `completeHydrationReplay` 的既有写法：先产 row delta，再追加 actions delta）。
+   *
+   * 补种后的形状与 ModelComplete 归约出的 fileChanges 逐字段一致（含 `state`），使该轮
+   * 与 hydrate 轮不可区分。
+   *
+   * **刻意不抬 revision**（见 reduceAuthoritativeFileChanges 的长注释）：补种由
+   * `v4/conversation/fileChanges` **读** RPC 触发，而 revision 是客户端后续 query/command 的
+   * baseRevision CAS 令牌。抬 revision 会让同一客户端同批发出的其它缺口轮读取被
+   * `proto.staleRevision` 拒绝（CLI 严格串行派发，第二条读的 baseRevision 必然已陈旧），
+   * 反而把那些轮的胶囊也弄丢。投递可靠性由 seq 与保留窗日志保证，不依赖 revision。
+   *
+   * 原子性：与 `applyEventAtomically` 同规——在候选投影上归约，`accept` 通过才 adopt，
+   * 否则当前投影完全不变（调用方因此可以拿 wire 字节预算 fail-closed）。
+   *
+   * 幂等：该轮已有 fileChanges、`files <= 0`、或 rowId 不再解析成 turnHeader 时返回 null。
+   * 只补种 `files > 0`——与投影既有门（`payload.fileChanges.files > 0`）一致，
+   * 不把「没改文件」说成可回退。
+   */
+  seedAuthoritativeFileChanges(
+    input: AuthoritativeFileChangeSeed,
+    accept: (snapshot: ConversationSnapshot, deltas: readonly ConversationDelta[]) => boolean,
+  ): ConversationDelta[] | null {
+    const candidate = this.cloneProjection();
+    const deltas = candidate.reduceAuthoritativeFileChanges(input);
+    if (deltas === null) return null;
+    if (!accept(candidate.snapshot, deltas)) return null;
+    this.adoptProjection(candidate);
+    return deltas;
+  }
+
+  private reduceAuthoritativeFileChanges(
+    input: AuthoritativeFileChangeSeed,
+  ): ConversationDelta[] | null {
+    if (!Number.isFinite(input.files) || input.files <= 0) return null;
+    const row = this.findRow(input.rowId);
+    if (row?.kind !== "turnHeader") return null;
+    // 幂等边界：hydrate/事件已经给出摘要（或已补种过）时不覆盖。fileChanges() RPC
+    // 会被重复调用，重复补种必须是无副作用的 no-op。
+    if (row.fileChanges) return null;
+    const reduced: ConversationDelta[] = [
+      {
+        op: "row.upserted",
+        row: {
+          ...row,
+          fileChanges: {
+            additions: input.additions,
+            deletions: input.deletions,
+            files: input.files,
+            state: input.state ?? "active",
+          },
+        },
+      },
+    ];
+    // 刻意**不**走 attachRevision：row.upserted 本会抬 revision，但 revision 同时是客户端
+    // query/command 的 baseRevision CAS 令牌（`resolveQueryRowTarget`）。补种由**读** RPC
+    // 触发，而 CLI 严格串行派发请求，于是同一客户端同批为多个缺口轮发出的读里，第二条
+    // 的 baseRevision 在第一条补种后必然陈旧 → 被 `proto.staleRevision` 拒绝 → 客户端连
+    // 胶囊都拿不到（比修复前更差）。因此补种是 revision-neutral 的：客户端靠 delta 本身
+    // 收敛（按钮门控读的是自己快照里的 header.actions），投递靠 seq 推进 + 保留窗日志
+    // （resume/recovery 按 `entry.seq > base.seq` 重放，补种 entry 的 seq 严格更大），
+    // 都不需要 revision。命令守卫每次都在当前投影上重新派生，不因 revision 未抬而放宽。
+    const deltas = [...reduced, ...this.materializeCommandRowActions(reduced)];
+    const previousRowsLength = this.snapshot.rows.window.length;
+    this.snapshot = {
+      ...applyConversationDeltas(this.snapshot, deltas),
+      // seq 推进一格：delta 帧的右端点必须严格大于客户端水位，否则客户端按
+      // 「迟到/重复帧」静默丢弃（conversationProjectionStore 规则 2a），补种就白做了。
+      seq: input.seq,
+    };
+    this.updateRowIndexAfterImmutableApply(previousRowsLength, deltas);
+    this.updateToolIndexesAfterDeltas(deltas);
+    return deltas;
   }
 
   seedUsage(seed: SessionUsageSeed): void {

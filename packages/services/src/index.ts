@@ -229,6 +229,15 @@ export type {
   ModelSmartConfigView,
 } from "./model-provider/modelSmartConfig.js";
 
+// GithubAuth service — IGithubAuthService is both a type (interface) and value (descriptor).
+export { IGithubAuthService } from "./github/githubAuth.js";
+export type {
+  GithubAuthAccount,
+  GithubAuthAccountState,
+  GithubAuthBeginResult,
+  GithubAuthPollResult,
+} from "./github/githubAuth.js";
+
 export type { SessionRealtimePort } from "./session/sessionRealtimePort.js";
 
 // FileWatcher service — IFileWatcherService is both a type (interface) and value (descriptor)

@@ -55,7 +55,7 @@ import {
 } from "@/lib/accountProviderAccess.js";
 import { buildUsageEntitlementCacheKey } from "@/lib/usageEntitlementCache.js";
 import { ModelProviderSection } from "@/settings/ModelProviderSection.js";
-import { ModelSmartConfigSection } from "@/settings/ModelSmartConfigSection.js";
+import { SyncConfigPage } from "@/settings/SyncConfigPage.js";
 import { useEnterpriseCodingPlanProducts } from "@/settings/model-provider-section/useEnterpriseCodingPlanProducts.js";
 import { UsageStatsSection, type UsageStatsSectionTab } from "@/settings/UsageStatsSection.js";
 import {
@@ -1750,8 +1750,8 @@ export function SettingsPage({
                           </ServiceProvider>
                         ) : activeSection === "modelSmartConfig" ? (
                           <ServiceProvider services={localHostServices}>
-                            {/* 本地规则文件属于本机全局事实源；激活远端 workspace 时也不能注入远端 Host。 */}
-                            <ModelSmartConfigSection />
+                            {/* 本地规则文件与 GitHub 账号都属于本机全局事实源；激活远端 workspace 时也不能注入远端 Host。 */}
+                            <SyncConfigPage />
                           </ServiceProvider>
                         ) : activeSection === "memory" ? (
                           <ServiceProvider services={localHostServices}>

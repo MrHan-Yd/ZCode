@@ -2606,6 +2606,32 @@ const enUS: Record<string, string> = {
   "settings.modelSmartConfig.empty":
     "No local rules yet. Click Sync from remote repository above, or edit the local file and Reload.",
   "settings.modelSmartConfig.localInvalid": "Local file could not be parsed: {error}",
+  // Sync config page: model smart config + GitHub account. `settings.modelSmartConfig.title` is reused as the first section heading.
+  "settings.syncConfig.title": "Sync",
+  "settings.syncConfig.githubSectionTitle": "GitHub account",
+  "settings.syncConfig.githubDescription":
+    "After signing in to GitHub you can create a private gist for syncing.",
+  "settings.syncConfig.githubSignIn": "Sign in with GitHub",
+  "settings.syncConfig.githubDeviceHint":
+    "GitHub is open in your browser. Enter this code to finish authorizing.",
+  "settings.syncConfig.githubUserCodeLabel": "Device code",
+  "settings.syncConfig.githubReopenBrowser": "Reopen browser",
+  "settings.syncConfig.githubCancel": "Cancel",
+  "settings.syncConfig.githubWaiting": "Waiting for authorization…",
+  "settings.syncConfig.githubConnectedAs": "Signed in as {login}",
+  "settings.syncConfig.githubConnected": "Connected",
+  "settings.syncConfig.githubSignOut": "Sign out",
+  "settings.syncConfig.githubSignedOut": "Signed out of GitHub",
+  "settings.syncConfig.githubSignInFailed": "GitHub authorization failed: {error}",
+  "settings.syncConfig.githubDenied": "Authorization was denied. You can sign in again.",
+  "settings.syncConfig.githubExpired": "The device code expired. Please sign in again.",
+  "settings.syncConfig.githubDeviceFlowDisabled":
+    "This GitHub OAuth App has Device Flow disabled. Enable Device Flow in the OAuth App settings and try again.",
+  "settings.syncConfig.githubNotConfigured":
+    "No GitHub OAuth App is configured in this environment, so GitHub sign-in is unavailable.",
+  "settings.syncConfig.githubUnavailable": "GitHub accounts are not available in this environment.",
+  "settings.syncConfig.githubNetworkError": "Could not reach the local service. Please try again.",
+  "settings.syncConfig.githubExpiresIn": "Device code valid for {seconds}s",
   "settings.mcpTitle": "MCP Servers",
   "settings.mcp.description": "Manage MCP server configurations used by ZCode Agent.",
   "settings.mcp.create.open": "Add MCP server",

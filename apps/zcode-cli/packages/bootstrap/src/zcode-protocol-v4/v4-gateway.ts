@@ -1917,12 +1917,33 @@ export class ConversationV4Gateway {
     const resolution = this.resolveQueryRowTarget(publisher, params, "fileChanges");
     const messageIds = resolution.messageIds ?? [];
     const targetTurnId = toRuntimeTurnId(resolution.row.turnId);
-    return this.host.getConversationFileChanges(
+    const result = await this.host.getConversationFileChanges(
       params.sessionId,
       params.target.rowId,
       messageIds,
       targetTurnId,
     );
+    // 按需读取是同一份证据的第二读取面。成功拿到变更时把摘要补种回投影，让缺口轮收敛到
+    // 与 hydrate 轮不可区分（specs/conversation-file-change-summary.md）——否则服务端
+    // `applyFileRewind`/`fileRewindPreview` 的守卫仍按「没有 fileChanges」拒绝，UI 上表现为
+    // 「胶囊可见但回退按钮恒禁用」。投影是 fileChanges / canRewindFiles 的唯一所有者，
+    // gateway 只转交权威结果，不自算、不缓存第二份。
+    const seededSeq = publisher.seedAuthoritativeFileChanges(resolution.row.rowId, result);
+    if (seededSeq !== null) this.syncTransportSeqAfterProjectionSeed(params.sessionId, seededSeq);
+    return result;
+  }
+
+  /**
+   * 补种 delta 占用一格 transport seq（投影 seq 与 delta 帧右端点必须一致），因此这里
+   * 同步本会话的 transport 水位，避免下一条 raw 事件复用同一 seq——那会让客户端把
+   * 事件帧按「迟到/重复帧」丢弃（conversationProjectionStore 规则 2a）。
+   *
+   * 与 hydration 收尾的 `lastTransportSeq = publisher.getSnapshot().seq` 同规；raw→transport
+   * 偏移由 normalizeRuntimeEventSequence 在下一条 raw 事件上自校正，不手工改 offset。
+   */
+  private syncTransportSeqAfterProjectionSeed(sessionId: string, seq: number): void {
+    const state = this.rawSequenceStates.get(sessionId);
+    if (state && seq > state.lastTransportSeq) state.lastTransportSeq = seq;
   }
 
   async backgroundBashOutput(rawParams: unknown): Promise<BackgroundBashOutputResult> {

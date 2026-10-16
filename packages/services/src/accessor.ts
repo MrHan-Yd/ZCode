@@ -40,6 +40,7 @@ import type { IPromptEnhanceService } from "./prompt/promptEnhance.js";
 import type { IWindowControllerService } from "./window-controller/windowController.js";
 import type { IOnboardingRecordService } from "./onboarding/onboardingRecord.js";
 import type { IModelSmartConfigService } from "./model-provider/modelSmartConfig.js";
+import type { IGithubAuthService } from "./github/githubAuth.js";
 import type { IConversationShareService } from "./conversation-share/conversationShare.js";
 
 /** UI 层消费的统一服务接口 */
@@ -94,4 +95,12 @@ export interface IServiceAccessor {
   readonly promptEnhanceService?: IPromptEnhanceService;
   /** 模型智能配置（本地文件 + 手动远端同步）；旧测试 double / 不支持的 host 可不提供。 */
   readonly modelSmartConfigService?: IModelSmartConfigService;
+  /**
+   * GitHub 账号授权（Device Flow）。
+   *
+   * 非可选：`createLocalServices` 在 desktop host、HTTP server、stdio server、CLI core 四处都注册了该服务，
+   * 因此本地 / 远端 host 与 server 都有此频道，契约上要求必填。
+   * UI 侧仍可保留 `if (!service)` 兜底——那是对旧 host / 测试替身的防御性检查，并不表示本字段可选。
+   */
+  readonly githubAuthService: IGithubAuthService;
 }

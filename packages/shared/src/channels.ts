@@ -153,6 +153,8 @@ export const ServiceChannels = {
   OnboardingRecord: "onboarding-record",
   /** 模型智能配置：本地数据源 + 手动远端同步 */
   ModelSmartConfig: "model-smart-config",
+  /** GitHub 账号授权：OAuth Device Flow 登录 / 查账号 / 退出登录 */
+  GithubAuth: "github-auth",
 } as const;
 
 export type ServiceChannelName = (typeof ServiceChannels)[keyof typeof ServiceChannels];

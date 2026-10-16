@@ -77,9 +77,11 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
   },
   {
     // 模型智能配置紧跟「模型」：两者都是模型参数来源，放在同一组便于理解「本地/远端同步」的关系。
+    // 页面标题改为「同步配置」（含 GitHub 账号分区）后，导航项 label 也复用这个新名称；
+    // id 仍保持 modelSmartConfig，避免动到 SettingsSectionId、HIDDEN_SETTINGS_SECTIONS 与「上次停留分区」持久化。
     id: "modelSmartConfig",
     icon: SlidersHorizontal,
-    titleId: "settings.modelSmartConfig.title",
+    titleId: "settings.syncConfig.title",
     groupId: "basics",
   },
   {

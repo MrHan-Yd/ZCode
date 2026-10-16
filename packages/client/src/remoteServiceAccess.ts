@@ -37,6 +37,7 @@ import {
   IHooksService,
   IMemoryService,
   IModelSmartConfigService,
+  IGithubAuthService,
   ISettingsSyncService,
   IFeedbackService,
   IPromptAttachmentTransferService,
@@ -92,6 +93,7 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly hooksService: IHooksService;
   readonly memoryService: IMemoryService;
   readonly modelSmartConfigService: IModelSmartConfigService;
+  readonly githubAuthService: IGithubAuthService;
   readonly settingsSyncService: ISettingsSyncService;
   readonly feedbackService: IFeedbackService;
   readonly promptAttachmentTransferService: IPromptAttachmentTransferService;
@@ -216,6 +218,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
     );
     this.modelSmartConfigService = ProxyChannel.toService<IModelSmartConfigService>(
       channelClient.getChannel(IModelSmartConfigService.channelName),
+    );
+    this.githubAuthService = ProxyChannel.toService<IGithubAuthService>(
+      channelClient.getChannel(IGithubAuthService.channelName),
     );
     this.settingsSyncService = ProxyChannel.toService<ISettingsSyncService>(
       channelClient.getChannel(ISettingsSyncService.channelName),

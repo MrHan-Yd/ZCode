@@ -45,7 +45,7 @@
 
 7. **子智能体的输出速度**：状态面板「智能体」分区里，每个运行中的子智能体行显示它**自己那个子会话**的累计平均 TPS；收起态 trailing 显示「运行最久的那个子智能体」的速度（与同一处显示的时长同指一个子智能体）。
 
-   - **位置**：展开行里紧跟在时长后面（`4分31秒 · 201 tok/s`），与 Stop 按钮同一行簇；收起态 trailing 是 `{最长时长} · {该子智能体速度} · {N 运行}`。
+   - **位置**：展开行的信息行里，紧跟在子智能体名之后、在时长之前（`backend-developer · 4分31秒 · 201 tok/s`），与 Stop 按钮同一行簇；名字本身（取哪个字段、缺名时怎么办）见 `specs/status-panel-subagent-identity.md`。收起态 trailing 是 `{最长时长} · {该子智能体速度} · {N 运行}`。
    - **口径**：该子会话 `model_usage` 中 `query_source = 'subagent'` 且 `status = 'completed'` 的请求，换算与面板第四行逐字相同（Σ `output_tokens` ÷ Σ（`duration_ms` − `time_to_first_token_ms`））。**这是整段累计平均，不是「当前」实时速度**，因此不参与规则 4 的实时估算口径，也不与图二那个入口数字互相换算。
    - **取数**：新增批量只读 RPC `session/performanceBatch`（一次请求覆盖多个会话），面板按 1 秒轮询。**上限**：≤1 请求/秒、单请求 ≤32 个会话、只在「有运行中子智能体」且「智能体分区已挂载」时发（见状态所有者）。
    - **缺席就是不显示**：该子智能体还没有已完成请求、计量缺失，或已超出 30 天保留期时不显示数字——既不显示 `0`（会被读成「卡住了」），也不显示 `--`（那是面板五行的行语义，这里没有行）。数字只在请求结束边界前进，因此子智能体刚开始跑的一段时间里行上只有时长。
@@ -251,3 +251,4 @@ export function canRenderSessionStatsEntry(input: {
 - `TID_CHAT_SESSION_STATS_TRIGGER`（`packages/shared/src/test-ids.ts`）：工具条入口按钮，`data-chat-toolbar-popover-trigger="true"`。
 - `TID_CHAT_SESSION_STATS_PANEL`：会话统计面板根节点。
 - 子智能体速度（规则 7）：状态面板里带 `data-subagent-speed="true"` 的节点——展开时在智能体行内，收起时在「智能体」分区 trailing；节点缺席即表示该子智能体没有读数。行的既有锚点 `data-child-session-id` 用来把两者对上。
+- 子智能体的名字：行内带 `data-subagent-name="<name>"` 的节点（缺席即没有名字），见 `specs/status-panel-subagent-identity.md`。
