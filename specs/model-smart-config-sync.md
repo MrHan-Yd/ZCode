@@ -29,6 +29,9 @@ gist(raw JSON) ──[点击「从远端仓库同步」]──▶ {appConfigDir}
 4. **文件缺失或损坏不阻断**：本地文件不存在 / 非法 / 校验失败时，视为「无同步规则」，不影响启动与
    内置行为；同步失败时保留本地已有内容不变。
 5. **同步后立即生效**：写入本地文件后触发现有 provider 刷新，使新规则进入 registry / 模型选择器。
+6. **规则明细默认收起**：列表卡只显示「已配置规则（N）」一行，规则明细默认不展开，点击标题才列出。展开是页面
+   局部状态，不持久化。没有可展开内容时不提供展开控件：本地文件缺失 → 空状态、解析失败 → 错误提示，都直接显示
+   在标题下方，不把错误藏进折叠里。
 
 ## 远端布局（gist）
 
@@ -88,6 +91,9 @@ gist(raw JSON) ──[点击「从远端仓库同步」]──▶ {appConfigDir}
 - **合并后的生效规则**：`ProviderConfigService.read()` 产出的 `ProviderConfigSnapshot.zcodeBuiltinModelRules`
   （= `mergeModelConfigRules(builtin.models, syncedRules)`），是 registry 的唯一事实源。
 - **同步触发**：仅渲染层「同步」按钮 → `IModelSmartConfigService.syncFromRemote()`。
+- **规则明细展开状态**：`ModelSmartConfigSection` 里 `Collapsible` 的组件局部状态，默认收起；不进 store、不落盘，
+  重新进入设置页即回到收起。只有点击标题会翻转它，事件顺序固定为
+  `点击标题 → Collapsible 状态翻转 → 明细挂载/卸载`，不触发任何读取或同步。
 
 ## 接口
 
@@ -103,6 +109,8 @@ gist(raw JSON) ──[点击「从远端仓库同步」]──▶ {appConfigDir}
 - `packages/services`：`IModelSmartConfigService { read(); syncFromRemote(); }` + 描述符（channel `model-smart-config`），
   实现位于 `packages/services/src/model-provider/modelSmartConfigService.ts`。
 - `packages/ui/src/settings/ModelSmartConfigSection.tsx` + 设置分区 `modelSmartConfig`。
+- `packages/ui/src/settings/modelSmartConfigListModel.ts`：`modelSmartConfigListState(view)` 判定列表卡的呈现
+  `list`（有规则，可折叠）/ `empty` / `error`；组件只对 `list` 渲染展开控件。
 
 设置页已扩为「同步配置」双分区：**分区一 = 模型智能配置**（本节，读本地 `model-smart-config.json`
 并手动从远端 gist 同步），**分区二 = GitHub 账号**（OAuth Device Flow 登录、查账号、退出登录，见
@@ -116,3 +124,5 @@ gist(raw JSON) ──[点击「从远端仓库同步」]──▶ {appConfigDir}
 4. 本地文件含 `{ "modelMatch": "gpt-7.*", "contextWindow": 400000 }`：新增 `gpt-7-*` 模型时智能配置自动填入 400000，
    个人精确规则仍可覆盖它。
 5. 使用损坏的本地文件启动：规则视为空，内置行为不受影响。
+6. 本地文件有 271 条规则时打开设置页：只显示「已配置规则（271）」一行，明细不渲染；点击标题后列出明细，再点收起。
+7. 本地文件解析失败：错误提示直接可见（无需展开），标题不带展开控件。

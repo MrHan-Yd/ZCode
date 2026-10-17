@@ -1,17 +1,26 @@
 import { useCallback, useEffect, useState } from "react";
-import { RefreshCw, SlidersHorizontal } from "lucide-react";
+import { ChevronRight, RefreshCw, SlidersHorizontal } from "lucide-react";
 import type { ModelSmartConfigEntry, ModelSmartConfigView } from "@zcode/services";
 import { Button } from "@/components/ui/button.js";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible.js";
 import { toast } from "@/components/ui/toast.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { getErrorMessage } from "@/lib/errorMessage.js";
 import { logger } from "@/logger.js";
+import { modelSmartConfigListState } from "@/settings/modelSmartConfigListModel.js";
 import { SettingsGroupCard } from "@/settings/SettingsPageParts.js";
 
 /**
  * 模型智能配置分区：默认只读本地规则文件（不改模型行为），
  * 「从远端仓库同步」才拉取固定 gist 覆盖本地，并触发 provider 刷新使新规则生效。
+ *
+ * 「已配置规则」列表默认收起：同步回来的规则常有几百条，展开会把设置页撑得很长。
+ * 展开状态由 Collapsible 自己持有（组件局部、不落盘），这里不另存一份副本。
  */
 export function ModelSmartConfigSection() {
   const { intl } = useZCodeIntl();
@@ -79,6 +88,11 @@ export function ModelSmartConfigSection() {
   }
 
   const entries = view?.entries ?? [];
+  const listState = modelSmartConfigListState(view);
+  const entriesTitle = intl.formatMessage(
+    { id: "settings.modelSmartConfig.entriesTitle" },
+    { count: entries.length },
+  );
 
   return (
     <div className="space-y-3">
@@ -121,30 +135,52 @@ export function ModelSmartConfigSection() {
       </SettingsGroupCard>
 
       <SettingsGroupCard>
-        <div className="space-y-2 px-4 py-3" data-testid="model-smart-config-list">
-          <div className="text-ui-base font-medium text-foreground">
-            {intl.formatMessage(
-              { id: "settings.modelSmartConfig.entriesTitle" },
-              { count: entries.length },
-            )}
-          </div>
-          {view?.error ? (
-            <p className="text-ui-base leading-6 text-warning">
-              {intl.formatMessage(
-                { id: "settings.modelSmartConfig.localInvalid" },
-                { error: view.error },
-              )}
-            </p>
-          ) : entries.length === 0 ? (
-            <p className="text-ui-base leading-6 text-foreground-subtle">
-              {intl.formatMessage({ id: "settings.modelSmartConfig.empty" })}
-            </p>
+        <div className="px-4 py-3" data-testid="model-smart-config-list">
+          {listState === "list" ? (
+            <Collapsible className="group/model-smart-config-list">
+              <CollapsibleTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="default"
+                  data-testid="model-smart-config-list-toggle"
+                  /*
+                   * 直接复用 ghost 变体的状态色：hover 和展开态各有一层 bg-hover 底色，不另外覆盖 aria-expanded。
+                   * 负边距 + 加宽让这一行在卡片内左右对称铺满，而不是缩到文字宽度。
+                   */
+                  className="-mx-2 w-[calc(100%+1rem)] justify-start gap-2 font-medium"
+                >
+                  <ChevronRight
+                    aria-hidden="true"
+                    className="size-3.5 shrink-0 text-foreground-subtle transition-transform group-data-[state=open]/model-smart-config-list:rotate-90"
+                  />
+                  {entriesTitle}
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <ul className="space-y-2 pt-2">
+                  {entries.map((entry, index) => (
+                    <ModelSmartConfigEntryRow key={entryKey(entry, index)} entry={entry} />
+                  ))}
+                </ul>
+              </CollapsibleContent>
+            </Collapsible>
           ) : (
-            <ul className="space-y-2">
-              {entries.map((entry, index) => (
-                <ModelSmartConfigEntryRow key={entryKey(entry, index)} entry={entry} />
-              ))}
-            </ul>
+            <div className="space-y-2">
+              <div className="text-ui-base font-medium text-foreground">{entriesTitle}</div>
+              {view?.error ? (
+                <p className="text-ui-base leading-6 text-warning">
+                  {intl.formatMessage(
+                    { id: "settings.modelSmartConfig.localInvalid" },
+                    { error: view.error },
+                  )}
+                </p>
+              ) : (
+                <p className="text-ui-base leading-6 text-foreground-subtle">
+                  {intl.formatMessage({ id: "settings.modelSmartConfig.empty" })}
+                </p>
+              )}
+            </div>
           )}
         </div>
       </SettingsGroupCard>
