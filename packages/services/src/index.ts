@@ -297,6 +297,20 @@ export { IPluginManagementService } from "./plugins/pluginManagement.js";
 
 // Subagents service — ISubagentsService is both a type (interface) and value (descriptor)
 export { ISubagentsService } from "./subagents/subagents.js";
+export type { SubagentConfigDownloadPlan } from "./subagents/subagentConfigSync.js";
+export type {
+  ConfigSyncDownloadPlan,
+  ConfigSyncDownloadResult,
+  ConfigSyncError,
+  ConfigSyncErrorCode,
+  ConfigSyncPlanEntry,
+  ConfigSyncPlanEntryKind,
+  ConfigSyncResult,
+  ConfigSyncSecretWarning,
+  ConfigSyncStatus,
+  ConfigSyncUploadResult,
+} from "./config-sync/types.js";
+export { countPlanEntries } from "./config-sync/plan.js";
 
 // Commands service — ICommandsService is both a type (interface) and value (descriptor)
 export { ICommandsService } from "./commands/commands.js";

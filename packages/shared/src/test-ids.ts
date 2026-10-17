@@ -439,6 +439,14 @@ export const TID_MCP_OPEN_AUTHORIZATION_BUTTON = "mcp-open-authorization-button"
 export const TID_SUBAGENT_ROW = "subagent-row";
 /** 内置子智能体模型选择控件（动态后缀为子智能体名称） */
 export const TID_SUBAGENT_BUILT_IN_MODEL_TRIGGER = "subagent-built-in-model-trigger";
+/** 子智能体配置上传到 GitHub（当前登录账号的私有 gist） */
+export const TID_SUBAGENT_CONFIG_UPLOAD = "subagent-config-upload";
+/** 从 GitHub 下载子智能体配置并同步到本地 */
+export const TID_SUBAGENT_CONFIG_DOWNLOAD = "subagent-config-download";
+/** MCP 服务器配置上传到 GitHub（当前登录账号的私有 gist） */
+export const TID_MCP_CONFIG_UPLOAD = "mcp-config-upload";
+/** 从 GitHub 下载 MCP 服务器配置并同步到本地 */
+export const TID_MCP_CONFIG_DOWNLOAD = "mcp-config-download";
 /** 设置页使用统计顶层 tab（动态后缀为 usage tab id） */
 export const TID_SETTINGS_USAGE_TAB = "settings-usage-tab";
 /** 侧边栏头像菜单剩余额度子菜单入口 */

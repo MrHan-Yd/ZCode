@@ -1674,10 +1674,16 @@ export function createLocalServices(options: {
   const mcpSyncService = createMcpSyncService({
     // mcp/list 的 host 消费点收拢到 mcpSync 服务；真实状态检查仍在 agent 进程。
     listMcpServerStatuses: (params) => zcodeAgentService.listMcpServerStatuses(params),
+    // MCP 配置同步同样复用 GitHub 登录凭据与代理感知传输。
+    credentialService,
+    fetchImpl: hostApiNetworkTransport.fetch,
   });
   const pluginSyncService = createPluginSyncService();
   const subagentsService = createSubagentsService({
     isDesktopRuntime: true,
+    // 子智能体配置同步复用 GitHub 登录凭据，并走与模型 API 同一条代理感知传输。
+    credentialService,
+    fetchImpl: hostApiNetworkTransport.fetch,
   });
   const commandsService = createCommandsService({ isDesktopRuntime: true });
   const hooksService = createHooksService({

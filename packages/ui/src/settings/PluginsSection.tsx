@@ -126,6 +126,8 @@ interface PluginsSectionProps {
   onCreateTask?: (request?: CreateTaskRequest) => void;
   onOpenPluginStore: (returnScopeKey?: string, intent?: "add-marketplace") => void;
   showMarketplaceBreadcrumb?: boolean;
+  /** 跳转到「同步配置」分区；由设置页注入，供 MCP 分区引导登录 GitHub。 */
+  onOpenSyncConfigSettings?: () => void;
 }
 
 function workspaceKey(tab: WorkspaceTabState): string {
@@ -958,6 +960,7 @@ export function PluginsSection({
   onCreateTask,
   onOpenPluginStore,
   showMarketplaceBreadcrumb = false,
+  onOpenSyncConfigSettings,
 }: PluginsSectionProps) {
   const { intl } = useZCodeIntl();
   const tabs = useTabStore((state) => state.tabs);
@@ -1325,6 +1328,7 @@ export function PluginsSection({
                   selectedScope.kind === "user" ? openPluginStoreForSelectedScope : undefined
                 }
                 showMarketplaceBreadcrumb={showMarketplaceBreadcrumb}
+                onOpenSyncConfigSettings={onOpenSyncConfigSettings}
               />
             ) : (
               <EmptyState

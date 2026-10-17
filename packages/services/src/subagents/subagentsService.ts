@@ -26,6 +26,8 @@ import {
 } from "@zcode/shared";
 import { normalizeSubagentModelSelection } from "./subagentModelSelection.js";
 import { serializeSubagentMarkdown, parseSubagentMarkdown } from "./subagentMarkdown.js";
+import { createSubagentConfigSync } from "./subagentConfigSync.js";
+import { pickCuratedState, type SubagentConfigCuratedState } from "./subagentConfigSyncModel.js";
 import {
   resolveSubagentStateFile,
   resolveUserHomeDir,
@@ -35,6 +37,7 @@ import {
   type SubagentStorageOptions,
 } from "./subagentStorage.js";
 import type { ISubagentsService } from "./subagents.js";
+import type { ICredentialService } from "../credential/credential.js";
 import { atomicWriteText } from "#src/fs/atomicFileUtils.js";
 import {
   migrateUserSubagentMarkdown,
@@ -73,6 +76,10 @@ interface InstalledPluginRecord {
 
 interface SubagentsServiceOptions extends SubagentStorageOptions {
   isDesktopRuntime?: boolean;
+  /** 凭据读取端口（GitHub access token）；缺省时同步方法一律返回 `not_authenticated`。 */
+  credentialService?: Pick<ICredentialService, "load">;
+  /** 代理感知的 fetch；host 必须注入 `hostApiNetworkTransport.fetch`，缺省用全局 fetch。 */
+  fetchImpl?: typeof fetch;
 }
 
 interface PluginAgentDiscovery {
@@ -549,6 +556,39 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
     homeDir: options?.homeDir,
   };
 
+  /**
+   * 唯一的写入口：agent 文件、agents-state.json 与同步落地全部串行。
+   * 队列不因失败中断（前一个任务失败后下一个照常跑），也不排队等待外部超时。
+   */
+  const enqueueWrite = <T>(run: () => Promise<T>): Promise<T> => {
+    const queued = writeQueue.then(run, run);
+    writeQueue = queued.then(
+      () => undefined,
+      () => undefined,
+    );
+    return queued;
+  };
+
+  // 同步模块不直接读写 agents-state.json：精选子集由本服务提供，保证迁移与归一化只有一条路径。
+  const readCuratedState = async (): Promise<SubagentConfigCuratedState> =>
+    pickCuratedState(await readAgentStateFile(storageOptions));
+  const writeCuratedState = async (next: SubagentConfigCuratedState): Promise<void> => {
+    const state = await readAgentStateFile(storageOptions);
+    // 合并写回：保留 builtInModelOverrides 等旧版回滚字段与其它未知字段，不整份替换。
+    await writeAgentStateFile(
+      { ...state, ...next, disabledAgentIds: [...next.disabledAgentIds] },
+      storageOptions,
+    );
+  };
+  const configSync = createSubagentConfigSync({
+    storageOptions,
+    credentialService: options?.credentialService,
+    fetchImpl: options?.fetchImpl,
+    readCuratedState,
+    writeCuratedState,
+    enqueueWrite,
+  });
+
   return {
     async prepareRuntimeState() {
       const markdownMigration = await migrateUserSubagentMarkdown(
@@ -556,11 +596,9 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
       );
       for (const failure of markdownMigration.failures)
         subagentLogger.warn(undefined, "用户 Subagent Markdown 迁移失败，保留原文件", failure);
-      const runImport = async () =>
-        migrateSubagentStateFile(await resolveSubagentStateFile(storageOptions));
-      const queued = writeQueue.then(runImport, runImport);
-      writeQueue = queued.catch(() => {});
-      await queued;
+      await enqueueWrite(async () =>
+        migrateSubagentStateFile(await resolveSubagentStateFile(storageOptions)),
+      );
     },
 
     async list(params: {
@@ -630,7 +668,7 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
     },
 
     async setEnabled(params: { agentId: string; enabled: boolean }): Promise<void> {
-      const runUpdate = async () => {
+      await enqueueWrite(async () => {
         const state = await readAgentStateFile(storageOptions);
         const previous = new Set(state.disabledAgentIds);
         if (params.enabled) {
@@ -640,15 +678,11 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
         }
         state.disabledAgentIds = [...previous].sort();
         await writeAgentStateFile(state, storageOptions);
-      };
-
-      const queued = writeQueue.then(runUpdate, runUpdate);
-      writeQueue = queued.catch(() => {});
-      await queued;
+      });
     },
 
     async setBuiltInModelOverride(params: BuiltInSubagentModelOverrideParams): Promise<void> {
-      const runUpdate = async () => {
+      await enqueueWrite(async () => {
         const state = await readAgentStateFile(storageOptions);
         const builtInModelSelectionOverrides = {
           ...state.builtInModelSelectionOverrides,
@@ -666,17 +700,13 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
           },
           storageOptions,
         );
-      };
-
-      const queued = writeQueue.then(runUpdate, runUpdate);
-      writeQueue = queued.catch(() => {});
-      await queued;
+      });
     },
 
     async setPluginAgentModelOverride(params: PluginSubagentModelOverrideParams): Promise<void> {
       if (!params.agentId.startsWith("plugin:") || params.agentId.trim() !== params.agentId)
         throw new Error("无效插件 Subagent 身份");
-      const runUpdate = async () => {
+      await enqueueWrite(async () => {
         const state = await readAgentStateFile(storageOptions);
         const overrides = { ...state.pluginAgentModelSelectionOverrides };
         const selection = normalizeSubagentModelSelection(params.modelSelection);
@@ -686,10 +716,7 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
           { ...state, pluginAgentModelSelectionOverrides: overrides },
           storageOptions,
         );
-      };
-      const queued = writeQueue.then(runUpdate, runUpdate);
-      writeQueue = queued.catch(() => {});
-      await queued;
+      });
     },
 
     async getPrimaryUserAgentsDirectory(_params: { provider: ZCodeProvider }): Promise<{
@@ -710,16 +737,19 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
           ? resolveWorkspaceSubagentRoot(requireWorkspacePath(params.workspacePath))
           : await resolveUserSubagentRoot(storageOptions);
       const filePath = join(agentDir, `${params.config.name.trim().toLowerCase()}.md`);
-      await mkdir(agentDir, { recursive: true });
-      if (await exists(filePath)) {
-        throw new Error(`Agent file "${basename(filePath)}" already exists`);
-      }
-
       const content = serializeSubagentMarkdown(normalizeConfig(params.config));
       const agent = parseSavedAgent(content, filePath, scope, params.workspacePath);
-      // 先验证即将写入的 Markdown 可解析，避免 serializer 回归时把坏 profile 落盘。
-      await writeFile(filePath, content, { encoding: "utf-8", flag: "wx" });
-      return { agent };
+
+      // 与同步落地、state 写入共用同一队列：用户点新建的瞬间正好有下载在写盘时，两者不能交错。
+      return enqueueWrite(async () => {
+        await mkdir(agentDir, { recursive: true });
+        if (await exists(filePath)) {
+          throw new Error(`Agent file "${basename(filePath)}" already exists`);
+        }
+        // 先验证即将写入的 Markdown 可解析，避免 serializer 回归时把坏 profile 落盘。
+        await writeFile(filePath, content, { encoding: "utf-8", flag: "wx" });
+        return { agent };
+      });
     },
 
     async updateAgent(params: AgentUpdateParams): Promise<{ agent: AgentSummary }> {
@@ -732,33 +762,52 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
           ? resolveWorkspaceSubagentRoot(requireWorkspacePath(params.workspacePath))
           : await resolveUserSubagentRoot(storageOptions);
       const filePath = join(agentDir, `${params.config.name.trim().toLowerCase()}.md`);
-      await mkdir(agentDir, { recursive: true });
-
-      if (params.oldFilePath && params.oldFilePath !== filePath && (await exists(filePath))) {
-        throw new Error(`Agent file "${basename(filePath)}" already exists`);
-      }
-
       const content = serializeSubagentMarkdown(normalizeConfig(params.config));
       const agent = parseSavedAgent(content, filePath, scope, params.workspacePath);
-      // 更新时同样先 parse 再覆盖旧文件，避免失败保存破坏已有用户 agent。
-      await writeFile(filePath, content, "utf-8");
-      // enabled 状态按 agent id 存储；重命名会生成新 id，必须迁移旧禁用记录，
-      // 否则用户禁用的 agent 改名后会被 runtime 当成新启用 profile 重新加载。
-      await migrateDisabledAgentId(params.agentId, agent.id, storageOptions);
-      if (params.oldFilePath && params.oldFilePath !== filePath) {
-        await rm(params.oldFilePath, { force: true });
-      }
-      return { agent };
+
+      return enqueueWrite(async () => {
+        await mkdir(agentDir, { recursive: true });
+        if (params.oldFilePath && params.oldFilePath !== filePath && (await exists(filePath))) {
+          throw new Error(`Agent file "${basename(filePath)}" already exists`);
+        }
+        // 更新时同样先 parse 再覆盖旧文件，避免失败保存破坏已有用户 agent。
+        await writeFile(filePath, content, "utf-8");
+        // enabled 状态按 agent id 存储；重命名会生成新 id，必须迁移旧禁用记录，
+        // 否则用户禁用的 agent 改名后会被 runtime 当成新启用 profile 重新加载。
+        await migrateDisabledAgentId(params.agentId, agent.id, storageOptions);
+        if (params.oldFilePath && params.oldFilePath !== filePath) {
+          await rm(params.oldFilePath, { force: true });
+        }
+        return { agent };
+      });
     },
 
     async deleteAgent(params: AgentDeleteParams): Promise<void> {
-      await rm(params.filePath, { force: true });
+      await enqueueWrite(async () => {
+        await rm(params.filePath, { force: true });
 
-      const state = await readAgentStateFile(storageOptions);
-      const disabledSet = new Set(state.disabledAgentIds);
-      disabledSet.delete(params.agentId);
-      state.disabledAgentIds = [...disabledSet].sort();
-      await writeAgentStateFile(state, storageOptions);
+        const state = await readAgentStateFile(storageOptions);
+        const disabledSet = new Set(state.disabledAgentIds);
+        disabledSet.delete(params.agentId);
+        state.disabledAgentIds = [...disabledSet].sort();
+        await writeAgentStateFile(state, storageOptions);
+      });
+    },
+
+    getConfigSyncStatus() {
+      return configSync.getStatus();
+    },
+
+    syncConfigToGist(params) {
+      return configSync.upload(params);
+    },
+
+    previewConfigFromGist() {
+      return configSync.preview();
+    },
+
+    applyConfigFromGist(params) {
+      return configSync.apply(params);
     },
   };
 }

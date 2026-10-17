@@ -21,10 +21,17 @@ import type {
   ZCodeMcpServerStatusSnapshot,
   ZCodePluginInfo,
 } from "@zcode/shared";
-import { isZCodeAgentMcpStatusModeUnsupportedError, type IMcpSyncService } from "@zcode/services";
+import {
+  isZCodeAgentMcpStatusModeUnsupportedError,
+  type ConfigSyncDownloadPlan,
+  type ConfigSyncSecretWarning,
+  type ConfigSyncStatus,
+  type IMcpSyncService,
+} from "@zcode/services";
 import { Button } from "@/components/ui/button.js";
 import { toast } from "@/components/ui/toast.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
+import { TID_MCP_CONFIG_DOWNLOAD, TID_MCP_CONFIG_UPLOAD } from "@zcode/shared";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { logger } from "@/logger.js";
@@ -38,6 +45,12 @@ import {
 } from "@/settings/mcpSettingsShared.js";
 import { SettingsBreadcrumbReporter } from "@/settings/SettingsHeaderBreadcrumb.js";
 import { SettingsResourceHeaderActions } from "@/settings/SettingsResourceHeaderActions.js";
+import {
+  ConfigSyncDownloadDialog,
+  ConfigSyncSecretWarningDialog,
+  ConfigSyncStatusRow,
+  describeConfigSyncError,
+} from "@/settings/ConfigSyncParts.js";
 import { PluginStoreAvatar } from "@/settings/PluginStoreAvatar.js";
 import {
   PluginInstallEmptyState,
@@ -548,6 +561,8 @@ interface McpSettingsSectionProps {
   onFormScopeKeyChange?: (scopeKey: string | null) => void;
   onOpenPluginStore?: () => void;
   showMarketplaceBreadcrumb?: boolean;
+  /** 跳转到「同步配置」分区（未登录 GitHub 时的引导入口）。 */
+  onOpenSyncConfigSettings?: () => void;
 }
 
 export function McpSettingsSection({
@@ -565,6 +580,7 @@ export function McpSettingsSection({
   onFormScopeKeyChange,
   onOpenPluginStore,
   showMarketplaceBreadcrumb = false,
+  onOpenSyncConfigSettings,
 }: McpSettingsSectionProps) {
   const { intl, locale } = useZCodeIntl();
   const confirmDialog = useConfirmDialog();
@@ -578,6 +594,125 @@ export function McpSettingsSection({
   const baseServices = useBaseWorkspaceServices();
 
   const storedServers = useMcpStore((s) => s.servers);
+  // GitHub 同步：状态是页面局部事实（服务端只给 gistId/时间/是否变化），不进 mcpStore。
+  const [configSyncStatus, setConfigSyncStatus] = useState<ConfigSyncStatus | null>(null);
+  const [configSyncPhase, setConfigSyncPhase] = useState<
+    "idle" | "uploading" | "previewing" | "applying"
+  >("idle");
+  const [downloadPlan, setDownloadPlan] = useState<ConfigSyncDownloadPlan | null>(null);
+  const [secretWarnings, setSecretWarnings] = useState<readonly ConfigSyncSecretWarning[] | null>(
+    null,
+  );
+  const configSyncBusy = configSyncPhase !== "idle";
+  // 同步只作用于**本机**用户级 MCP server：
+  // - 工作区级随仓库版本化，不参与同步；
+  // - 远程 workspace 页面上显示的 user 级 server 来自远端机器的 host，而同步固定读写本机
+  //   `~/.zcode/cli/config.json`，两者不是同一份配置，因此在远端页面上不提供入口。
+  const canSyncConfig = scopeFilter === "user" && !remoteSessionId && !remoteTarget;
+
+  const loadConfigSyncStatus = useCallback(async () => {
+    try {
+      setConfigSyncStatus(await baseServices.mcpSyncService.getConfigSyncStatus());
+    } catch (error) {
+      logger.warn("[mcp] read config sync status failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }, [baseServices.mcpSyncService]);
+
+  useEffect(() => {
+    if (!canSyncConfig) return;
+    void loadConfigSyncStatus();
+  }, [canSyncConfig, loadConfigSyncStatus]);
+
+  const handleUploadConfig = useCallback(
+    async (params?: { confirmSecretUpload?: boolean }) => {
+      setConfigSyncPhase("uploading");
+      try {
+        const result = await baseServices.mcpSyncService.syncConfigToGist(params);
+        if (result.status === "error") {
+          if (result.error.code === "secret_warning") {
+            setSecretWarnings(result.error.secretWarnings ?? []);
+            return;
+          }
+          if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
+          return;
+        }
+        setSecretWarnings(null);
+        toast(
+          result.status === "unchanged"
+            ? intl.formatMessage({ id: "settings.configSync.unchanged" })
+            : intl.formatMessage(
+                { id: "settings.configSync.uploaded" },
+                { count: result.itemCount },
+              ),
+        );
+        await loadConfigSyncStatus();
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error));
+      } finally {
+        setConfigSyncPhase("idle");
+      }
+    },
+    [baseServices.mcpSyncService, intl, loadConfigSyncStatus],
+  );
+
+  const handlePreviewConfig = useCallback(async () => {
+    setConfigSyncPhase("previewing");
+    try {
+      const result = await baseServices.mcpSyncService.previewConfigFromGist();
+      if (result.status === "error") {
+        if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
+        return;
+      }
+      setDownloadPlan(result);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error));
+    } finally {
+      setConfigSyncPhase("idle");
+    }
+  }, [baseServices.mcpSyncService, intl]);
+
+  const handleApplyConfig = useCallback(
+    async (params: { strategy: "merge" | "replace" }) => {
+      if (!downloadPlan) return;
+      setConfigSyncPhase("applying");
+      try {
+        const result = await baseServices.mcpSyncService.applyConfigFromGist({
+          strategy: params.strategy,
+          expectedRemoteRevision: downloadPlan.remoteRevision,
+          confirmReplace: params.strategy === "replace",
+        });
+        if (result.status === "error") {
+          if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
+          return;
+        }
+        setDownloadPlan(null);
+        toast(
+          result.status === "up_to_date"
+            ? intl.formatMessage({ id: "settings.configSync.upToDate" })
+            : intl.formatMessage(
+                { id: "settings.configSync.downloaded" },
+                {
+                  added: result.applied.added,
+                  updated: result.applied.updated,
+                  removed: result.applied.removed,
+                  kept: result.applied.kept,
+                },
+              ),
+        );
+        await Promise.all([
+          loadMcpFromUserDirectory(baseServices.mcpSyncService, workspaceIdentity),
+          loadConfigSyncStatus(),
+        ]);
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error));
+      } finally {
+        setConfigSyncPhase("idle");
+      }
+    },
+    [baseServices.mcpSyncService, downloadPlan, intl, loadConfigSyncStatus, workspaceIdentity],
+  );
   const storedStatusSnapshots = useMcpStore((s) => s.statusSnapshots);
   const plugins = usePluginManagementStore((state) => state.plugins);
   const availablePlugins = usePluginManagementStore((state) => state.availablePlugins);
@@ -1469,7 +1604,17 @@ export function McpSettingsSection({
                   onRefresh={() => void handleManualRefresh()}
                   refreshing={refreshingStatusList}
                   onImport={() => setImportDialogOpen(true)}
+                  onUploadToGithub={canSyncConfig ? () => void handleUploadConfig() : undefined}
+                  onDownloadFromGithub={
+                    canSyncConfig ? () => void handlePreviewConfig() : undefined
+                  }
+                  uploadToGithubDisabled={configSyncBusy || refreshingStatusList}
+                  downloadFromGithubDisabled={configSyncBusy || refreshingStatusList}
+                  uploadToGithubTestId={TID_MCP_CONFIG_UPLOAD}
+                  downloadFromGithubTestId={TID_MCP_CONFIG_DOWNLOAD}
                   onNew={handleCreate}
+                  refreshDisabled={configSyncBusy}
+                  newDisabled={configSyncBusy}
                   importActionId="settings.mcp.import.open"
                   newActionId="settings.mcp.create.open"
                 />
@@ -1480,6 +1625,15 @@ export function McpSettingsSection({
               })}
             />
           </div>
+          {canSyncConfig && configSyncStatus ? (
+            <ConfigSyncStatusRow
+              status={configSyncStatus}
+              busy={configSyncBusy}
+              onOpenSyncConfigSettings={onOpenSyncConfigSettings}
+              testId="mcp-config-sync-status"
+              goLoginTestId="mcp-config-sync-go-login"
+            />
+          ) : null}
           {installedServers.length > 0 ? (
             <McpServerList
               hideMetadata
@@ -1590,6 +1744,26 @@ export function McpSettingsSection({
           }
         }}
       />
+      {/* 下载必须先预览再确认：这里按需挂载，勾选状态随关闭一起丢弃。 */}
+      {downloadPlan ? (
+        <ConfigSyncDownloadDialog
+          plan={downloadPlan}
+          applying={configSyncPhase === "applying"}
+          onCancel={() => setDownloadPlan(null)}
+          onConfirm={(params) => void handleApplyConfig(params)}
+          testId="mcp-config-sync-confirm"
+          replaceAckTestId="mcp-config-sync-replace-ack"
+        />
+      ) : null}
+      {secretWarnings ? (
+        <ConfigSyncSecretWarningDialog
+          warnings={secretWarnings}
+          uploading={configSyncPhase === "uploading"}
+          onCancel={() => setSecretWarnings(null)}
+          onConfirm={() => void handleUploadConfig({ confirmSecretUpload: true })}
+          testId="mcp-config-sync-secret-warning"
+        />
+      ) : null}
     </div>
   );
 }

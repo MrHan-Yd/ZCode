@@ -1,11 +1,13 @@
 import type { ICredentialService } from "../credential/credential.js";
+import { describeRequestError } from "../http/describeRequestError.js";
 import { createServiceLogger } from "../logger/serviceLogger.js";
-import type {
-  GithubAuthAccount,
-  GithubAuthAccountState,
-  GithubAuthBeginResult,
-  GithubAuthPollResult,
-  IGithubAuthService,
+import {
+  GITHUB_ACCESS_TOKEN_CREDENTIAL_KEY,
+  type GithubAuthAccount,
+  type GithubAuthAccountState,
+  type GithubAuthBeginResult,
+  type GithubAuthPollResult,
+  type IGithubAuthService,
 } from "./githubAuth.js";
 
 /**
@@ -22,9 +24,6 @@ const GITHUB_ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token";
 const GITHUB_USER_URL = "https://api.github.com/user";
 const GITHUB_DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code";
 const GITHUB_API_VERSION = "2022-11-28";
-
-/** access token 在凭据库中的唯一 key（host 侧唯一所有者）。 */
-const GITHUB_ACCESS_TOKEN_CREDENTIAL_KEY = "github:oauth:access_token";
 
 const REQUEST_TIMEOUT_MS = 20_000;
 const DEFAULT_POLL_INTERVAL_SECONDS = 5;
@@ -158,7 +157,7 @@ export function createGithubAuthService(
       });
     } catch (error) {
       // 网络 / 超时 / 非法响应：转成可读 error，绝不把请求体或 token 带出去。
-      const detail = describeError(error);
+      const detail = describeRequestError(error);
       log.warn(undefined, "github device auth poll request failed", detail);
       return { status: "error", message: `网络异常：${detail}` };
     }
@@ -255,7 +254,7 @@ async function postForm<T>(
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
-    throw new GithubRequestError(describeError(error), "network");
+    throw new GithubRequestError(describeRequestError(error), "network");
   }
   let raw: unknown;
   try {
@@ -285,7 +284,7 @@ async function requestGithubUser(
       signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (error) {
-    log.warn(undefined, "github user request failed", describeError(error));
+    log.warn(undefined, "github user request failed", describeRequestError(error));
     return { account: null, unauthorized: false };
   }
   if (response.status === 401) {
@@ -319,26 +318,4 @@ async function requestGithubUser(
 
 function positiveNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
-}
-
-function describeError(error: unknown): string {
-  if (!(error instanceof Error)) {
-    return String(error);
-  }
-  if (error.name === "TimeoutError") {
-    return "请求超时";
-  }
-  // undici 的 fetch 只报 "fetch failed"，真正的原因挂在 cause 链上（UND_ERR_CONNECT_TIMEOUT /
-  // ENOTFOUND / 证书校验失败等）。不带上 cause，界面上就只有「网络异常：fetch failed」，
-  // 无法区分「没配代理」「DNS 失败」还是「证书问题」——首次接 GitHub 时就踩过这个坑。
-  // cause 链只含网络层信息，不含请求体与 token。
-  const parts = [error.message];
-  let cause: unknown = (error as { cause?: unknown }).cause;
-  for (let depth = 0; cause !== undefined && cause !== null && depth < 4; depth += 1) {
-    const code = (cause as { code?: unknown }).code;
-    const message = cause instanceof Error ? cause.message : String(cause);
-    parts.push(typeof code === "string" && code.length > 0 ? `${code}: ${message}` : message);
-    cause = (cause as { cause?: unknown }).cause;
-  }
-  return parts.join(" ← ");
 }

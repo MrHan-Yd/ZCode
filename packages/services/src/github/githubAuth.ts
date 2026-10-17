@@ -1,6 +1,14 @@
 import { ServiceChannels } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
 
+/**
+ * access token 在凭据库中的唯一 key。
+ *
+ * 写入方只有 `GithubAuthService`；需要调用 GitHub API 的其它服务（如子智能体配置同步）只读同一个 key，
+ * 不另建凭据项、不缓存明文。
+ */
+export const GITHUB_ACCESS_TOKEN_CREDENTIAL_KEY = "github:oauth:access_token";
+
 /** GitHub 账号展示信息；来自 `GET https://api.github.com/user`，不持久化。 */
 export interface GithubAuthAccount {
   readonly login: string;

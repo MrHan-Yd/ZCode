@@ -6,6 +6,8 @@ import { Bot, Check, Plus, Trash2 } from "lucide-react";
 import { completeNewModelSelection } from "@zcode/provider";
 import {
   TID_SUBAGENT_BUILT_IN_MODEL_TRIGGER,
+  TID_SUBAGENT_CONFIG_DOWNLOAD,
+  TID_SUBAGENT_CONFIG_UPLOAD,
   TID_SUBAGENT_ROW,
   ZCODE_AGENT_PROVIDER,
   testId,
@@ -17,7 +19,12 @@ import {
   type ModelSelection,
   type SubAgentConfig,
 } from "@zcode/shared";
-import type { ModelSelectionView } from "@zcode/services";
+import type {
+  ConfigSyncSecretWarning,
+  ConfigSyncStatus,
+  ModelSelectionView,
+  SubagentConfigDownloadPlan,
+} from "@zcode/services";
 import { Button } from "@/components/ui/button.js";
 import { Input } from "@/components/ui/input.js";
 import {
@@ -53,6 +60,13 @@ import { encodeCustomModelValue } from "@/lib/zcodeCustomModelValue.js";
 import { SUBAGENT_COLORS, SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
 import { SettingsResourceGroupHeader } from "@/settings/SettingsResourceGroupHeader.js";
 import { SettingsResourceHeaderActions } from "@/settings/SettingsResourceHeaderActions.js";
+import {
+  ConfigSyncDownloadDialog,
+  ConfigSyncSecretWarningDialog,
+  ConfigSyncStatusRow,
+  describeConfigSyncError,
+  describeStateChange,
+} from "@/settings/ConfigSyncParts.js";
 import { SettingsBreadcrumbReporter } from "@/settings/SettingsHeaderBreadcrumb.js";
 import { SettingsFormTextarea } from "@/settings/SettingsFormTextarea.js";
 import {
@@ -127,6 +141,8 @@ interface SubagentsSectionProps {
   onManageModels?: () => void;
   workspacePath?: string | null;
   workspaceIdentity?: string;
+  /** 跳转到「同步配置」分区（未登录 GitHub 时的引导入口）。 */
+  onOpenSyncConfigSettings?: () => void;
 }
 
 function isEditableUserAgent(agent: AgentSummary): boolean {
@@ -1266,7 +1282,10 @@ function SubagentForm({
   );
 }
 
-export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
+export function SubagentsSection({
+  onManageModels,
+  onOpenSyncConfigSettings,
+}: SubagentsSectionProps) {
   const { intl, locale } = useZCodeIntl();
   const confirmDialog = useConfirmDialog();
   const plugins = usePluginManagementStore((state) => state.plugins);
@@ -1306,6 +1325,16 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
   const [saving, setSaving] = useState(false);
   const [operatingAgentId, setOperatingAgentId] = useState<string | null>(null);
   const [selectedScopeKey, setSelectedScopeKey] = useState("user");
+  // GitHub 同步：状态是页面局部事实（服务端只给 gistId/时间/是否变化），不放进 subagentsStore。
+  const [configSyncStatus, setConfigSyncStatus] = useState<ConfigSyncStatus | null>(null);
+  const [configSyncPhase, setConfigSyncPhase] = useState<
+    "idle" | "uploading" | "previewing" | "applying"
+  >("idle");
+  const [downloadPlan, setDownloadPlan] = useState<SubagentConfigDownloadPlan | null>(null);
+  const [secretWarnings, setSecretWarnings] = useState<readonly ConfigSyncSecretWarning[] | null>(
+    null,
+  );
+  const configSyncBusy = configSyncPhase !== "idle";
   const selectedWorkspace = workspaceTabs.find(
     (tab) => getPluginWorkspaceKey(tab) === selectedScopeKey,
   );
@@ -1409,6 +1438,114 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
       subagentsService,
     });
   }, [subagentsService, targetWorkspaceIdentity, targetWorkspacePath]);
+
+  const loadConfigSyncStatus = useCallback(async () => {
+    try {
+      setConfigSyncStatus(await subagentsService.getConfigSyncStatus());
+    } catch (error) {
+      logger.warn("[SubagentsSection] 读取子智能体同步状态失败", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }, [subagentsService]);
+
+  // 同步只作用于本机用户级目录；Web/无用户目录的宿主不做这次 RPC。
+  const userScopeAvailable = capability?.userScopeAvailable === true;
+  useEffect(() => {
+    if (!userScopeAvailable) return;
+    void loadConfigSyncStatus();
+  }, [loadConfigSyncStatus, userScopeAvailable]);
+
+  // 本地改动（新建/编辑/删除/启停）会改变「本地有未上传的修改」，刷新列表时一并刷新状态行。
+  const refreshWithSyncStatus = useCallback(async () => {
+    await Promise.all([refresh(), loadConfigSyncStatus()]);
+  }, [loadConfigSyncStatus, refresh]);
+
+  const handleUploadConfig = useCallback(
+    async (params?: { confirmSecretUpload?: boolean }) => {
+      setConfigSyncPhase("uploading");
+      try {
+        const result = await subagentsService.syncConfigToGist(params);
+        if (result.status === "error") {
+          if (result.error.code === "secret_warning") {
+            setSecretWarnings(result.error.secretWarnings ?? []);
+            return;
+          }
+          if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
+          return;
+        }
+        setSecretWarnings(null);
+        toast(
+          result.status === "unchanged"
+            ? intl.formatMessage({ id: "settings.configSync.unchanged" })
+            : intl.formatMessage(
+                { id: "settings.configSync.uploaded" },
+                { count: result.itemCount },
+              ),
+        );
+        await loadConfigSyncStatus();
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error));
+      } finally {
+        setConfigSyncPhase("idle");
+      }
+    },
+    [intl, loadConfigSyncStatus, subagentsService],
+  );
+
+  const handlePreviewConfig = useCallback(async () => {
+    setConfigSyncPhase("previewing");
+    try {
+      const result = await subagentsService.previewConfigFromGist();
+      if (result.status === "error") {
+        if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
+        return;
+      }
+      setDownloadPlan(result);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error));
+    } finally {
+      setConfigSyncPhase("idle");
+    }
+  }, [intl, subagentsService]);
+
+  const handleApplyConfig = useCallback(
+    async (params: { strategy: "merge" | "replace" }) => {
+      if (!downloadPlan) return;
+      setConfigSyncPhase("applying");
+      try {
+        const result = await subagentsService.applyConfigFromGist({
+          strategy: params.strategy,
+          expectedRemoteRevision: downloadPlan.remoteRevision,
+          confirmReplace: params.strategy === "replace",
+        });
+        if (result.status === "error") {
+          if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
+          return;
+        }
+        setDownloadPlan(null);
+        toast(
+          result.status === "up_to_date"
+            ? intl.formatMessage({ id: "settings.configSync.upToDate" })
+            : intl.formatMessage(
+                { id: "settings.configSync.downloaded" },
+                {
+                  added: result.applied.added,
+                  updated: result.applied.updated,
+                  removed: result.applied.removed,
+                  kept: result.applied.kept,
+                },
+              ),
+        );
+        await Promise.all([refresh(), refreshMentionStore(), loadConfigSyncStatus()]);
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error));
+      } finally {
+        setConfigSyncPhase("idle");
+      }
+    },
+    [downloadPlan, intl, loadConfigSyncStatus, refresh, refreshMentionStore, subagentsService],
+  );
 
   const handleSave = useCallback(
     async (config: SubAgentConfig) => {
@@ -1552,6 +1689,9 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
     activeScope === "workspace"
       ? Boolean(targetWorkspacePath)
       : capability?.userScopeAvailable === true;
+
+  // 同步只作用于用户级 agents（工作区级随 git 版本化），因此只在用户级 scope 且本机有用户目录时提供入口。
+  const canSyncConfig = activeScope === "user" && capability?.userScopeAvailable === true;
 
   const handleAddNew = useCallback(() => {
     if (!canManageUserAgents) {
@@ -1782,11 +1922,28 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
                 })}
               />
               <SettingsResourceHeaderActions
-                onRefresh={() => void Promise.all([refresh(), refreshMentionStore()])}
+                onRefresh={() => void refreshWithSyncStatus()}
+                onUploadToGithub={canSyncConfig ? () => void handleUploadConfig() : undefined}
+                onDownloadFromGithub={canSyncConfig ? () => void handlePreviewConfig() : undefined}
+                uploadToGithubDisabled={configSyncBusy || refreshing}
+                downloadFromGithubDisabled={configSyncBusy || refreshing}
+                uploadToGithubTestId={TID_SUBAGENT_CONFIG_UPLOAD}
+                downloadFromGithubTestId={TID_SUBAGENT_CONFIG_DOWNLOAD}
                 onNew={canManageUserAgents ? handleAddNew : undefined}
                 refreshing={refreshing}
+                refreshDisabled={configSyncBusy}
+                newDisabled={configSyncBusy}
               />
             </div>
+            {canSyncConfig && configSyncStatus ? (
+              <ConfigSyncStatusRow
+                status={configSyncStatus}
+                busy={configSyncBusy}
+                onOpenSyncConfigSettings={onOpenSyncConfigSettings}
+                testId="subagent-config-sync-status"
+                goLoginTestId="subagent-config-sync-go-login"
+              />
+            ) : null}
             {groupedAgents.user.length > 0 ? (
               renderAgentList(groupedAgents.user)
             ) : (
@@ -1839,6 +1996,27 @@ export function SubagentsSection({ onManageModels }: SubagentsSectionProps) {
           ) : null}
         </div>
       )}
+      {/* 下载必须先预览再确认：这里按需挂载，勾选状态随关闭一起丢弃。 */}
+      {downloadPlan ? (
+        <ConfigSyncDownloadDialog
+          plan={downloadPlan}
+          applying={configSyncPhase === "applying"}
+          extraSummary={describeStateChange(intl, downloadPlan.stateChange)}
+          onCancel={() => setDownloadPlan(null)}
+          onConfirm={(params) => void handleApplyConfig(params)}
+          testId="subagent-config-sync-confirm"
+          replaceAckTestId="subagent-config-sync-replace-ack"
+        />
+      ) : null}
+      {secretWarnings ? (
+        <ConfigSyncSecretWarningDialog
+          warnings={secretWarnings}
+          uploading={configSyncPhase === "uploading"}
+          onCancel={() => setSecretWarnings(null)}
+          onConfirm={() => void handleUploadConfig({ confirmSecretUpload: true })}
+          testId="subagent-config-sync-secret-warning"
+        />
+      ) : null}
     </div>
   );
 }
