@@ -1,5 +1,24 @@
 # Changelog
 
+## [3.18.1](https://github.com/MrHan-Yd/ZCode/compare/v3.18.0...v3.18.1) (2026-10-17)
+
+### Features
+
+* **config-sync:** 支持将 MCP 与子智能体配置同步到 GitHub 私有 Gist ([262fd00](https://github.com/MrHan-Yd/ZCode/commit/262fd0037742a4f66bb4d5753fd380d33df82cd5))
+
+* **services:** 新增 GitHub 设备流授权并补种文件变更摘要 ([d2957ea](https://github.com/MrHan-Yd/ZCode/commit/d2957eac4c17be6b88ad0635f98fb6d83a108b4d))
+
+* **settings:** 模型智能配置规则列表默认收起 ([28b8378](https://github.com/MrHan-Yd/ZCode/commit/28b8378bd7d72ce03840a57ed146af5f03b5df8b))
+  * 抽取列表呈现状态判定，区分 list/empty/error，错误与空状态仍直接可见
+  * 「已配置规则」明细改为可折叠，默认收起，展开状态仅保存在组件内
+  * 补充状态模型单测与同步规格说明
+  * 增加文件引用扫描与子智能体配置同步的规划文档
+
+
+### Documentation
+
+* 补充 README 的 v3.18.0 更新说明 ([4de92b2](https://github.com/MrHan-Yd/ZCode/commit/4de92b2087fef209f88f2d347bb19b71d5128dd3))
+
 ## [3.18.0](https://github.com/MrHan-Yd/ZCode/compare/v3.17.9...v3.18.0) (2026-10-15)
 
 ### Features
