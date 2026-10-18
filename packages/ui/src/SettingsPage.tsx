@@ -1746,6 +1746,9 @@ export function SettingsPage({
                               onConsumePendingModelProviderTarget={() =>
                                 setPendingModelProviderTarget(undefined)
                               }
+                              onOpenSyncConfigSettings={() =>
+                                setActiveSettingsSection("modelSmartConfig")
+                              }
                             />
                           </ServiceProvider>
                         ) : activeSection === "modelSmartConfig" ? (

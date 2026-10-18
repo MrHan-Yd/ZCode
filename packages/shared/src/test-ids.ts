@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- testid 是 UI 与 E2E 共用的扁平登记表，按模块顺序集中维护；拆文件会让引用变散。 */
 /**
  * 统一管理所有 data-testid，UI 组件和 E2E 测试共用此单一来源。
  * 新增 testid 时请在此文件添加，不要在组件中硬编码字符串。
@@ -451,6 +452,10 @@ export const TID_MCP_CONFIG_DOWNLOAD = "mcp-config-download";
 export const TID_SUBAGENT_CONFIG_RESTORE = "subagent-config-restore";
 /** 从本地备份还原 MCP 服务器配置 */
 export const TID_MCP_CONFIG_RESTORE = "mcp-config-restore";
+/** 模型设置（供应商 / 模型配置）的 GitHub 同步与本地备份还原入口（同步内容不含 API Key） */
+export const TID_MODEL_CONFIG_UPLOAD = "model-config-upload";
+export const TID_MODEL_CONFIG_DOWNLOAD = "model-config-download";
+export const TID_MODEL_CONFIG_RESTORE = "model-config-restore";
 /** 设置页使用统计顶层 tab（动态后缀为 usage tab id） */
 export const TID_SETTINGS_USAGE_TAB = "settings-usage-tab";
 /** 侧边栏头像菜单剩余额度子菜单入口 */

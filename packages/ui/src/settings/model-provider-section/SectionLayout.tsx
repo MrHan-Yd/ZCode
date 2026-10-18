@@ -19,7 +19,23 @@ interface ModelProviderSectionLayoutProps {
   onSelectNavItem: (item: ModelProviderNavGroup["items"][number]) => void;
   onReorderProviderIds?: (providerIds: string[]) => Promise<void>;
   reorderableProviderIds?: ReadonlySet<string>;
+  /** GitHub 私有 gist 同步入口；未装配同步能力时不传，header 只保留刷新 / 添加。 */
+  configSyncActions?: ModelProviderConfigSyncActions;
+  /** 同步状态行；未装配或尚未读到状态时不渲染。 */
+  configSyncStatusRow?: ReactNode;
   children: ReactNode;
+}
+
+export interface ModelProviderConfigSyncActions {
+  readonly onUploadToGithub: () => void;
+  readonly onDownloadFromGithub: () => void;
+  readonly onRestoreFromBackup: () => void;
+  readonly uploadToGithubDisabled: boolean;
+  readonly downloadFromGithubDisabled: boolean;
+  readonly restoreFromBackupDisabled: boolean;
+  readonly uploadToGithubTestId: string;
+  readonly downloadFromGithubTestId: string;
+  readonly restoreFromBackupTestId: string;
 }
 
 function shouldShowModelProviderRefreshLoading(params: {
@@ -43,6 +59,8 @@ export function ModelProviderSectionLayout({
   onSelectNavItem,
   onReorderProviderIds,
   reorderableProviderIds,
+  configSyncActions,
+  configSyncStatusRow,
   children,
 }: ModelProviderSectionLayoutProps) {
   const refreshButtonLoading = shouldShowModelProviderRefreshLoading({
@@ -61,8 +79,23 @@ export function ModelProviderSectionLayout({
           refreshLabel={refreshButtonLoading ? loadingLabel : refreshLabel}
           newLabel={addProviderLabel}
           newTestId={TID_MODEL_PROVIDER_ADD_PROVIDER_BUTTON}
+          {...(configSyncActions
+            ? {
+                onUploadToGithub: configSyncActions.onUploadToGithub,
+                onDownloadFromGithub: configSyncActions.onDownloadFromGithub,
+                onRestoreFromBackup: configSyncActions.onRestoreFromBackup,
+                uploadToGithubDisabled: configSyncActions.uploadToGithubDisabled,
+                downloadFromGithubDisabled: configSyncActions.downloadFromGithubDisabled,
+                restoreFromBackupDisabled: configSyncActions.restoreFromBackupDisabled,
+                uploadToGithubTestId: configSyncActions.uploadToGithubTestId,
+                downloadFromGithubTestId: configSyncActions.downloadFromGithubTestId,
+                restoreFromBackupTestId: configSyncActions.restoreFromBackupTestId,
+              }
+            : {})}
         />
       </div>
+
+      {configSyncStatusRow}
 
       <div className="overflow-clip rounded-xl border border-border bg-card">
         <div

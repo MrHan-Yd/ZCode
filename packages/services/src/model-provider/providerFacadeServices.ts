@@ -19,6 +19,16 @@ import {
 import { createServiceDescriptor } from "../descriptors.js";
 import type { ModelConnectivityResult } from "@zcode/shared";
 import { createServiceLogger } from "../logger/serviceLogger.js";
+import type { ConfigSyncOperations } from "../config-sync/orchestrator.js";
+import type {
+  ConfigSyncBackupList,
+  ConfigSyncDownloadPlan,
+  ConfigSyncDownloadResult,
+  ConfigSyncRestoreResult,
+  ConfigSyncResult,
+  ConfigSyncStatus,
+  ConfigSyncUploadResult,
+} from "../config-sync/types.js";
 
 export type {
   ProviderSettingsProviderView,
@@ -68,6 +78,25 @@ export interface IProviderSettingsService {
   testModelConnectivity(
     input: ProviderSettingsConnectivityRequest,
   ): Promise<ModelConnectivityResult>;
+  /**
+   * 模型设置（个人 Provider 配置层）与 GitHub 私有 gist 的同步。
+   * 形状与子智能体 / MCP 同步一致：状态、本地备份列表、还原，以及上传 / 预览 / 应用三阶段下载。
+   * 条目内容不含 API Key（上传前剥离、下载后补回本机值），见 `specs/model-provider-config-sync.md`。
+   */
+  getConfigSyncStatus(): Promise<ConfigSyncStatus>;
+  listConfigSyncBackups(): Promise<ConfigSyncBackupList>;
+  restoreConfigSyncBackup(params: {
+    backupDir: string;
+  }): Promise<ConfigSyncResult<ConfigSyncRestoreResult>>;
+  syncConfigToGist(params?: {
+    confirmSecretUpload?: boolean;
+  }): Promise<ConfigSyncResult<ConfigSyncUploadResult>>;
+  previewConfigFromGist(): Promise<ConfigSyncResult<ConfigSyncDownloadPlan>>;
+  applyConfigFromGist(params: {
+    strategy: "merge" | "replace";
+    expectedRemoteRevision: number;
+    confirmReplace?: boolean;
+  }): Promise<ConfigSyncResult<ConfigSyncDownloadResult>>;
 }
 
 export const IProviderSettingsService = createServiceDescriptor<IProviderSettingsService>(
@@ -110,7 +139,13 @@ export function createProviderSettingsService(
   facade: ProviderSettingsFacade,
   ensureReady: () => Promise<void> = async () => {},
   testConnectivity?: ProviderSettingsConnectivityTester,
+  configSync?: ConfigSyncOperations,
 ): IProviderSettingsService {
+  // 同步方法只在装配了 config-sync 的环境里可用；未装配时按未登录拒绝，不伪造状态。
+  const requireConfigSync = (): ConfigSyncOperations => {
+    if (!configSync) throw new Error("当前 Environment 未装配模型设置同步");
+    return configSync;
+  };
   return {
     onDidChange: toEvent((listener) => facade.onDidChange(listener)),
     getView: async () => {
@@ -205,6 +240,30 @@ export function createProviderSettingsService(
         providerId: input.providerId,
         modelId: input.modelId,
       });
+    },
+    getConfigSyncStatus: async () => {
+      await ensureReady();
+      return requireConfigSync().getStatus();
+    },
+    listConfigSyncBackups: async () => {
+      await ensureReady();
+      return requireConfigSync().listBackups();
+    },
+    restoreConfigSyncBackup: async (params) => {
+      await ensureReady();
+      return requireConfigSync().restore(params);
+    },
+    syncConfigToGist: async (params) => {
+      await ensureReady();
+      return requireConfigSync().upload(params);
+    },
+    previewConfigFromGist: async () => {
+      await ensureReady();
+      return requireConfigSync().preview();
+    },
+    applyConfigFromGist: async (params) => {
+      await ensureReady();
+      return requireConfigSync().apply(params);
     },
   };
 }

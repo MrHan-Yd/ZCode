@@ -51,6 +51,13 @@ export interface ConfigSyncAdapter<TPlan extends ConfigSyncDownloadPlan = Config
   }): Promise<void>;
   /** 统计一份备份里的条目数，供还原界面区分备份；读不出来返回 null。 */
   countBackupItems(backupDir: string): Promise<number | null>;
+  /**
+   * 用功能自己的写入路径整份还原备份，返回是否成功。
+   * 缺省由核心直接 `cp` 备份文件覆盖目标；当功能的唯一写入路径带锁 / 原子写 / 落盘前校验时
+   * （如个人 Provider 配置必须经 `PersonalProviderConfigRepository.update`），应实现它，
+   * 否则还原会绕过这些约束。
+   */
+  restoreFromBackup?(backupDir: string): Promise<boolean>;
   /** 计划装饰：功能补自己的额外变更摘要（子智能体：启用状态与模型覆盖）。 */
   decoratePlan?(
     plan: ConfigSyncDownloadPlan,
@@ -196,7 +203,10 @@ export function createConfigSync<TPlan extends ConfigSyncDownloadPlan = ConfigSy
         } catch (error) {
           return fail("unknown", `备份当前配置失败，未做还原：${describeRequestError(error)}`);
         }
-        const restored = await adapter.backup.restore(params.backupDir);
+        // 功能实现了自己的还原路径时优先用它：直接拷文件会绕过功能的锁与落盘前校验。
+        const restored = adapter.restoreFromBackup
+          ? await adapter.restoreFromBackup(params.backupDir)
+          : await adapter.backup.restore(params.backupDir);
         if (!restored) {
           return fail(
             "unknown",

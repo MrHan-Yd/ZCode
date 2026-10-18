@@ -4053,6 +4053,10 @@ const enUS: Record<string, string> = {
   "settings.configSync.restoreConfirm": "Restore",
   "settings.configSync.restoreEmpty": "No local backups available yet",
   "settings.configSync.restored": "Restored from backup ({count} item(s))",
+  "settings.configSync.uploadedModel": "Uploaded to a private gist ({count} providers)",
+  "settings.configSync.replaceAckModel": "Mirror remote (delete {count} local-only providers)",
+  "settings.configSync.modelApiKeyNotice":
+    "API keys are never uploaded and are not overwritten by a download; enter them again on a new machine.",
   "settings.configSync.notFound": "The remote gist is missing, inaccessible, or has never been uploaded ({detail})",  "settings.configSync.rateLimited": "GitHub rate limit reached; try again later ({detail})",
   "settings.configSync.networkError": "Network request failed: {detail}",
   "settings.configSync.timeout": "Request timed out; check your network or proxy settings",

@@ -166,6 +166,9 @@ export function parseRemoteFiles(
     if (sha256Hex(content) !== extra.sha256) {
       return { status: "invalid", message: `${extra.fileName} 与 manifest 记录的校验和不一致` };
     }
+    if (profile.isValidExtraContent && !profile.isValidExtraContent(extra.fileName, content)) {
+      return { status: "invalid", message: `${extra.fileName} 内容无法被本功能加载` };
+    }
     extras.set(extra.fileName, content);
   }
 

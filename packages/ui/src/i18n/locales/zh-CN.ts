@@ -3788,6 +3788,10 @@ const zhCN: Record<string, string> = {
   "settings.configSync.restoreConfirm": "还原",
   "settings.configSync.restoreEmpty": "还没有可用的本地备份",
   "settings.configSync.restored": "已从备份还原（{count} 项）",
+  "settings.configSync.uploadedModel": "已上传到私有 Gist（{count} 个供应商）",
+  "settings.configSync.replaceAckModel": "镜像远端（删除本地独有的 {count} 个供应商）",
+  "settings.configSync.modelApiKeyNotice":
+    "API Key 不会上传，也不会被下载覆盖；在新机器上需要重新填写。",
   "settings.configSync.notFound": "远端 Gist 不存在、无权访问，或还没有上传过配置（{detail}）",  "settings.configSync.rateLimited": "GitHub 限流，请稍后重试（{detail}）",
   "settings.configSync.networkError": "网络请求失败：{detail}",
   "settings.configSync.timeout": "请求超时，请检查网络或代理设置",

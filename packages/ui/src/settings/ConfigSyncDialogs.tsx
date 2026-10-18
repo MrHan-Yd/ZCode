@@ -34,6 +34,7 @@ export function ConfigSyncDownloadDialog({
   onConfirm,
   testId,
   replaceAckTestId,
+  replaceAckLabelId = "settings.configSync.replaceAck",
 }: {
   plan: ConfigSyncDownloadPlan;
   applying: boolean;
@@ -43,6 +44,8 @@ export function ConfigSyncDownloadDialog({
   onConfirm: (params: { strategy: "merge" | "replace" }) => void;
   testId: string;
   replaceAckTestId: string;
+  /** 镜像远端确认文案；默认是子智能体措辞，其它功能可换成自己的领域文案。 */
+  replaceAckLabelId?: string;
 }) {
   const { intl } = useZCodeIntl();
   // 由父组件按需挂载，勾选状态随弹窗关闭一起消失，不会把上一次的「镜像远端」带到下一次。
@@ -122,12 +125,7 @@ export function ConfigSyncDownloadDialog({
               checked={mirrorRemote}
               onChange={(event) => setMirrorRemote(event.currentTarget.checked)}
             />
-            <span>
-              {intl.formatMessage(
-                { id: "settings.configSync.replaceAck" },
-                { count: localOnlyCount },
-              )}
-            </span>
+            <span>{intl.formatMessage({ id: replaceAckLabelId }, { count: localOnlyCount })}</span>
           </label>
         ) : null}
 

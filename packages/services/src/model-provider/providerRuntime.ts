@@ -16,6 +16,9 @@ import {
   type ProviderConfigRuntime,
   type ProviderConfigRuntimeOptions,
 } from "./providerConfigRuntime.js";
+import { createProviderConfigSync } from "./providerConfigSync.js";
+import type { ICredentialService } from "../credential/credential.js";
+import { getAppConfigDir } from "../paths.js";
 import {
   createModelSelectionService,
   createProviderSettingsService,
@@ -28,6 +31,12 @@ import {
 export interface ProviderRuntimeOptions extends ProviderConfigRuntimeOptions {
   readonly accountSource?: RefreshableProviderSource<AccountProviderConfigSnapshot>;
   readonly testConnectivity?: ProviderSettingsConnectivityTester;
+  /** 模型设置同步复用的 GitHub 登录凭据；缺省时同步方法一律返回「未登录」。 */
+  readonly credentialService?: Pick<ICredentialService, "load">;
+  /** 必须共用 host 的代理感知传输（`hostApiNetworkTransport.fetch`）。 */
+  readonly fetchImpl?: typeof fetch;
+  /** 同步元数据与备份目录；缺省为设置里的数据存储路径（`{dataBaseDir}/.zcode/v2`）。 */
+  readonly dataDir?: () => Promise<string>;
 }
 
 export interface ProviderRuntimeDependencies {
@@ -37,6 +46,9 @@ export interface ProviderRuntimeDependencies {
   readonly testConnectivity?: ProviderSettingsConnectivityTester;
   readonly modelSelectionConfiguredDefaultSource?: ModelSelectionConfiguredDefaultSource;
   readonly disposeModelSelectionConfiguredDefaultSource?: () => void;
+  readonly credentialService?: Pick<ICredentialService, "load">;
+  readonly fetchImpl?: typeof fetch;
+  readonly dataDir?: () => Promise<string>;
 }
 
 interface RefreshableProviderSource<TSnapshot> extends ProviderSource<TSnapshot> {
@@ -101,10 +113,32 @@ export class ProviderRuntime {
     );
     const ensureReady = () => this.start();
     const settingsFacade = new ProviderSettingsFacade(this.registryService, mutations);
+    // 同步写盘与设置页编辑共用同一条仓库写入路径（`repository.update` 的文件锁内读-改-写）；
+    // 这里的队列只保证「备份 → 应用 → 写元数据」这一串不被另一个同步操作插入。
+    let writeQueue = Promise.resolve();
+    const enqueueWrite = <T>(run: () => Promise<T>): Promise<T> => {
+      const queued = writeQueue.then(run, run);
+      writeQueue = queued.then(
+        () => undefined,
+        () => undefined,
+      );
+      return queued;
+    };
+    const dataDir = dependencies.dataDir ?? (async () => getAppConfigDir());
+    const configSync = createProviderConfigSync({
+      readLayer: () => this.#configRuntime.personalRepository.read(),
+      updateLayer: (transform) => this.#configRuntime.personalRepository.update(transform),
+      userConfigPath: async () => this.#configRuntime.personalFilePath,
+      dataDir,
+      credentialService: dependencies.credentialService,
+      fetchImpl: dependencies.fetchImpl,
+      enqueueWrite,
+    });
     this.providerSettings = createProviderSettingsService(
       settingsFacade,
       ensureReady,
       dependencies.testConnectivity,
+      configSync,
     );
     this.#modelSelectionRuntime = createModelSelectionService(
       createNodeModelSelectionFacade(this.registryService),
@@ -194,7 +228,14 @@ function createSettingsMutationTarget(
 }
 
 export function createProviderRuntime(options: ProviderRuntimeOptions): ProviderRuntime {
-  const { accountSource, testConnectivity, ...configRuntimeOptions } = options;
+  const {
+    accountSource,
+    testConnectivity,
+    credentialService,
+    fetchImpl,
+    dataDir,
+    ...configRuntimeOptions
+  } = options;
   const configRuntime = createProviderConfigRuntime(configRuntimeOptions);
   const modelSelectionConfiguredDefaultSource = new NodeModelSelectionConfigRepository({
     personalRepository: configRuntime.personalRepository,
@@ -203,6 +244,9 @@ export function createProviderRuntime(options: ProviderRuntimeOptions): Provider
     configRuntime,
     accountSource,
     testConnectivity,
+    credentialService,
+    fetchImpl,
+    dataDir,
     modelSelectionConfiguredDefaultSource,
     disposeModelSelectionConfiguredDefaultSource: () =>
       modelSelectionConfiguredDefaultSource.dispose(),

@@ -31,9 +31,13 @@ export interface ProviderConfigRuntimeOptions {
  */
 export class ProviderConfigRuntime {
   readonly configService: NodeProviderConfigRuntime["configService"];
+  /** 个人配置文件绝对路径；同步的备份对象与路径解析都以此为准。 */
+  readonly personalFilePath: string;
   readonly #runtime: NodeProviderConfigRuntime;
 
   constructor(options: ProviderConfigRuntimeOptions) {
+    const personalFilePath =
+      options.personalFilePath ?? join(getAppConfigDir(), PERSONAL_PROVIDER_CONFIG_FILE_NAME);
     const runtimeOptions: NodeProviderConfigRuntimeOptions = {
       zcodeBuiltinFilePath: options.zcodeBuiltinFilePath,
       zcodeBuiltinActiveFilePath: options.zcodeBuiltinActiveFilePath,
@@ -42,8 +46,7 @@ export class ProviderConfigRuntime {
       onZCodeBuiltinRefreshError: options.onZCodeBuiltinRefreshError,
       onPersonalConfigRecovery: options.onPersonalConfigRecovery,
       onPersonalConfigPollingError: options.onPersonalConfigPollingError,
-      personalFilePath:
-        options.personalFilePath ?? join(getAppConfigDir(), PERSONAL_PROVIDER_CONFIG_FILE_NAME),
+      personalFilePath,
       personalPollingIntervalMs: options.personalPollingIntervalMs,
       modelSmartConfigFilePath: options.modelSmartConfigFilePath,
       watch: options.watch,
@@ -56,6 +59,7 @@ export class ProviderConfigRuntime {
           }
         : {}),
     };
+    this.personalFilePath = personalFilePath;
     this.#runtime = new NodeProviderConfigRuntime(runtimeOptions);
     this.configService = this.#runtime.configService;
   }

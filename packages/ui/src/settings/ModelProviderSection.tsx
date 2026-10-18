@@ -54,6 +54,13 @@ import {
   useCodingPlanAccessRefresh,
   useCodingPlanEntitlements,
 } from "./model-provider-section/useCodingPlanEntitlements.js";
+import { useProviderConfigSync } from "./model-provider-section/useProviderConfigSync.js";
+import {
+  ConfigSyncDownloadDialog,
+  ConfigSyncRestoreDialog,
+  ConfigSyncSecretWarningDialog,
+} from "./ConfigSyncDialogs.js";
+import { ConfigSyncStatusRow } from "./ConfigSyncParts.js";
 import { sortModelProvidersForDisplay } from "@/lib/modelProviderOrdering.js";
 import { useSettings } from "@/hooks/useSettingService.js";
 import { resolveLogoutProviderFamilyDomain } from "@/lib/providerFamilyDomainSettings.js";
@@ -204,12 +211,15 @@ export function ModelProviderSection({
   connectivityWorkspaceRequired = false,
   pendingModelProviderTarget,
   onConsumePendingModelProviderTarget,
+  onOpenSyncConfigSettings,
 }: {
   workspacePath?: string;
   connectivityWorkspacePath?: string;
   connectivityWorkspaceRequired?: boolean;
   pendingModelProviderTarget?: SettingsModelProviderTarget;
   onConsumePendingModelProviderTarget?: () => void;
+  /** 未登录 GitHub 时状态行的「去登录」跳转；指向「同步配置」分区。 */
+  onOpenSyncConfigSettings?: () => void;
 } = {}) {
   const { intl, locale } = useZCodeIntl();
   const confirmDialog = useConfirmDialog();
@@ -244,6 +254,8 @@ export function ModelProviderSection({
       id: "settings.modelProvider.testModel.localWorkspaceUnavailable",
     }),
   });
+  // 同步只作用于本机个人 Provider 配置层；应用/还原后刷新设置视图，让列表回到权威状态。
+  const providerConfigSync = useProviderConfigSync({ onApplied: refresh });
   const entitledAccountProviderIds = useMemo<ReadonlySet<string>>(() => {
     return new Set(
       (providerSettingsView?.providers ?? [])
@@ -1008,112 +1020,172 @@ export function ModelProviderSection({
   }
 
   return (
-    <ModelProviderSectionLayout
-      description={intl.formatMessage({ id: "settings.modelProviderDescription" })}
-      refreshLabel={intl.formatMessage({ id: "settings.modelProvider.refresh" })}
-      loadingLabel={intl.formatMessage({ id: "common.loading" })}
-      presetLoading={presetLoading}
-      customLoading={customLoading}
-      onRefresh={() => {
-        void refreshModelProviderSection({
-          refresh,
-          // 手动刷新设置页时也要同时刷新 Z.ai / BigModel Team Plan 快照；
-          // 原来只刷新 BigModel，Z.ai Team Plan 购买或订阅变化后会继续显示旧项目。
-          refreshTeamPlanProducts: refreshAuthenticatedEnterpriseProducts,
-        });
-        refreshCodingPlanEntitlements();
-      }}
-      addProviderLabel={intl.formatMessage({ id: "settings.modelProvider.addProviderAction" })}
-      onAddProvider={() => setTemplatePickerOpen(true)}
-      navigationGroups={navigationGroups}
-      selectedNodeKey={selectedNodeKey}
-      onSelectNavItem={handleSelectNavItem}
-      onReorderProviderIds={handleReorderProviderIds}
-      reorderableProviderIds={reorderableProviderIds}
-    >
-      {(invalidProviderTarget || navigationUnavailable) && !templatePickerOpen ? (
-        <p role="alert" className="mb-3 text-ui-base text-destructive">
-          {intl.formatMessage({
-            id: invalidProviderTarget
-              ? "settings.modelProvider.navigationUnavailable"
-              : "settings.modelProvider.connectionUnavailable",
-          })}
-        </p>
+    <>
+      <ModelProviderSectionLayout
+        description={intl.formatMessage({ id: "settings.modelProviderDescription" })}
+        refreshLabel={intl.formatMessage({ id: "settings.modelProvider.refresh" })}
+        loadingLabel={intl.formatMessage({ id: "common.loading" })}
+        presetLoading={presetLoading}
+        customLoading={customLoading}
+        onRefresh={() => {
+          void refreshModelProviderSection({
+            refresh,
+            // 手动刷新设置页时也要同时刷新 Z.ai / BigModel Team Plan 快照；
+            // 原来只刷新 BigModel，Z.ai Team Plan 购买或订阅变化后会继续显示旧项目。
+            refreshTeamPlanProducts: refreshAuthenticatedEnterpriseProducts,
+          });
+          refreshCodingPlanEntitlements();
+        }}
+        addProviderLabel={intl.formatMessage({ id: "settings.modelProvider.addProviderAction" })}
+        onAddProvider={() => setTemplatePickerOpen(true)}
+        navigationGroups={navigationGroups}
+        selectedNodeKey={selectedNodeKey}
+        onSelectNavItem={handleSelectNavItem}
+        onReorderProviderIds={handleReorderProviderIds}
+        reorderableProviderIds={reorderableProviderIds}
+        configSyncActions={{
+          onUploadToGithub: () => void providerConfigSync.upload(),
+          onDownloadFromGithub: () => void providerConfigSync.preview(),
+          onRestoreFromBackup: () => void providerConfigSync.openRestore(),
+          uploadToGithubDisabled: providerConfigSync.busy || modelProvidersRefreshing,
+          downloadFromGithubDisabled: providerConfigSync.busy || modelProvidersRefreshing,
+          restoreFromBackupDisabled:
+            providerConfigSync.busy || (providerConfigSync.status?.backupCount ?? 0) === 0,
+          uploadToGithubTestId: providerConfigSync.testIds.upload,
+          downloadFromGithubTestId: providerConfigSync.testIds.download,
+          restoreFromBackupTestId: providerConfigSync.testIds.restore,
+        }}
+        configSyncStatusRow={
+          providerConfigSync.status ? (
+            <ConfigSyncStatusRow
+              status={providerConfigSync.status}
+              busy={providerConfigSync.busy}
+              {...(onOpenSyncConfigSettings ? { onOpenSyncConfigSettings } : {})}
+              testId="model-config-sync-status"
+              goLoginTestId="model-config-sync-go-login"
+            />
+          ) : null
+        }
+      >
+        {(invalidProviderTarget || navigationUnavailable) && !templatePickerOpen ? (
+          <p role="alert" className="mb-3 text-ui-base text-destructive">
+            {intl.formatMessage({
+              id: invalidProviderTarget
+                ? "settings.modelProvider.navigationUnavailable"
+                : "settings.modelProvider.connectionUnavailable",
+            })}
+          </p>
+        ) : null}
+        {templatePickerOpen ? (
+          <ProviderTemplatePicker
+            templates={providerTemplates}
+            creating={creatingProvider}
+            onBack={() => setTemplatePickerOpen(false)}
+            onCreateFromTemplate={(templateId) => {
+              return handleCreateProvider({ templateId });
+            }}
+            onCreateCustom={(label) => {
+              return handleCreateProvider({ providerName: label });
+            }}
+          />
+        ) : (
+          <ModelProviderSectionDetail
+            connectionSelections={effectiveConnectionSelections}
+            providerSettingsView={providerSettingsView}
+            selectedNavItem={selectedNavItem}
+            navigationItems={navigationItems}
+            connectionSettingsFailed={familyConnectionSettingsFailed}
+            sideNavigationEmpty={sideNavigationEmpty}
+            startPlanSubscriptionCount={(() => {
+              const providerId =
+                selectedNavItem && "presetId" in selectedNavItem ? selectedNavItem.presetId : null;
+              const family = providerId
+                ? resolveModelProviderFamilySpecByProviderId(providerId)
+                : null;
+              const entitlement = family
+                ? codingPlanEntitlements[family.startPlanProviderId]
+                : null;
+              // 只展示当前 Family 已查询到的权益，不用当前是否选中 Start 代替拥有数量。
+              return entitlement?.error
+                ? 0
+                : (entitlement?.snapshot?.subscription?.details.length ?? 0);
+            })()}
+            presetLoading={presetLoading}
+            codingPlanAuthError={oauthError}
+            codingPlanPurchaseTokenAuthenticatedByProviderId={
+              codingPlanPurchaseTokenAuthenticatedByProviderId
+            }
+            presetSubscriptionProviderId={presetSubscriptionProviderId}
+            codingPlanStatusSyncProviderId={codingPlanStatusSyncProviderId}
+            codingPlanDisconnectProviderId={codingPlanDisconnectProviderId}
+            onSave={handleSave}
+            onAddPersonalModel={addPersonalModel}
+            onSavePersonalModelDraft={savePersonalModelDraft}
+            onSetPersonalModelEnabled={setPersonalModelEnabled}
+            onDeletePersonalModel={deletePersonalModel}
+            onDelete={handleDelete}
+            // Provider 的左栏排序权限被误复用成模型排序门禁，导致 Built-in / Account
+            // Provider 的 Effective 模型无法写入 Personal modelOrder。模型调序独立于成员来源。
+            onReorderProviderModels={reorderProviderModels}
+            onTestModel={handleTestModel}
+            onCodingPlanLogin={handleCodingPlanLogin}
+            onRetryCodingPlan={() => {
+              // 取 Key 失败不等于登录失效；沿用 Host 手动刷新，不清除 OAuth 或重新登录。
+              logger.info("[ModelProviderSection] 重试获取套餐状态");
+              return refresh().then(() =>
+                refreshCodingPlanEntitlements({ force: true, reason: "manual" }),
+              );
+            }}
+            onCodingPlanDisconnect={handleCodingPlanDisconnect}
+            onOpenApiKeyUrl={handleOpenApiKeyUrl}
+            onSelectNavItem={handleSelectNavItem}
+            onOpenBigModelRegistration={() => {
+              // 未注册提示来自一次失败的 OAuth checking 状态；跳转注册后要恢复普通状态，避免提示卡住。
+              setOAuthError(null);
+              setPresetSubscriptionProviderId((current) =>
+                current === BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan
+                  ? null
+                  : current,
+              );
+              platform.openExternal(BIGMODEL_REGISTRATION_URL);
+            }}
+            onCodingPlanPurchaseComplete={async () => {
+              await refreshProviderPanelAfterAuthChange({ refreshReason: "purchase" });
+            }}
+          />
+        )}
+      </ModelProviderSectionLayout>
+      {providerConfigSync.downloadPlan ? (
+        <ConfigSyncDownloadDialog
+          plan={providerConfigSync.downloadPlan}
+          applying={providerConfigSync.busy}
+          extraSummary={intl.formatMessage({ id: "settings.configSync.modelApiKeyNotice" })}
+          onCancel={providerConfigSync.cancelDownload}
+          onConfirm={(params) => void providerConfigSync.apply(params)}
+          testId="model-config-sync-confirm"
+          replaceAckTestId="model-config-sync-replace-ack"
+          replaceAckLabelId="settings.configSync.replaceAckModel"
+        />
       ) : null}
-      {templatePickerOpen ? (
-        <ProviderTemplatePicker
-          templates={providerTemplates}
-          creating={creatingProvider}
-          onBack={() => setTemplatePickerOpen(false)}
-          onCreateFromTemplate={(templateId) => {
-            return handleCreateProvider({ templateId });
-          }}
-          onCreateCustom={(label) => {
-            return handleCreateProvider({ providerName: label });
-          }}
+      {providerConfigSync.secretWarnings ? (
+        <ConfigSyncSecretWarningDialog
+          warnings={providerConfigSync.secretWarnings}
+          uploading={providerConfigSync.busy}
+          onCancel={providerConfigSync.cancelSecret}
+          onConfirm={() => void providerConfigSync.upload({ confirmSecretUpload: true })}
+          testId="model-config-sync-secret-warning"
         />
-      ) : (
-        <ModelProviderSectionDetail
-          connectionSelections={effectiveConnectionSelections}
-          providerSettingsView={providerSettingsView}
-          selectedNavItem={selectedNavItem}
-          navigationItems={navigationItems}
-          connectionSettingsFailed={familyConnectionSettingsFailed}
-          sideNavigationEmpty={sideNavigationEmpty}
-          startPlanSubscriptionCount={(() => {
-            const providerId =
-              selectedNavItem && "presetId" in selectedNavItem ? selectedNavItem.presetId : null;
-            const family = providerId
-              ? resolveModelProviderFamilySpecByProviderId(providerId)
-              : null;
-            const entitlement = family ? codingPlanEntitlements[family.startPlanProviderId] : null;
-            // 只展示当前 Family 已查询到的权益，不用当前是否选中 Start 代替拥有数量。
-            return entitlement?.error
-              ? 0
-              : (entitlement?.snapshot?.subscription?.details.length ?? 0);
-          })()}
-          presetLoading={presetLoading}
-          codingPlanAuthError={oauthError}
-          codingPlanPurchaseTokenAuthenticatedByProviderId={
-            codingPlanPurchaseTokenAuthenticatedByProviderId
-          }
-          presetSubscriptionProviderId={presetSubscriptionProviderId}
-          codingPlanStatusSyncProviderId={codingPlanStatusSyncProviderId}
-          codingPlanDisconnectProviderId={codingPlanDisconnectProviderId}
-          onSave={handleSave}
-          onAddPersonalModel={addPersonalModel}
-          onSavePersonalModelDraft={savePersonalModelDraft}
-          onSetPersonalModelEnabled={setPersonalModelEnabled}
-          onDeletePersonalModel={deletePersonalModel}
-          onDelete={handleDelete}
-          // Provider 的左栏排序权限被误复用成模型排序门禁，导致 Built-in / Account
-          // Provider 的 Effective 模型无法写入 Personal modelOrder。模型调序独立于成员来源。
-          onReorderProviderModels={reorderProviderModels}
-          onTestModel={handleTestModel}
-          onCodingPlanLogin={handleCodingPlanLogin}
-          onRetryCodingPlan={() => {
-            // 取 Key 失败不等于登录失效；沿用 Host 手动刷新，不清除 OAuth 或重新登录。
-            logger.info("[ModelProviderSection] 重试获取套餐状态");
-            return refresh().then(() =>
-              refreshCodingPlanEntitlements({ force: true, reason: "manual" }),
-            );
-          }}
-          onCodingPlanDisconnect={handleCodingPlanDisconnect}
-          onOpenApiKeyUrl={handleOpenApiKeyUrl}
-          onSelectNavItem={handleSelectNavItem}
-          onOpenBigModelRegistration={() => {
-            // 未注册提示来自一次失败的 OAuth checking 状态；跳转注册后要恢复普通状态，避免提示卡住。
-            setOAuthError(null);
-            setPresetSubscriptionProviderId((current) =>
-              current === BUILTIN_MODEL_PROVIDER_IDS.bigmodelIndividualCodingPlan ? null : current,
-            );
-            platform.openExternal(BIGMODEL_REGISTRATION_URL);
-          }}
-          onCodingPlanPurchaseComplete={async () => {
-            await refreshProviderPanelAfterAuthChange({ refreshReason: "purchase" });
-          }}
+      ) : null}
+      {providerConfigSync.restoreBackups ? (
+        <ConfigSyncRestoreDialog
+          backups={providerConfigSync.restoreBackups}
+          restoring={providerConfigSync.busy}
+          onCancel={providerConfigSync.cancelRestore}
+          onConfirm={(params) => void providerConfigSync.restore(params)}
+          testId="model-config-sync-restore-confirm"
+          optionTestId="model-config-sync-restore-option"
         />
-      )}
-    </ModelProviderSectionLayout>
+      ) : null}
+    </>
   );
 }

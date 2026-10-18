@@ -70,6 +70,12 @@ export interface ConfigSyncProfile {
   nameFromFileName(fileName: string): string | null;
   /** 内容能否被本功能加载：上传侧拦坏文件，下载侧拦坏远端内容。 */
   isValidContent(fileName: string, content: string): boolean;
+  /**
+   * 额外通道的内容能否被本功能加载；缺省只校验 sha256、不校验语义。
+   * 远端额外通道语义非法时，下载侧要在这里拦下来（报 `remote_invalid`），
+   * 否则问题会推迟到写盘阶段才暴露，错误码只能退化成 `unknown`。
+   */
+  isValidExtraContent?(fileName: string, content: string): boolean;
   /** 额外通道的文件名；这些文件参与完整性校验，内容语义由功能自己解释。 */
   readonly extraFileNames: readonly string[];
   readonly maxFileBytes: number;

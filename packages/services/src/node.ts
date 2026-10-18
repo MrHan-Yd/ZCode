@@ -1639,6 +1639,10 @@ export function createLocalServices(options: {
     modelSelectionConfiguredDefaultSource,
     disposeModelSelectionConfiguredDefaultSource: () =>
       modelSelectionConfiguredDefaultSource.dispose(),
+    // 模型设置同步复用 GitHub 登录凭据与代理感知传输；元数据/备份跟随数据存储路径。
+    credentialService,
+    fetchImpl: hostApiNetworkTransport.fetch,
+    dataDir: async () => resolveAppConfigDir(),
     testConnectivity: createProviderSettingsConnectivityTester({
       testModelConnectivity: async (input) => {
         if (!providerConnectivityAgentService) {
