@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.18.3](https://github.com/MrHan-Yd/ZCode/compare/v3.18.2...v3.18.3) (2026-10-18)
+
+### Features
+
+* **config-sync:** 模型设置支持同步到 GitHub 私有 Gist（不含 API Key） ([f0c879b](https://github.com/MrHan-Yd/ZCode/commit/f0c879b0d37a3f501e78abfb43af3106122bb8f6))
+
+
+### Documentation
+
+* 补充 README 的 v3.18.2 更新说明 ([4786414](https://github.com/MrHan-Yd/ZCode/commit/478641443568dca3ee139b6be880cb232ecdd4fa))
+
 ## [3.18.2](https://github.com/MrHan-Yd/ZCode/compare/v3.18.1...v3.18.2) (2026-10-18)
 
 ### Features
