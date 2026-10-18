@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.18.2](https://github.com/MrHan-Yd/ZCode/compare/v3.18.1...v3.18.2) (2026-10-18)
+
+### Features
+
+* **config-sync:** 支持列出本地备份并从备份还原配置 ([c7c4190](https://github.com/MrHan-Yd/ZCode/commit/c7c4190b44c634d23715bf48cbc58746571340d6))
+
+
+### Documentation
+
+* 补充 README 的 v3.18.1 更新说明 ([0a45fc2](https://github.com/MrHan-Yd/ZCode/commit/0a45fc297d305eb5f638654e18c72bb58c61edd8))
+
 ## [3.18.1](https://github.com/MrHan-Yd/ZCode/compare/v3.18.0...v3.18.1) (2026-10-17)
 
 ### Features
