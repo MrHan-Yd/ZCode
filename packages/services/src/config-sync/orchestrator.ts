@@ -2,7 +2,7 @@ import { describeRequestError } from "#src/http/describeRequestError.js";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 import type { ICredentialService } from "../credential/credential.js";
 import { GITHUB_ACCESS_TOKEN_CREDENTIAL_KEY } from "../github/githubAuth.js";
-import type { ConfigSyncBackup } from "./backup.js";
+import { isKnownBackupDir, type ConfigSyncBackup } from "./backup.js";
 import { createGistClient, gistHtmlUrl } from "./gistClient.js";
 import { buildRemoteFiles, computeFingerprint, findOversizedItem } from "./manifest.js";
 import type { ConfigSyncMetadataStore } from "./metadata.js";
@@ -10,12 +10,14 @@ import { buildPlan, resolveApplySet } from "./plan.js";
 import { createRemoteResolver } from "./remoteResolver.js";
 import { scanSecrets } from "./secretScan.js";
 import type {
+  ConfigSyncBackupList,
   ConfigSyncDownloadPlan,
   ConfigSyncDownloadResult,
   ConfigSyncError,
   ConfigSyncItem,
   ConfigSyncProfile,
   ConfigSyncResult,
+  ConfigSyncRestoreResult,
   ConfigSyncSnapshot,
   ConfigSyncStatus,
   ConfigSyncUploadResult,
@@ -47,6 +49,8 @@ export interface ConfigSyncAdapter<TPlan extends ConfigSyncDownloadPlan = Config
     readonly remoteExtras: ReadonlyMap<string, string>;
     readonly strategy: "merge" | "replace";
   }): Promise<void>;
+  /** 统计一份备份里的条目数，供还原界面区分备份；读不出来返回 null。 */
+  countBackupItems(backupDir: string): Promise<number | null>;
   /** 计划装饰：功能补自己的额外变更摘要（子智能体：启用状态与模型覆盖）。 */
   decoratePlan?(
     plan: ConfigSyncDownloadPlan,
@@ -61,6 +65,10 @@ export interface ConfigSyncOperations<
   TPlan extends ConfigSyncDownloadPlan = ConfigSyncDownloadPlan,
 > {
   getStatus(): Promise<ConfigSyncStatus>;
+  /** 列出本地备份（新的在前）；只读、不联网、不参与单飞。 */
+  listBackups(): Promise<ConfigSyncBackupList>;
+  /** 从指定备份整份还原本地配置；还原前会先给当前状态做一份安全备份。 */
+  restore(params: { backupDir: string }): Promise<ConfigSyncResult<ConfigSyncRestoreResult>>;
   upload(params?: {
     confirmSecretUpload?: boolean;
   }): Promise<ConfigSyncResult<ConfigSyncUploadResult>>;
@@ -104,10 +112,10 @@ export function createConfigSync<TPlan extends ConfigSyncDownloadPlan = ConfigSy
     readMetadata: adapter.metadata.read,
   });
   // 单飞：并发点击 / 多窗口下只允许一个同步操作在跑，不排队、不用超时掩盖。
-  let inFlight: "upload" | "preview" | "apply" | null = null;
+  let inFlight: "upload" | "preview" | "apply" | "restore" | null = null;
 
   const withSingleFlight = async <T>(
-    kind: "upload" | "preview" | "apply",
+    kind: "upload" | "preview" | "apply" | "restore",
     run: () => Promise<ConfigSyncResult<T>>,
   ): Promise<ConfigSyncResult<T>> => {
     if (inFlight) {
@@ -133,10 +141,11 @@ export function createConfigSync<TPlan extends ConfigSyncDownloadPlan = ConfigSy
     computeFingerprint(snapshot.items, snapshot.extras);
 
   const getStatus = async (): Promise<ConfigSyncStatus> => {
-    const [metadata, token, snapshot] = await Promise.all([
+    const [metadata, token, snapshot, backups] = await Promise.all([
       adapter.metadata.read(),
       loadToken(),
       adapter.collectSnapshot(),
+      adapter.backup.list(),
     ]);
     const localFingerprint = fingerprintOf(snapshot);
     return {
@@ -153,8 +162,52 @@ export function createConfigSync<TPlan extends ConfigSyncDownloadPlan = ConfigSy
         metadata.lastLocalFingerprint !== undefined &&
         metadata.lastLocalFingerprint !== localFingerprint,
       skippedLocalFiles: snapshot.skippedLocalFiles,
+      backupCount: backups.backups.length,
     };
   };
+
+  const listBackups = async (): Promise<ConfigSyncBackupList> => {
+    const { backupRoot, backups } = await adapter.backup.list();
+    return {
+      backupRoot,
+      backups: await Promise.all(
+        backups.map(async (entry) => ({
+          ...entry,
+          itemCount: await adapter.countBackupItems(entry.backupDir),
+        })),
+      ),
+    };
+  };
+
+  const restore = async (params: {
+    backupDir: string;
+  }): Promise<ConfigSyncResult<ConfigSyncRestoreResult>> =>
+    withSingleFlight("restore", async () => {
+      // 只接受真实存在的完整备份，杜绝把任意路径当备份拷到本地配置上。
+      if (!(await isKnownBackupDir(adapter.backup, params.backupDir))) {
+        return fail("unknown", "指定的备份不存在或已不完整");
+      }
+      const itemCount = await adapter.countBackupItems(params.backupDir);
+      return options.enqueueWrite(async () => {
+        // 先给「当前状态」也备份一份：还原错了还能再还原回来。
+        let safetyBackupDir: string;
+        try {
+          safetyBackupDir = await adapter.backup.create();
+        } catch (error) {
+          return fail("unknown", `备份当前配置失败，未做还原：${describeRequestError(error)}`);
+        }
+        const restored = await adapter.backup.restore(params.backupDir);
+        if (!restored) {
+          return fail(
+            "unknown",
+            `还原失败，当前配置可能处于中间状态（还原前备份在 ${safetyBackupDir}）`,
+          );
+        }
+        // 刻意不动同步元数据：还原后本地与上次同步不一致，状态行会如实显示「本地有未上传的修改」。
+        log.info(undefined, "config restored from backup", { itemCount });
+        return { status: "ok", backupDir: params.backupDir, safetyBackupDir, itemCount };
+      });
+    });
 
   const upload = async (params?: {
     confirmSecretUpload?: boolean;
@@ -371,7 +424,7 @@ export function createConfigSync<TPlan extends ConfigSyncDownloadPlan = ConfigSy
     });
   };
 
-  return { getStatus, upload, preview, apply };
+  return { getStatus, listBackups, restore, upload, preview, apply };
 }
 
 /**

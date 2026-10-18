@@ -390,6 +390,7 @@ const zhCN: Record<string, string> = {
   "settings.resourceActions.import": "导入",
   "settings.resourceActions.export": "导出",
   "settings.resourceActions.uploadToGithub": "上传到 GitHub",
+  "settings.resourceActions.restoreFromBackup": "从备份还原…",
   "settings.resourceActions.downloadFromGithub": "从 GitHub 下载",
   "settings.resourceActions.more": "更多操作",
   "carousel.previousSlide": "上一张幻灯片",
@@ -3778,9 +3779,16 @@ const zhCN: Record<string, string> = {
   "settings.configSync.unauthorized": "GitHub 授权已失效，请重新登录",
   "settings.configSync.insufficientScope":
     "当前 GitHub 授权缺少 gist 权限，请重新登录并授权",
-  "settings.configSync.notFound":
-    "远端 Gist 不存在、无权访问，或还没有上传过配置（{detail}）",
-  "settings.configSync.rateLimited": "GitHub 限流，请稍后重试（{detail}）",
+  "settings.configSync.statusBackupCount": "本地备份：{count} 份",
+  "settings.configSync.restoreTitle": "从备份还原配置",
+  "settings.configSync.restoreDescription":
+    "还原会用所选备份整份覆盖当前本地配置（不是合并）。还原前会先把当前状态也备份一份，选错了可以再还原回来。",
+  "settings.configSync.restoreItemCount": "{count} 项",
+  "settings.configSync.restoreItemCountUnknown": "条目数未知",
+  "settings.configSync.restoreConfirm": "还原",
+  "settings.configSync.restoreEmpty": "还没有可用的本地备份",
+  "settings.configSync.restored": "已从备份还原（{count} 项）",
+  "settings.configSync.notFound": "远端 Gist 不存在、无权访问，或还没有上传过配置（{detail}）",  "settings.configSync.rateLimited": "GitHub 限流，请稍后重试（{detail}）",
   "settings.configSync.networkError": "网络请求失败：{detail}",
   "settings.configSync.timeout": "请求超时，请检查网络或代理设置",
   "settings.configSync.remoteInvalid": "远端配置不合法：{detail}",

@@ -21,6 +21,7 @@ import {
 } from "./subagentConfigSyncModel.js";
 import {
   collectSubagentSyncSnapshot,
+  countSubagentBackupItems,
   resolveSubagentAgentPath,
   resolveSubagentAgentsRoot,
   resolveSubagentSyncBackupEntries,
@@ -69,12 +70,13 @@ export function createSubagentConfigSync(
   const adapter: ConfigSyncAdapter<SubagentConfigDownloadPlan> = {
     gistDescription: SUBAGENT_CONFIG_GIST_DESCRIPTION,
     profile: SUBAGENT_CONFIG_PROFILE,
-    metadata: resolveSubagentSyncMetadataStore(storageOptions),
+    metadata: resolveSubagentSyncMetadataStore(),
     backup: createConfigSyncBackup({
-      rootDir: () => resolveSubagentSyncBackupRoot(storageOptions),
+      rootDir: () => resolveSubagentSyncBackupRoot(),
       entries: resolveSubagentSyncBackupEntries(storageOptions),
     }),
     collectSnapshot: () => collectSubagentSyncSnapshot(storageOptions, readCuratedState),
+    countBackupItems: countSubagentBackupItems,
 
     async apply({ writes, removals, remoteExtras, strategy }) {
       const agentsRoot = await resolveSubagentAgentsRoot(storageOptions);

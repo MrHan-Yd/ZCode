@@ -1,5 +1,7 @@
+import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import type { ICredentialService } from "../credential/credential.js";
+import { getAppConfigDir } from "../paths.js";
 import { createConfigSyncBackup } from "../config-sync/backup.js";
 import { createConfigSyncMetadataStore } from "../config-sync/metadata.js";
 import {
@@ -37,8 +39,8 @@ export interface CreateMcpConfigSyncOptions {
   readonly writeUserServers: (servers: Record<string, McpServerConfigObject>) => Promise<void>;
   /** ZCode 用户配置文件绝对路径（备份对象）。 */
   readonly userConfigPath: () => Promise<string>;
-  /** 本机数据目录（元数据与备份都放这里，与子智能体同步同层）。 */
-  readonly dataDir: () => Promise<string>;
+  /** 同步元数据与备份的目录；缺省用设置里的数据存储路径（`{dataBaseDir}/.zcode/v2`）。 */
+  readonly dataDir?: () => Promise<string>;
   readonly credentialService?: Pick<ICredentialService, "load">;
   readonly fetchImpl?: typeof fetch;
   readonly enqueueWrite: <T>(run: () => Promise<T>) => Promise<T>;
@@ -46,17 +48,20 @@ export interface CreateMcpConfigSyncOptions {
 }
 
 export function createMcpConfigSync(options: CreateMcpConfigSyncOptions): ConfigSyncOperations {
+  // 元数据与备份跟随设置里的数据存储路径（`{dataBaseDir}/.zcode/v2`）。
+  const dataDir = options.dataDir ?? (async () => getAppConfigDir());
   const adapter: ConfigSyncAdapter = {
     gistDescription: MCP_CONFIG_GIST_DESCRIPTION,
     profile: MCP_CONFIG_PROFILE,
     metadata: createConfigSyncMetadataStore(async () =>
-      join(await options.dataDir(), "mcp-config-sync.json"),
+      join(await dataDir(), "mcp-config-sync.json"),
     ),
     backup: createConfigSyncBackup({
-      rootDir: async () => join(await options.dataDir(), "mcp-config-sync-backup"),
+      rootDir: async () => join(await dataDir(), "mcp-config-sync-backup"),
       entries: async () => [{ source: await options.userConfigPath(), name: "config.json" }],
     }),
     collectSnapshot: () => collectMcpSnapshot(options.readEffectiveServers),
+    countBackupItems: countMcpBackupItems,
 
     async apply({ remoteItems, local, strategy }) {
       // merge 用本机当前生效集合打底（含从 agents 目录读到的服务器），因此写回 ZCode 配置不会把
@@ -77,6 +82,18 @@ export function createMcpConfigSync(options: CreateMcpConfigSyncOptions): Config
     enqueueWrite: options.enqueueWrite,
     ...(options.now ? { now: options.now } : {}),
   });
+}
+
+/** 统计一份备份里的 server 数（备份里是整份 config.json）。 */
+async function countMcpBackupItems(backupDir: string): Promise<number | null> {
+  try {
+    const raw = await readFile(join(backupDir, "config.json"), "utf-8");
+    const parsed = JSON.parse(raw) as { mcp?: { servers?: Record<string, unknown> } };
+    const servers = parsed.mcp?.servers;
+    return servers && typeof servers === "object" ? Object.keys(servers).length : null;
+  } catch {
+    return null;
+  }
 }
 
 async function collectMcpSnapshot(

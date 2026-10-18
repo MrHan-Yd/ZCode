@@ -798,6 +798,14 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
       return configSync.getStatus();
     },
 
+    listConfigSyncBackups() {
+      return configSync.listBackups();
+    },
+
+    restoreConfigSyncBackup(params) {
+      return configSync.restore(params);
+    },
+
     syncConfigToGist(params) {
       return configSync.upload(params);
     },

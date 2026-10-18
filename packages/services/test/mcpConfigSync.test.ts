@@ -5,6 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 import { GITHUB_ACCESS_TOKEN_CREDENTIAL_KEY } from "../src/github/githubAuth.js";
 import { createMcpSyncService } from "../src/mcp-sync/mcpSyncService.js";
+import { setDataBaseDir } from "../src/paths.js";
 
 /**
  * MCP 配置同步的服务层测试：MCP 用户目录由 HOME 决定（服务内部即按 HOME 解析路径），
@@ -97,13 +98,19 @@ function createFakeGithub() {
   };
 }
 
+/**
+ * 隔离两层路径：`HOME` 决定 MCP 用户配置位置，`setDataBaseDir` 决定同步元数据与备份位置
+ * （跟随设置里的数据存储路径）。两者都要指向临时目录，否则测试会写进真实 `~/.zcode`。
+ */
 async function withHome<T>(run: (home: string) => Promise<T>): Promise<T> {
   const home = await mkdtemp(join(tmpdir(), "zcode-mcp-sync-"));
   const previousHome = process.env.HOME;
   process.env.HOME = home;
+  setDataBaseDir(home);
   try {
     return await run(home);
   } finally {
+    setDataBaseDir(null);
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
     await rm(home, { recursive: true, force: true });
@@ -373,5 +380,54 @@ test("401：映射到 unauthorized 且不删凭据", async () => {
     github.setFailure({ status: 401 });
     assert.equal(expectError(await service.syncConfigToGist()).code, "unauthorized");
     assert.equal((await service.getConfigSyncStatus()).connected, true);
+  });
+});
+
+test("下载后可列出备份并整份还原；还原前会再备份当前状态，且不改同步元数据", async () => {
+  const github = createFakeGithub();
+  await withHome(async (homeA) => {
+    await writeZcodeServers(homeA, { shared: serverConfig("remote") });
+    await createService(github).syncConfigToGist();
+  });
+  await withHome(async (homeB) => {
+    await writeZcodeServers(homeB, { shared: serverConfig("local") });
+    const service = createService(github);
+
+    const plan = await service.previewConfigFromGist();
+    assert.ok(plan.status === "ok");
+    const applied = await service.applyConfigFromGist({
+      strategy: "merge",
+      expectedRemoteRevision: plan.remoteRevision,
+    });
+    assert.ok(applied.status === "ok");
+    assert.equal((await readZcodeServers(homeB)).shared.args?.[1], "remote");
+
+    // 备份落在数据存储路径下，1 份 = 应用前那次，条目数 = 1 个 server。
+    const backups = await service.listConfigSyncBackups();
+    assert.equal(backups.backupRoot, join(homeB, ".zcode", "v2", "mcp-config-sync-backup"));
+    assert.equal(backups.backups.length, 1);
+    assert.equal(backups.backups[0]?.itemCount, 1);
+
+    const restored = await service.restoreConfigSyncBackup({
+      backupDir: backups.backups[0]!.backupDir,
+    });
+    assert.ok(restored.status === "ok");
+    assert.equal((await readZcodeServers(homeB)).shared.args?.[1], "local");
+    assert.equal((await service.listConfigSyncBackups()).backups.length, 2);
+    // 元数据未改写 → 状态行会提示本地有未上传的修改。
+    assert.equal((await service.getConfigSyncStatus()).localChangedSinceLastSync, true);
+  });
+});
+
+test("还原只接受已知备份：任意路径被拒且本地零变更", async () => {
+  await withHome(async (home) => {
+    await writeZcodeServers(home, { alpha: serverConfig("alpha") });
+    const service = createService(createFakeGithub());
+    const error = expectError(
+      await service.restoreConfigSyncBackup({ backupDir: join(home, "..", "etc") }),
+    );
+    assert.equal(error.code, "unknown");
+    assert.equal((await readZcodeServers(home)).alpha.command, "npx");
+    assert.equal((await service.listConfigSyncBackups()).backups.length, 0);
   });
 });

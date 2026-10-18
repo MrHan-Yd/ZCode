@@ -144,6 +144,12 @@ export function createMcpSyncService(
     getConfigSyncStatus() {
       return configSync.getStatus();
     },
+    listConfigSyncBackups() {
+      return configSync.listBackups();
+    },
+    restoreConfigSyncBackup(params) {
+      return configSync.restore(params);
+    },
     syncConfigToGist(params) {
       return configSync.upload(params);
     },

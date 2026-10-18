@@ -23,6 +23,7 @@ import type {
 } from "@zcode/shared";
 import {
   isZCodeAgentMcpStatusModeUnsupportedError,
+  type ConfigSyncBackupList,
   type ConfigSyncDownloadPlan,
   type ConfigSyncSecretWarning,
   type ConfigSyncStatus,
@@ -31,7 +32,11 @@ import {
 import { Button } from "@/components/ui/button.js";
 import { toast } from "@/components/ui/toast.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
-import { TID_MCP_CONFIG_DOWNLOAD, TID_MCP_CONFIG_UPLOAD } from "@zcode/shared";
+import {
+  TID_MCP_CONFIG_DOWNLOAD,
+  TID_MCP_CONFIG_RESTORE,
+  TID_MCP_CONFIG_UPLOAD,
+} from "@zcode/shared";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { logger } from "@/logger.js";
@@ -47,10 +52,10 @@ import { SettingsBreadcrumbReporter } from "@/settings/SettingsHeaderBreadcrumb.
 import { SettingsResourceHeaderActions } from "@/settings/SettingsResourceHeaderActions.js";
 import {
   ConfigSyncDownloadDialog,
+  ConfigSyncRestoreDialog,
   ConfigSyncSecretWarningDialog,
-  ConfigSyncStatusRow,
-  describeConfigSyncError,
-} from "@/settings/ConfigSyncParts.js";
+} from "@/settings/ConfigSyncDialogs.js";
+import { ConfigSyncStatusRow, describeConfigSyncError } from "@/settings/ConfigSyncParts.js";
 import { PluginStoreAvatar } from "@/settings/PluginStoreAvatar.js";
 import {
   PluginInstallEmptyState,
@@ -603,6 +608,7 @@ export function McpSettingsSection({
   const [secretWarnings, setSecretWarnings] = useState<readonly ConfigSyncSecretWarning[] | null>(
     null,
   );
+  const [restoreBackups, setRestoreBackups] = useState<ConfigSyncBackupList | null>(null);
   const configSyncBusy = configSyncPhase !== "idle";
   // 同步只作用于**本机**用户级 MCP server：
   // - 工作区级随仓库版本化，不参与同步；
@@ -655,6 +661,51 @@ export function McpSettingsSection({
       }
     },
     [baseServices.mcpSyncService, intl, loadConfigSyncStatus],
+  );
+
+  const handleOpenRestore = useCallback(async () => {
+    setConfigSyncPhase("previewing");
+    try {
+      const backups = await baseServices.mcpSyncService.listConfigSyncBackups();
+      if (backups.backups.length === 0) {
+        toast(intl.formatMessage({ id: "settings.configSync.restoreEmpty" }));
+        return;
+      }
+      setRestoreBackups(backups);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error));
+    } finally {
+      setConfigSyncPhase("idle");
+    }
+  }, [baseServices.mcpSyncService, intl]);
+
+  const handleRestoreConfig = useCallback(
+    async (params: { backupDir: string }) => {
+      setConfigSyncPhase("applying");
+      try {
+        const result = await baseServices.mcpSyncService.restoreConfigSyncBackup(params);
+        if (result.status === "error") {
+          if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
+          return;
+        }
+        setRestoreBackups(null);
+        toast(
+          intl.formatMessage(
+            { id: "settings.configSync.restored" },
+            { count: result.itemCount ?? 0 },
+          ),
+        );
+        await Promise.all([
+          loadMcpFromUserDirectory(baseServices.mcpSyncService, workspaceIdentity),
+          loadConfigSyncStatus(),
+        ]);
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error));
+      } finally {
+        setConfigSyncPhase("idle");
+      }
+    },
+    [baseServices.mcpSyncService, intl, loadConfigSyncStatus, workspaceIdentity],
   );
 
   const handlePreviewConfig = useCallback(async () => {
@@ -1612,6 +1663,11 @@ export function McpSettingsSection({
                   downloadFromGithubDisabled={configSyncBusy || refreshingStatusList}
                   uploadToGithubTestId={TID_MCP_CONFIG_UPLOAD}
                   downloadFromGithubTestId={TID_MCP_CONFIG_DOWNLOAD}
+                  onRestoreFromBackup={canSyncConfig ? () => void handleOpenRestore() : undefined}
+                  restoreFromBackupDisabled={
+                    configSyncBusy || (configSyncStatus?.backupCount ?? 0) === 0
+                  }
+                  restoreFromBackupTestId={TID_MCP_CONFIG_RESTORE}
                   onNew={handleCreate}
                   refreshDisabled={configSyncBusy}
                   newDisabled={configSyncBusy}
@@ -1753,6 +1809,16 @@ export function McpSettingsSection({
           onConfirm={(params) => void handleApplyConfig(params)}
           testId="mcp-config-sync-confirm"
           replaceAckTestId="mcp-config-sync-replace-ack"
+        />
+      ) : null}
+      {restoreBackups ? (
+        <ConfigSyncRestoreDialog
+          backups={restoreBackups}
+          restoring={configSyncPhase === "applying"}
+          onCancel={() => setRestoreBackups(null)}
+          onConfirm={(params) => void handleRestoreConfig(params)}
+          testId="mcp-config-sync-restore-confirm"
+          optionTestId="mcp-config-sync-restore-option"
         />
       ) : null}
       {secretWarnings ? (

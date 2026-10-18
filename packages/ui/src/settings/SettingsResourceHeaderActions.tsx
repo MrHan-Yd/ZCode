@@ -2,6 +2,7 @@ import {
   CloudDownload,
   CloudUpload,
   Download,
+  History,
   Loader2,
   MoreHorizontal,
   Plus,
@@ -27,6 +28,8 @@ interface SettingsResourceHeaderActionsProps {
   onUploadToGithub?: () => void;
   /** 从 GitHub 下载并同步到本地。 */
   onDownloadFromGithub?: () => void;
+  /** 从本地备份还原（同步前的备份）。 */
+  onRestoreFromBackup?: () => void;
   onNew?: () => void;
   refreshing?: boolean;
   refreshDisabled?: boolean;
@@ -34,11 +37,13 @@ interface SettingsResourceHeaderActionsProps {
   exportDisabled?: boolean;
   uploadToGithubDisabled?: boolean;
   downloadFromGithubDisabled?: boolean;
+  restoreFromBackupDisabled?: boolean;
   newDisabled?: boolean;
   refreshTestId?: string;
   newTestId?: string;
   uploadToGithubTestId?: string;
   downloadFromGithubTestId?: string;
+  restoreFromBackupTestId?: string;
   refreshLabel?: string;
   newLabel?: string;
   importActionId?: string;
@@ -52,6 +57,7 @@ export function SettingsResourceHeaderActions({
   onExport,
   onUploadToGithub,
   onDownloadFromGithub,
+  onRestoreFromBackup,
   onNew,
   refreshing = false,
   refreshDisabled = false,
@@ -59,11 +65,13 @@ export function SettingsResourceHeaderActions({
   exportDisabled = false,
   uploadToGithubDisabled = false,
   downloadFromGithubDisabled = false,
+  restoreFromBackupDisabled = false,
   newDisabled = false,
   refreshTestId,
   newTestId,
   uploadToGithubTestId,
   downloadFromGithubTestId,
+  restoreFromBackupTestId,
   refreshLabel,
   newLabel: customNewLabel,
   importActionId,
@@ -88,7 +96,10 @@ export function SettingsResourceHeaderActions({
     id: "settings.resourceActions.more",
   });
   const newLabel = customNewLabel ?? intl.formatMessage({ id: "settings.create.action" });
-  const hasGithubActions = Boolean(onUploadToGithub || onDownloadFromGithub);
+  const restoreFromBackupLabel = intl.formatMessage({
+    id: "settings.resourceActions.restoreFromBackup",
+  });
+  const hasGithubActions = Boolean(onUploadToGithub || onDownloadFromGithub || onRestoreFromBackup);
   const hasOverflowActions = Boolean(onImport || onExport) || hasGithubActions;
 
   return (
@@ -143,6 +154,17 @@ export function SettingsResourceHeaderActions({
               >
                 <CloudDownload aria-hidden="true" />
                 {downloadFromGithubLabel}
+              </DropdownMenuItem>
+            ) : null}
+            {onRestoreFromBackup ? (
+              <DropdownMenuItem
+                data-settings-sync-action="restore"
+                data-testid={restoreFromBackupTestId}
+                disabled={restoreFromBackupDisabled}
+                onSelect={onRestoreFromBackup}
+              >
+                <History aria-hidden="true" />
+                {restoreFromBackupLabel}
               </DropdownMenuItem>
             ) : null}
           </DropdownMenuContent>

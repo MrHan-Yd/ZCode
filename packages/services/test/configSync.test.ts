@@ -1,5 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
+import { createConfigSyncBackup, isKnownBackupDir } from "../src/config-sync/backup.js";
 import {
   buildRemoteFiles,
   canonicalJson,
@@ -276,4 +280,83 @@ test("密钥扫描：只报文件名/行号/规则名，不回命中值", () => 
   assert.deepEqual(warnings[0], { fileName: "leaky.md", line: 2, pattern: "github_token" });
   assert.equal(JSON.stringify(warnings).includes("ghp_abcdefghijklmnopqrstuvwxyz"), false);
   assert.deepEqual(scanSecrets("clean.md", "nothing to see"), []);
+});
+
+test("备份：list 只列完整备份并按时间倒序，restore 覆盖目录与文件两种目标", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "zcode-config-sync-backup-"));
+  try {
+    const agentsDir = join(dir, "agents");
+    const stateFile = join(dir, "agents-state.json");
+    await mkdir(agentsDir, { recursive: true });
+    await writeFile(join(agentsDir, "a.md"), "A", "utf-8");
+    await writeFile(stateFile, "STATE", "utf-8");
+
+    const backup = createConfigSyncBackup({
+      rootDir: async () => join(dir, "backups"),
+      entries: async () => [
+        { source: agentsDir, name: "agents" },
+        { source: stateFile, name: "agents-state.json" },
+      ],
+    });
+
+    const first = await backup.create();
+    await writeFile(join(agentsDir, "a.md"), "A2", "utf-8");
+    await writeFile(stateFile, "STATE2", "utf-8");
+    const second = await backup.create();
+
+    // 坏备份（缺声明条目）不展示。
+    await mkdir(join(dir, "backups", "1"), { recursive: true });
+    const list = await backup.list();
+    assert.deepEqual(
+      list.backups.map((entry) => entry.backupDir),
+      [second, first],
+    );
+    assert.equal(list.backupRoot, join(dir, "backups"));
+
+    // 还原到第一份：目录与文件都被整份覆盖。
+    assert.equal(await backup.restore(first), true);
+    assert.equal(await readFile(join(agentsDir, "a.md"), "utf-8"), "A");
+    assert.equal(await readFile(stateFile, "utf-8"), "STATE");
+    // 第二份备份仍在，可再还原回来。
+    assert.equal(await backup.restore(second), true);
+    assert.equal(await readFile(join(agentsDir, "a.md"), "utf-8"), "A2");
+
+    // 只接受真实存在的完整备份。
+    assert.equal(await isKnownBackupDir(backup, join(dir, "backups", "1")), false);
+    assert.equal(await isKnownBackupDir(backup, second), true);
+    assert.equal(await isKnownBackupDir(backup, "/tmp/whatever"), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("备份保留策略：超出份数上限与超过 30 天的都会被清理", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "zcode-config-sync-prune-"));
+  try {
+    const stateFile = join(dir, "state.json");
+    await writeFile(stateFile, "S", "utf-8");
+    const rootDir = join(dir, "backups");
+    const entries = async () => [{ source: stateFile, name: "state.json" }];
+
+    // 预置一份「31 天前」的备份。
+    const oldDir = join(rootDir, String(Date.now() - 31 * 24 * 60 * 60 * 1000));
+    await mkdir(oldDir, { recursive: true });
+    await writeFile(join(oldDir, "state.json"), "OLD", "utf-8");
+
+    const backup = createConfigSyncBackup({ rootDir: async () => rootDir, entries, maxBackups: 2 });
+    await backup.create();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await backup.create();
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await backup.create();
+
+    const { backups } = await backup.list();
+    assert.equal(backups.length, 2);
+    assert.equal(
+      backups.some((entry) => entry.backupDir === oldDir),
+      false,
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });

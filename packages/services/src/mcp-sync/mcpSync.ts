@@ -14,8 +14,10 @@ import type {
 } from "@zcode/shared";
 import { ServiceChannels } from "@zcode/shared";
 import type {
+  ConfigSyncBackupList,
   ConfigSyncDownloadPlan,
   ConfigSyncDownloadResult,
+  ConfigSyncRestoreResult,
   ConfigSyncResult,
   ConfigSyncStatus,
   ConfigSyncUploadResult,
@@ -49,6 +51,17 @@ export interface IMcpSyncService {
     remoteWorkspacePath?: string;
     overwrite?: false;
   }): Promise<McpSyncImportResult>;
+
+  /** 列出本地备份（新的在前，含备份目录路径与条目数）；只读、不联网。 */
+  listConfigSyncBackups(): Promise<ConfigSyncBackupList>;
+
+  /**
+   * 从指定备份整份还原本地配置（不是合并）。`backupDir` 必须来自 `listConfigSyncBackups`；
+   * 还原前会先给当前状态做一份安全备份，还原出错时可再还原回来。
+   */
+  restoreConfigSyncBackup(params: {
+    backupDir: string;
+  }): Promise<ConfigSyncResult<ConfigSyncRestoreResult>>;
 
   /** 只读本机同步状态与元数据（gistId / 上次同步时间 / 本地是否变化）；不联网。 */
   getConfigSyncStatus(): Promise<ConfigSyncStatus>;

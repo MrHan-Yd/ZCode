@@ -447,6 +447,10 @@ export const TID_SUBAGENT_CONFIG_DOWNLOAD = "subagent-config-download";
 export const TID_MCP_CONFIG_UPLOAD = "mcp-config-upload";
 /** 从 GitHub 下载 MCP 服务器配置并同步到本地 */
 export const TID_MCP_CONFIG_DOWNLOAD = "mcp-config-download";
+/** 从本地备份还原子智能体配置 */
+export const TID_SUBAGENT_CONFIG_RESTORE = "subagent-config-restore";
+/** 从本地备份还原 MCP 服务器配置 */
+export const TID_MCP_CONFIG_RESTORE = "mcp-config-restore";
 /** 设置页使用统计顶层 tab（动态后缀为 usage tab id） */
 export const TID_SETTINGS_USAGE_TAB = "settings-usage-tab";
 /** 侧边栏头像菜单剩余额度子菜单入口 */

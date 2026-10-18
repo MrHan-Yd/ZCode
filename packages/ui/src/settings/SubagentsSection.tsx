@@ -7,6 +7,7 @@ import { completeNewModelSelection } from "@zcode/provider";
 import {
   TID_SUBAGENT_BUILT_IN_MODEL_TRIGGER,
   TID_SUBAGENT_CONFIG_DOWNLOAD,
+  TID_SUBAGENT_CONFIG_RESTORE,
   TID_SUBAGENT_CONFIG_UPLOAD,
   TID_SUBAGENT_ROW,
   ZCODE_AGENT_PROVIDER,
@@ -20,6 +21,7 @@ import {
   type SubAgentConfig,
 } from "@zcode/shared";
 import type {
+  ConfigSyncBackupList,
   ConfigSyncSecretWarning,
   ConfigSyncStatus,
   ModelSelectionView,
@@ -62,7 +64,10 @@ import { SettingsResourceGroupHeader } from "@/settings/SettingsResourceGroupHea
 import { SettingsResourceHeaderActions } from "@/settings/SettingsResourceHeaderActions.js";
 import {
   ConfigSyncDownloadDialog,
+  ConfigSyncRestoreDialog,
   ConfigSyncSecretWarningDialog,
+} from "@/settings/ConfigSyncDialogs.js";
+import {
   ConfigSyncStatusRow,
   describeConfigSyncError,
   describeStateChange,
@@ -1334,6 +1339,7 @@ export function SubagentsSection({
   const [secretWarnings, setSecretWarnings] = useState<readonly ConfigSyncSecretWarning[] | null>(
     null,
   );
+  const [restoreBackups, setRestoreBackups] = useState<ConfigSyncBackupList | null>(null);
   const configSyncBusy = configSyncPhase !== "idle";
   const selectedWorkspace = workspaceTabs.find(
     (tab) => getPluginWorkspaceKey(tab) === selectedScopeKey,
@@ -1491,6 +1497,48 @@ export function SubagentsSection({
       }
     },
     [intl, loadConfigSyncStatus, subagentsService],
+  );
+
+  const handleOpenRestore = useCallback(async () => {
+    setConfigSyncPhase("previewing");
+    try {
+      const backups = await subagentsService.listConfigSyncBackups();
+      if (backups.backups.length === 0) {
+        toast(intl.formatMessage({ id: "settings.configSync.restoreEmpty" }));
+        return;
+      }
+      setRestoreBackups(backups);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error));
+    } finally {
+      setConfigSyncPhase("idle");
+    }
+  }, [intl, subagentsService]);
+
+  const handleRestoreConfig = useCallback(
+    async (params: { backupDir: string }) => {
+      setConfigSyncPhase("applying");
+      try {
+        const result = await subagentsService.restoreConfigSyncBackup(params);
+        if (result.status === "error") {
+          if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
+          return;
+        }
+        setRestoreBackups(null);
+        toast(
+          intl.formatMessage(
+            { id: "settings.configSync.restored" },
+            { count: result.itemCount ?? 0 },
+          ),
+        );
+        await Promise.all([refresh(), refreshMentionStore(), loadConfigSyncStatus()]);
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error));
+      } finally {
+        setConfigSyncPhase("idle");
+      }
+    },
+    [intl, loadConfigSyncStatus, refresh, refreshMentionStore, subagentsService],
   );
 
   const handlePreviewConfig = useCallback(async () => {
@@ -1929,6 +1977,11 @@ export function SubagentsSection({
                 downloadFromGithubDisabled={configSyncBusy || refreshing}
                 uploadToGithubTestId={TID_SUBAGENT_CONFIG_UPLOAD}
                 downloadFromGithubTestId={TID_SUBAGENT_CONFIG_DOWNLOAD}
+                onRestoreFromBackup={canSyncConfig ? () => void handleOpenRestore() : undefined}
+                restoreFromBackupDisabled={
+                  configSyncBusy || (configSyncStatus?.backupCount ?? 0) === 0
+                }
+                restoreFromBackupTestId={TID_SUBAGENT_CONFIG_RESTORE}
                 onNew={canManageUserAgents ? handleAddNew : undefined}
                 refreshing={refreshing}
                 refreshDisabled={configSyncBusy}
@@ -2006,6 +2059,16 @@ export function SubagentsSection({
           onConfirm={(params) => void handleApplyConfig(params)}
           testId="subagent-config-sync-confirm"
           replaceAckTestId="subagent-config-sync-replace-ack"
+        />
+      ) : null}
+      {restoreBackups ? (
+        <ConfigSyncRestoreDialog
+          backups={restoreBackups}
+          restoring={configSyncPhase === "applying"}
+          onCancel={() => setRestoreBackups(null)}
+          onConfirm={(params) => void handleRestoreConfig(params)}
+          testId="subagent-config-sync-restore-confirm"
+          optionTestId="subagent-config-sync-restore-option"
         />
       ) : null}
       {secretWarnings ? (

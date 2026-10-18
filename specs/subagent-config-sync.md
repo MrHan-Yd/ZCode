@@ -87,8 +87,9 @@ agent 的身份 = **文件名去掉扩展名**（`agent.<basename>.md` ↔ `{age
   不 `delete`；401 也不删凭据。token 明文只存在于 host 侧函数栈内，不进 RPC 返回值、不进日志。
 - **`agents/*.md` 与 `agents-state.json`**：`SubagentsService` 独占。同步不是第二个所有者，而是它的一个内部
   代码路径，写盘一律经同一个 `writeQueue`。
-- **`subagents-config-sync.json`（gistId / lastRemoteRevision / lastLocalFingerprint / lastSyncedAt）**：
-  `SubagentsService` 独占，原子写。
+- **同步元数据与备份**：`{数据存储路径}/.zcode/v2/` 下的 `subagents-config-sync.json` 与
+  `subagents-config-sync-backup/`（数据存储路径 = 设置里配置的 `dataBaseDir`，由 `getAppConfigDir()` 解析；
+  默认设置下即 `~/.zcode/v2`）。`SubagentsService` 独占，元数据原子写。
 - **远端 gist**：本机元数据里的 `gistId` 是权威定位；`description` 标记只在「本机没有 gistId」时用于一次性发现。
 
 ## 接口
@@ -124,6 +125,10 @@ applyConfigFromGist(params: {
   expectedRemoteRevision: number;
   confirmReplace?: boolean;
 }): Promise<SubagentConfigSyncResult<SubagentConfigDownloadResult>>;
+listConfigSyncBackups(): Promise<ConfigSyncBackupList>;
+restoreConfigSyncBackup(params: {
+  backupDir: string;
+}): Promise<ConfigSyncResult<ConfigSyncRestoreResult>>;
 ```
 
 ## 时序
@@ -162,6 +167,21 @@ UI ─ 确认（列出 add/update/localOnly；replace 需勾选）─▶ applyCo
 要点：`preview` 与 `apply` 各自读一次远端，`expectedRemoteRevision` 是两者之间唯一的 stale 防护；apply 在队列
 内**重新计算**计划（本地可能在预览后又被改过），所以写入内容永远来自最新本地状态；state 与 md 在同一个队列
 任务内完成，不出现「md 已换、state 未换」的中间态。
+
+## 备份与还原
+
+- **备份时机**：每次「应用下载」写盘之前。备份内容是**整份** `{storageRoot}/agents/` 目录 +
+  `agents-state.json`，放在 `{数据存储路径}/.zcode/v2/subagents-config-sync-backup/<时间戳>/`。
+- **保留策略**：最多保留最近 10 份，且丢弃超过 30 天的；只列**包含全部声明条目**的备份
+  （内容不全的备份既不展示、也不接受为还原源）。
+- **自动回滚**：写盘中途失败时用本次备份整份恢复；备份本身失败则中止本次应用、不动本地。
+- **主动还原**：`listConfigSyncBackups()` 列出可用备份（新的在前，含备份根目录、时间、条目数），
+  `restoreConfigSyncBackup({ backupDir })` 整份覆盖本地配置。
+  - `backupDir` 必须来自 `listConfigSyncBackups()`，任意路径一律拒绝（防止把任意目录当备份拷到本地配置上）。
+  - 还原前**先给当前状态再做一份安全备份**，选错可以再还原回来（返回值里带 `safetyBackupDir`）。
+  - 还原是整份覆盖、不是合并，UI 必须二次确认。
+  - 还原**不改同步元数据**：还原后本地与上次同步不一致，状态行会如实显示「本地有未上传的修改」。
+  - 还原参与单飞（进行中返回 `busy`）并在同一个写队列内执行。
 
 ## 失败语义
 

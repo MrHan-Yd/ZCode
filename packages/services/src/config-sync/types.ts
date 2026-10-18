@@ -121,6 +121,40 @@ export interface ConfigSyncDownloadPlan {
   readonly remoteSkipped: readonly ConfigSyncSkippedRemoteFile[];
 }
 
+/** 一份本地备份的目录与时间（核心层只认这些，不感知业务条目）。 */
+export interface ConfigSyncBackupDir {
+  readonly backupDir: string;
+  readonly createdAt: number;
+}
+
+export interface ConfigSyncBackupDirList {
+  readonly backupRoot: string;
+  /** 新的在前。 */
+  readonly backups: readonly ConfigSyncBackupDir[];
+}
+
+/** 展示用备份：附带条目数（无法统计时为 null）。 */
+export interface ConfigSyncBackupInfo extends ConfigSyncBackupDir {
+  readonly itemCount: number | null;
+}
+
+export interface ConfigSyncBackupList {
+  /** 备份根目录（落在数据存储路径下，界面上直接展示给用户）。 */
+  readonly backupRoot: string;
+  /** 新的在前。 */
+  readonly backups: readonly ConfigSyncBackupInfo[];
+}
+
+export interface ConfigSyncRestoreResult {
+  /** 固定为 `ok`：让结果都能用 `result.status === "error"` 统一判别。 */
+  readonly status: "ok";
+  /** 已还原的备份目录。 */
+  readonly backupDir: string;
+  /** 还原前对「当前状态」做的安全备份；还原错了可以再还原回来。 */
+  readonly safetyBackupDir: string;
+  readonly itemCount: number | null;
+}
+
 export interface ConfigSyncStatus {
   /** 凭据库里是否存在 token（不代表 token 有效）。 */
   readonly connected: boolean;
@@ -132,6 +166,8 @@ export interface ConfigSyncStatus {
   readonly localFingerprint: string;
   readonly localChangedSinceLastSync: boolean;
   readonly skippedLocalFiles: readonly string[];
+  /** 本地可用备份份数（>0 时界面才提供「从备份还原」）。 */
+  readonly backupCount: number;
 }
 
 export interface ConfigSyncUploadResult {

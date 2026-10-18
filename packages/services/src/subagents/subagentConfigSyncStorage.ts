@@ -1,5 +1,6 @@
 import { readFile, readdir } from "node:fs/promises";
-import { dirname, join, relative } from "node:path";
+import { join, relative } from "node:path";
+import { getAppConfigDir } from "../paths.js";
 import { createConfigSyncMetadataStore } from "../config-sync/metadata.js";
 import type { ConfigSyncBackupEntry } from "../config-sync/backup.js";
 import type { ConfigSyncExtra, ConfigSyncItem, ConfigSyncSnapshot } from "../config-sync/types.js";
@@ -19,16 +20,27 @@ const AGENT_FILE_PATTERN = /\.(?:md|markdown)$/iu;
 const SYNC_METADATA_FILE_NAME = "subagents-config-sync.json";
 const BACKUP_DIR_NAME = "subagents-config-sync-backup";
 
-export function resolveSubagentSyncMetadataStore(storageOptions?: SubagentStorageOptions) {
+/**
+ * 同步元数据与备份落在**设置里的数据存储路径**下（`{dataBaseDir}/.zcode/v2`），
+ * 与模型智能配置等服务同层；默认设置下就是 `~/.zcode/v2`。
+ */
+export function resolveSubagentSyncMetadataStore() {
   return createConfigSyncMetadataStore(async () =>
-    join(dirname(await resolveSubagentStateFile(storageOptions)), SYNC_METADATA_FILE_NAME),
+    join(getAppConfigDir(), SYNC_METADATA_FILE_NAME),
   );
 }
 
-export async function resolveSubagentSyncBackupRoot(
-  storageOptions?: SubagentStorageOptions,
-): Promise<string> {
-  return join(dirname(await resolveSubagentStateFile(storageOptions)), BACKUP_DIR_NAME);
+export async function resolveSubagentSyncBackupRoot(): Promise<string> {
+  return join(getAppConfigDir(), BACKUP_DIR_NAME);
+}
+
+/** 统计一份备份里的 agent 数（备份里是整份 `agents/` 目录），供还原界面区分备份。 */
+export async function countSubagentBackupItems(backupDir: string): Promise<number | null> {
+  const entries = await readdir(join(backupDir, "agents"), { withFileTypes: true }).catch(
+    () => null,
+  );
+  if (!entries) return null;
+  return entries.filter((entry) => entry.isFile() && AGENT_FILE_PATTERN.test(entry.name)).length;
 }
 
 export function resolveSubagentSyncBackupEntries(

@@ -435,6 +435,7 @@ const enUS: Record<string, string> = {
   "settings.resourceActions.import": "Import",
   "settings.resourceActions.export": "Export",
   "settings.resourceActions.uploadToGithub": "Upload to GitHub",
+  "settings.resourceActions.restoreFromBackup": "Restore from backup…",
   "settings.resourceActions.downloadFromGithub": "Download from GitHub",
   "settings.resourceActions.more": "More actions",
   "carousel.previousSlide": "Previous slide",
@@ -4043,9 +4044,16 @@ const enUS: Record<string, string> = {
   "settings.configSync.unauthorized": "GitHub authorization expired; please sign in again",
   "settings.configSync.insufficientScope":
     "The current GitHub authorization lacks gist permission; please sign in again and grant it",
-  "settings.configSync.notFound":
-    "The remote gist is missing, inaccessible, or has never been uploaded ({detail})",
-  "settings.configSync.rateLimited": "GitHub rate limit reached; try again later ({detail})",
+  "settings.configSync.statusBackupCount": "Local backups: {count}",
+  "settings.configSync.restoreTitle": "Restore config from a backup",
+  "settings.configSync.restoreDescription":
+    "Restoring replaces the whole local config with the selected backup (not a merge). The current state is backed up first, so you can restore that one back if you picked wrong.",
+  "settings.configSync.restoreItemCount": "{count} item(s)",
+  "settings.configSync.restoreItemCountUnknown": "Item count unknown",
+  "settings.configSync.restoreConfirm": "Restore",
+  "settings.configSync.restoreEmpty": "No local backups available yet",
+  "settings.configSync.restored": "Restored from backup ({count} item(s))",
+  "settings.configSync.notFound": "The remote gist is missing, inaccessible, or has never been uploaded ({detail})",  "settings.configSync.rateLimited": "GitHub rate limit reached; try again later ({detail})",
   "settings.configSync.networkError": "Network request failed: {detail}",
   "settings.configSync.timeout": "Request timed out; check your network or proxy settings",
   "settings.configSync.remoteInvalid": "Remote config is invalid: {detail}",

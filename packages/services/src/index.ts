@@ -299,12 +299,15 @@ export { IPluginManagementService } from "./plugins/pluginManagement.js";
 export { ISubagentsService } from "./subagents/subagents.js";
 export type { SubagentConfigDownloadPlan } from "./subagents/subagentConfigSync.js";
 export type {
+  ConfigSyncBackupInfo,
+  ConfigSyncBackupList,
   ConfigSyncDownloadPlan,
   ConfigSyncDownloadResult,
   ConfigSyncError,
   ConfigSyncErrorCode,
   ConfigSyncPlanEntry,
   ConfigSyncPlanEntryKind,
+  ConfigSyncRestoreResult,
   ConfigSyncResult,
   ConfigSyncSecretWarning,
   ConfigSyncStatus,

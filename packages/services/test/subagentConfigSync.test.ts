@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { GITHUB_ACCESS_TOKEN_CREDENTIAL_KEY } from "../src/github/githubAuth.js";
+import { setDataBaseDir } from "../src/paths.js";
 import {
   resolveSubagentStateFile,
   resolveUserSubagentRoot,
@@ -119,11 +120,19 @@ function createFakeGithub() {
   };
 }
 
+/**
+ * 隔离两层路径：
+ * - `homeDir` 决定子智能体自身存储（agents 目录 / agents-state.json）；
+ * - `setDataBaseDir` 决定同步元数据与备份（跟随设置里的数据存储路径）。
+ * 两者都必须指向临时目录，否则测试会写进真实 `~/.zcode`。
+ */
 async function withHome<T>(run: (home: string) => Promise<T>): Promise<T> {
   const home = await mkdtemp(join(tmpdir(), "zcode-subagent-sync-"));
+  setDataBaseDir(home);
   try {
     return await run(home);
   } finally {
+    setDataBaseDir(null);
     await rm(home, { recursive: true, force: true });
   }
 }
@@ -132,6 +141,13 @@ async function writeLocalAgent(home: string, name: string, content: string): Pro
   const agentsRoot = await resolveUserSubagentRoot({ homeDir: home });
   await mkdir(agentsRoot, { recursive: true });
   await writeFile(join(agentsRoot, `${name}.md`), content, "utf-8");
+}
+
+/** 真实环境里 agents-state.json 一定存在（迁移会建它），备份完整性判定依赖这一点。 */
+async function writeLocalState(home: string, state: Record<string, unknown> = {}): Promise<void> {
+  const stateFile = await resolveSubagentStateFile({ homeDir: home });
+  await mkdir(join(stateFile, ".."), { recursive: true });
+  await writeFile(stateFile, JSON.stringify(state), "utf-8");
 }
 
 async function readLocalAgent(home: string, name: string): Promise<string> {
@@ -532,5 +548,61 @@ test("下载应用后状态与远端一致，且再次下载为 up_to_date", asy
     assert.equal(again.status, "up_to_date");
     const status = await service.getConfigSyncStatus();
     assert.equal(status.localChangedSinceLastSync, false);
+  });
+});
+
+test("下载后可列出备份并整份还原；还原前会再备份当前状态，且不改同步元数据", async () => {
+  const github = createFakeGithub();
+  await withHome(async (homeA) => {
+    await writeLocalAgent(homeA, "shared", agentMarkdown("shared", "Remote body."));
+    await createService(homeA, github).syncConfigToGist();
+  });
+  await withHome(async (homeB) => {
+    await writeLocalAgent(homeB, "shared", agentMarkdown("shared", "Local body."));
+    await writeLocalState(homeB);
+    const service = createService(homeB, github);
+
+    const plan = await service.previewConfigFromGist();
+    assert.ok(plan.status === "ok");
+    const applied = await service.applyConfigFromGist({
+      strategy: "merge",
+      expectedRemoteRevision: plan.remoteRevision,
+    });
+    assert.ok(applied.status === "ok");
+
+    // 备份落在「设置里的数据存储路径」下（`{dataBaseDir}/.zcode/v2`），1 份 = 应用前那次。
+    const backups = await service.listConfigSyncBackups();
+    assert.equal(backups.backupRoot, join(homeB, ".zcode", "v2", "subagents-config-sync-backup"));
+    assert.equal(backups.backups.length, 1);
+    assert.equal(backups.backups[0]?.itemCount, 1);
+    assert.match(await readLocalAgent(homeB, "shared"), /Remote body\./);
+
+    const restored = await service.restoreConfigSyncBackup({
+      backupDir: backups.backups[0]!.backupDir,
+    });
+    assert.ok(restored.status === "ok");
+    assert.equal(restored.itemCount, 1);
+    // 本地回到下载前，并且多出一份「还原前」的安全备份。
+    assert.match(await readLocalAgent(homeB, "shared"), /Local body\./);
+    assert.equal((await service.listConfigSyncBackups()).backups.length, 2);
+
+    // 元数据没被改写：本地与上次同步不一致 → 状态行会提示「本地有未上传的修改」。
+    const status = await service.getConfigSyncStatus();
+    assert.equal(status.localChangedSinceLastSync, true);
+    assert.equal(status.backupCount, 2);
+  });
+});
+
+test("还原只接受已知备份：任意路径被拒且本地零变更", async () => {
+  await withHome(async (home) => {
+    await writeLocalAgent(home, "reviewer", agentMarkdown("reviewer"));
+    await writeLocalState(home);
+    const service = createService(home, createFakeGithub());
+    const error = expectError(
+      await service.restoreConfigSyncBackup({ backupDir: join(home, "..", "etc") }),
+    );
+    assert.equal(error.code, "unknown");
+    assert.match(await readLocalAgent(home, "reviewer"), /name: reviewer/);
+    assert.equal((await service.listConfigSyncBackups()).backups.length, 0);
   });
 });
