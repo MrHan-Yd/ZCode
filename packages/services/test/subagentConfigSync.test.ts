@@ -30,6 +30,41 @@ interface FakeRequest {
 }
 
 /**
+ * 按真实 GitHub 的契约解析请求体里的 `files`：每个值必须是 `{ content: string }`，或 `null`（删除标记）。
+ * 形状不符返回 null，调用方回 422。
+ *
+ * 假服务器原先直接把裸字符串当内容收下，比真 GitHub 宽松，于是「上传请求体形状不对」在本地一直测不出来。
+ */
+function parseGistFiles(raw: unknown): Map<string, string | null> | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const files = new Map<string, string | null>();
+  for (const [name, entry] of Object.entries(raw as Record<string, unknown>)) {
+    if (name.length === 0) return null;
+    if (entry === null) {
+      files.set(name, null);
+      continue;
+    }
+    if (typeof entry !== "object" || Array.isArray(entry)) return null;
+    const keys = Object.keys(entry);
+    const content = (entry as { content?: unknown }).content;
+    if (keys.length !== 1 || keys[0] !== "content" || typeof content !== "string") return null;
+    files.set(name, content);
+  }
+  return files;
+}
+
+/** 真实 GitHub 对形状不符的 `files` 返回 422。 */
+function rejectedFiles(): Response {
+  return Response.json(
+    {
+      message: "Validation Failed",
+      errors: [{ resource: "Gist", field: "files", code: "invalid" }],
+    },
+    { status: 422 },
+  );
+}
+
+/**
  * 内存版 GitHub gist API：只实现本改动用到的 4 个路由，并把请求记录下来供断言。
  * 支持注入 HTTP 失败、网络异常与「挂住请求」三种故障，用来覆盖并发与失败语义。
  */
@@ -69,14 +104,13 @@ function createFakeGithub() {
       return new Response(null, { status: failure.status, headers: failure.headers ?? {} });
     }
     if (method === "POST" && path === "/gists") {
+      const files = parseGistFiles(body?.files);
+      if (!files) return rejectedFiles();
       counter += 1;
-      const files = (body?.files ?? {}) as Record<string, string | null>;
       const gist: FakeGistRecord = {
         id: `gist${counter}`,
         description: typeof body?.description === "string" ? body.description : "",
-        files: new Map(
-          Object.entries(files).filter((entry): entry is [string, string] => entry[1] !== null),
-        ),
+        files: new Map([...files].filter((entry): entry is [string, string] => entry[1] !== null)),
       };
       gists.set(gist.id, gist);
       return Response.json(toJson(gist, true), { status: 201 });
@@ -84,8 +118,9 @@ function createFakeGithub() {
     if (method === "PATCH" && path.startsWith("/gists/")) {
       const gist = gists.get(path.slice("/gists/".length));
       if (!gist) return new Response(null, { status: 404 });
-      const files = (body?.files ?? {}) as Record<string, string | null>;
-      for (const [name, content] of Object.entries(files)) {
+      const files = parseGistFiles(body?.files);
+      if (!files) return rejectedFiles();
+      for (const [name, content] of files) {
         if (content === null) gist.files.delete(name);
         else gist.files.set(name, content);
       }
@@ -262,9 +297,9 @@ test("本地改动再上传：PATCH 同一 gist，revision+1，远端已删的 a
     assert.equal(second.remoteRevision, 2);
     const patch = github.requests.filter((request) => request.method === "PATCH").at(-1);
     assert.equal(patch?.path, `/gists/${github.onlyGist().id}`);
-    const files = patch?.body?.files as Record<string, string | null>;
+    const files = patch?.body?.files as Record<string, { content: string } | null>;
     assert.equal(files["agent.gone.md"], null);
-    assert.match(files["agent.reviewer.md"] ?? "", /Updated body\./);
+    assert.match(files["agent.reviewer.md"]?.content ?? "", /Updated body\./);
     assert.equal(github.onlyGist().files.has("agent.gone.md"), false);
   });
 });

@@ -41,6 +41,15 @@ export interface ConfigSyncError {
 
 export type ConfigSyncResult<T> = T | { readonly status: "error"; readonly error: ConfigSyncError };
 
+/**
+ * GitHub gist `files` 字段的线上形状，即 `POST /gists` 与 `PATCH /gists/{id}` 的请求体内容。
+ *
+ * 每个文件的值必须是带 `content` 字符串的对象（GitHub 的 schema 只允许这一个键）；`null` 表示删除该
+ * 文件，仅 `PATCH` 有意义。写裸字符串会被 GitHub 以 422 拒绝，所以构造请求体的地方必须产出本类型，
+ * 中间不做二次转换。
+ */
+export type GistFilesPayload = Record<string, { readonly content: string } | null>;
+
 /** 一个参与同步的条目：名称是稳定身份，content 是它的完整文本。 */
 export interface ConfigSyncItem {
   readonly name: string;

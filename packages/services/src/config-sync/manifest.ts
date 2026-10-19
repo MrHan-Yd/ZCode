@@ -7,6 +7,7 @@ import type {
   ConfigSyncProfile,
   ConfigSyncRemoteParseResult,
   ConfigSyncSkippedRemoteFile,
+  GistFilesPayload,
 } from "./types.js";
 
 /**
@@ -88,6 +89,13 @@ export function findOversizedItem(
   return null;
 }
 
+/**
+ * 构造本轮上传的 gist 请求体。
+ *
+ * 返回值里的 `files` 就是 `POST /gists` / `PATCH /gists/{id}` 的线上形状（见 `GistFilesPayload`），
+ * 调用方原样透传。**不要把内容写成裸字符串**：GitHub 要求每个文件是 `{ content }` 对象，裸字符串会被
+ * 以 422 拒绝（曾经就是这样，上传一直失败且只报「HTTP 422」）。
+ */
 export function buildRemoteFiles(
   profile: ConfigSyncProfile,
   params: {
@@ -98,13 +106,13 @@ export function buildRemoteFiles(
     /** 远端当前已有的文件名（含上一版 manifest 里的条目文件）。 */
     readonly previousFileNames: readonly string[];
   },
-): { files: Record<string, string | null>; manifest: ConfigSyncManifest } | null {
-  const files: Record<string, string | null> = {};
+): { files: GistFilesPayload; manifest: ConfigSyncManifest } | null {
+  const files: GistFilesPayload = {};
   const manifestItems: ConfigSyncManifestItem[] = [];
   for (const item of params.items) {
     const fileName = profile.fileNameFor(item.name);
     if (!fileName) return null;
-    files[fileName] = item.content;
+    files[fileName] = { content: item.content };
     manifestItems.push({
       name: item.name,
       fileName,
@@ -113,7 +121,7 @@ export function buildRemoteFiles(
     });
   }
   const extras = params.extras.map((extra) => {
-    files[extra.fileName] = extra.content;
+    files[extra.fileName] = { content: extra.content };
     return { fileName: extra.fileName, sha256: sha256Hex(extra.content) };
   });
   const manifest: ConfigSyncManifest = {
@@ -123,7 +131,7 @@ export function buildRemoteFiles(
     items: manifestItems.sort((left, right) => left.name.localeCompare(right.name)),
     extras: extras.sort((left, right) => left.fileName.localeCompare(right.fileName)),
   };
-  files[CONFIG_SYNC_MANIFEST_FILE_NAME] = `${JSON.stringify(manifest, null, 2)}\n`;
+  files[CONFIG_SYNC_MANIFEST_FILE_NAME] = { content: `${JSON.stringify(manifest, null, 2)}\n` };
   // 上传即镜像：远端多出来的条目文件在本轮删除（gist 删除文件 = 传 null）。
   const kept = new Set(Object.keys(files));
   for (const fileName of params.previousFileNames) {

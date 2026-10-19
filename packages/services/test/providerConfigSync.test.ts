@@ -25,6 +25,41 @@ interface FakeGist {
   readonly files: Map<string, string>;
 }
 
+/**
+ * 按真实 GitHub 的契约解析请求体里的 `files`：每个值必须是 `{ content: string }`，或 `null`（删除标记）。
+ * 形状不符返回 null，调用方回 422。
+ *
+ * 假服务器原先直接把裸字符串当内容收下，比真 GitHub 宽松，于是「上传请求体形状不对」在本地一直测不出来。
+ */
+function parseGistFiles(raw: unknown): Map<string, string | null> | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const files = new Map<string, string | null>();
+  for (const [name, entry] of Object.entries(raw as Record<string, unknown>)) {
+    if (name.length === 0) return null;
+    if (entry === null) {
+      files.set(name, null);
+      continue;
+    }
+    if (typeof entry !== "object" || Array.isArray(entry)) return null;
+    const keys = Object.keys(entry);
+    const content = (entry as { content?: unknown }).content;
+    if (keys.length !== 1 || keys[0] !== "content" || typeof content !== "string") return null;
+    files.set(name, content);
+  }
+  return files;
+}
+
+/** 真实 GitHub 对形状不符的 `files` 返回 422。 */
+function rejectedFiles(): Response {
+  return Response.json(
+    {
+      message: "Validation Failed",
+      errors: [{ resource: "Gist", field: "files", code: "invalid" }],
+    },
+    { status: 422 },
+  );
+}
+
 function createFakeGithub() {
   const gists = new Map<string, FakeGist>();
   const requests: { method: string; path: string; body?: Record<string, unknown> }[] = [];
@@ -53,14 +88,13 @@ function createFakeGithub() {
         : undefined;
     requests.push({ method, path, ...(body ? { body } : {}) });
     if (method === "POST" && path === "/gists") {
+      const files = parseGistFiles(body?.files);
+      if (!files) return rejectedFiles();
       counter += 1;
-      const files = (body?.files ?? {}) as Record<string, string | null>;
       const gist: FakeGist = {
         id: `gist${counter}`,
         description: typeof body?.description === "string" ? body.description : "",
-        files: new Map(
-          Object.entries(files).filter((entry): entry is [string, string] => entry[1] !== null),
-        ),
+        files: new Map([...files].filter((entry): entry is [string, string] => entry[1] !== null)),
       };
       gists.set(gist.id, gist);
       return Response.json(toJson(gist, true), { status: 201 });
@@ -68,8 +102,9 @@ function createFakeGithub() {
     if (method === "PATCH" && path.startsWith("/gists/")) {
       const gist = gists.get(path.slice("/gists/".length));
       if (!gist) return new Response(null, { status: 404 });
-      const files = (body?.files ?? {}) as Record<string, string | null>;
-      for (const [name, content] of Object.entries(files)) {
+      const files = parseGistFiles(body?.files);
+      if (!files) return rejectedFiles();
+      for (const [name, content] of files) {
         if (content === null) gist.files.delete(name);
         else gist.files.set(name, content);
       }
@@ -239,18 +274,18 @@ test("上传：条目不含 API Key，文件名转义 `:`，额外通道写出�
     const createRequest = github.requests.find((request) => request.method === "POST");
     assert.equal(createRequest?.body?.public, false);
     assert.equal(createRequest?.body?.description, GIST_DESCRIPTION);
-    const files = (createRequest?.body?.files ?? {}) as Record<string, string>;
+    const files = (createRequest?.body?.files ?? {}) as Record<string, { content: string }>;
     assert.deepEqual(Object.keys(files).sort(), [
       "manifest.json",
       "provider.alpha.json",
       "provider.vendor%3abeta.json",
       "settings.json",
     ]);
-    for (const [name, content] of Object.entries(files)) {
-      assert.equal(content.includes("sk-alpha"), false, `${name} 不应含 apiKey`);
-      assert.equal(content.includes("sk-beta"), false, `${name} 不应含 apiKey`);
+    for (const [name, entry] of Object.entries(files)) {
+      assert.equal(entry.content.includes("sk-alpha"), false, `${name} 不应含 apiKey`);
+      assert.equal(entry.content.includes("sk-beta"), false, `${name} 不应含 apiKey`);
     }
-    const settings = JSON.parse(files["settings.json"]) as { providerOrder: string[] };
+    const settings = JSON.parse(files["settings.json"].content) as { providerOrder: string[] };
     assert.deepEqual(settings.providerOrder, ["alpha", "vendor:beta"]);
   });
 });

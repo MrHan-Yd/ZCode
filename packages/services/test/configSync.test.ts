@@ -42,7 +42,11 @@ function item(name: string, value: unknown = { name }): ConfigSyncItem {
   return { name, content: canonicalJson(value) };
 }
 
-/** 构造一份与 buildRemoteFiles 产出一致的远端 gist files。 */
+/**
+ * 构造一份远端 gist 的 `files`（`GET /gists/{id}` 的响应形状）。
+ *
+ * `buildRemoteFiles` 产出的已经是请求形状（`{ content }`），这里只补上响应侧多出来的 `truncated`。
+ */
 function remoteFiles(
   items: readonly ConfigSyncItem[],
   options: {
@@ -60,8 +64,8 @@ function remoteFiles(
   });
   assert.ok(built);
   const files: Record<string, unknown> = {};
-  for (const [name, content] of Object.entries(built.files)) {
-    files[name] = content === null ? null : { content, truncated: false };
+  for (const [name, entry] of Object.entries(built.files)) {
+    files[name] = entry === null ? null : { content: entry.content, truncated: false };
   }
   return { files: { ...files, ...options.extraFiles }, manifest: built.manifest };
 }
@@ -187,13 +191,38 @@ test("上传文件集合：镜像远端，已删除的条目文件传 null", () 
   });
   assert.ok(built);
   assert.equal(built.files["item.gone.json"], null);
-  assert.equal(built.files["item.keep.json"], kept.content);
-  assert.equal(built.files["extra.json"], "{}");
+  assert.deepEqual(built.files["item.keep.json"], { content: kept.content });
+  assert.deepEqual(built.files["extra.json"], { content: "{}" });
+  assert.deepEqual(built.files[CONFIG_SYNC_MANIFEST_FILE_NAME], {
+    content: `${JSON.stringify(built.manifest, null, 2)}\n`,
+  });
   assert.equal(built.manifest.revision, 4);
   assert.deepEqual(
     built.manifest.extras.map((extra) => extra.fileName),
     ["extra.json"],
   );
+});
+
+test("上传请求体形状：每个文件是带 content 的对象，只有删除标记是 null", () => {
+  const built = buildRemoteFiles(PROFILE, {
+    items: [item("a"), item("b")],
+    extras: [{ fileName: "extra.json", content: "{}" }],
+    revision: 1,
+    updatedAt: "2026-10-17T00:00:00.000Z",
+    previousFileNames: ["item.gone.json"],
+  });
+  assert.ok(built);
+  // 曾经这里产出裸字符串，被 GitHub 以 422 拒绝；请求体形状必须与 gist API 契约一致。
+  for (const [fileName, entry] of Object.entries(built.files)) {
+    if (entry === null) {
+      assert.equal(fileName, "item.gone.json");
+      continue;
+    }
+    assert.equal(typeof entry, "object");
+    assert.deepEqual(Object.keys(entry), ["content"]);
+    assert.equal(typeof entry.content, "string");
+  }
+  assert.equal(built.files["item.gone.json"], null);
 });
 
 test("名称无法映射到远端文件名：整体失败而不是静默丢条目", () => {

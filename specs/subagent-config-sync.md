@@ -81,6 +81,25 @@ agent 的身份 = **文件名去掉扩展名**（`agent.<basename>.md` ↔ `{age
   `pluginAgentModelSelectionOverrides`）。
 - 文件名扁平化（无路径语义），gist 内不出现子目录。
 
+**上传请求体按 gist API 契约构造**（`POST /gists` / `PATCH /gists/{id}` 的 `files` 字段）：
+
+```json
+{
+  "description": "zcode-subagents-config-sync",
+  "public": false,
+  "files": {
+    "manifest.json": { "content": "{…}" },
+    "agent.code-reviewer.md": { "content": "---\nname: code-reviewer\n" },
+    "state.json": { "content": "{…}" }
+  }
+}
+```
+
+每个文件的值必须是**带 `content` 字符串的对象**；本轮要删除的远端文件传 `null`（仅 `PATCH` 有意义）。
+裸字符串、缺 `content` 或带多余键都会被 GitHub 以 **422** 拒绝。`buildRemoteFiles` 的返回值**就是**这份
+请求体（含 `null` 删除标记），`gistClient` 原样透传，不再做二次转换；下载侧读的是**响应**形状
+（`{ content, truncated, … }`），与请求形状不同，两者不要混用。
+
 ## 状态所有者
 
 - **access token**：`GithubAuthService`（凭据库 `github:oauth:access_token`）。本改动只 `load`，不 `save`、
@@ -194,6 +213,7 @@ UI ─ 确认（列出 add/update/localOnly；replace 需勾选）─▶ applyCo
 | 网络/代理失败    | fetch 抛错                                      | `network`，message 带 cause 链 `code`                                         | 不变                  |
 | 超时             | 20s                                             | `timeout`                                                                     | 不变                  |
 | 限流             | 403/429 且 `x-ratelimit-remaining: 0`           | `rate_limited`，message 带 `retry-after`                                      | 不变                  |
+| 请求体被拒绝     | HTTP 422 等未映射状态码                         | `unknown`，message 带 GitHub 的校验摘要（只取 `message` 首行与 `errors` 的 `field`/`code`） | 不变                  |
 | 远端格式非法     | manifest/state/md 校验失败、`schemaVersion ≠ 1` | `remote_invalid`                                                              | 不变                  |
 | 超大小上限       | 单文件 > 512KiB 或总量 > 8MiB                   | `too_large`                                                                   | 不变                  |
 | 本地文件不可解析 | 上传快照                                        | `local_invalid`（带文件名）                                                   | 不变，无网络请求      |
@@ -206,6 +226,8 @@ UI ─ 确认（列出 add/update/localOnly；replace 需勾选）─▶ applyCo
 
 - 私有 gist **不是加密存储**（GitHub 服务端可见、secret scanning 可读），UI 文案不得写「安全存储」。
 - 密钥扫描只报告 `{ 文件名, 行号, 规则名 }`，命中值不进返回值、不进日志。
+- GitHub 错误摘要走白名单：只取顶层 `message` 首行（截断）与 `errors[].field` / `errors[].code`，
+  **不取** `errors[].message`，也不回显响应体原文——避免把待上传内容带进 message 与日志。
 - 日志用 `createServiceLogger("subagentConfigSync")`：`info` 记上传/下载成功（agent 数、revision、gistId 前 8 位），
   `warn` 记错误码，`debug` 记 HTTP 状态；**禁止**记录 md/state 内容、token、完整 gistId。
 

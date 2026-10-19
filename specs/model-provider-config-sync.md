@@ -177,8 +177,8 @@ UI ─ 确认（列出 add/update/localOnly；replace 需勾选）─▶ applyCo
 
 ## 失败语义
 
-与子智能体 / MCP 共用同一张表（未登录 / 401 / 403 缺权限 / 404 / 网络 / 超时 / 限流 / 远端非法 / 超限 /
-本地非法 / revision 冲突 / 重复点击 / 疑似密钥 / 写盘失败回滚）。Provider 侧额外注意：
+与子智能体 / MCP 共用同一张表（未登录 / 401 / 403 缺权限 / 404 / 网络 / 超时 / 限流 / 422 请求体被拒绝 /
+远端非法 / 超限 / 本地非法 / revision 冲突 / 重复点击 / 疑似密钥 / 写盘失败回滚）。Provider 侧额外注意：
 
 - `local_invalid` 的 message 是 providerId，`too_large` 同理。
 - `not_found` 在下载侧的含义包括「远端还没有上传过配置」，UI 文案已覆盖。

@@ -1,7 +1,7 @@
 import { describeRequestError } from "#src/http/describeRequestError.js";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
 import { CONFIG_SYNC_MANIFEST_FILE_NAME, parseManifest } from "./manifest.js";
-import type { ConfigSyncError } from "./types.js";
+import type { ConfigSyncError, GistFilesPayload } from "./types.js";
 
 /**
  * GitHub gist 的最小客户端：只实现本改动用到的 4 个路由，并统一注入鉴权头、代理感知传输与超时。
@@ -15,6 +15,10 @@ const log = createServiceLogger("configSync");
 const GITHUB_API_BASE = "https://api.github.com";
 const GITHUB_API_VERSION = "2022-11-28";
 const REQUEST_TIMEOUT_MS = 20_000;
+/** 正常 GitHub 错误体只有几百字节；超过这个长度说明不是我们认识的错误体，不再解析。 */
+const ERROR_BODY_MAX_CHARS = 64 * 1024;
+const ERROR_MESSAGE_MAX_CHARS = 200;
+const ERROR_DETAIL_MAX_ITEMS = 3;
 
 export interface RemoteGist {
   readonly id: string;
@@ -31,15 +35,17 @@ export type GistResult<T> =
 export interface GistClient {
   fetchGist(token: string, gistId: string): Promise<GistResult<RemoteGist>>;
   listGists(token: string): Promise<GistResult<RemoteGist[]>>;
+  /** `files` 必须是 gist 的线上形状（见 `GistFilesPayload`）；本层只透传，不做转换。 */
   createGist(
     token: string,
     description: string,
-    files: Record<string, string | null>,
+    files: GistFilesPayload,
   ): Promise<GistResult<RemoteGist>>;
+  /** `files` 里的 `null` 表示删除该文件。 */
   patchGist(
     token: string,
     gistId: string,
-    files: Record<string, string | null>,
+    files: GistFilesPayload,
   ): Promise<GistResult<RemoteGist>>;
 }
 
@@ -69,7 +75,7 @@ export function createGistClient(fetchImpl: typeof fetch): GistClient {
       return { ok: false, error: { code, message: detail } };
     }
     if (!response.ok) {
-      const error = mapGithubError(response);
+      const error = await mapGithubError(response);
       log.warn(undefined, "github gist request rejected", {
         status: response.status,
         code: error.code,
@@ -157,7 +163,7 @@ function parseGist(raw: unknown): RemoteGist | null {
   return { id, htmlUrl: htmlUrl || gistHtmlUrl(id), description, updatedAt, files };
 }
 
-function mapGithubError(response: Response): ConfigSyncError {
+async function mapGithubError(response: Response): Promise<ConfigSyncError> {
   const status = response.status;
   if (status === 401) {
     // 不删凭据：token 失效的清理入口只有 GithubAuthService（signOut / getAccount 的 401 分支）。
@@ -181,5 +187,52 @@ function mapGithubError(response: Response): ConfigSyncError {
       message: acceptedScopes ? `需要 ${acceptedScopes}` : "HTTP 403",
     };
   }
-  return { code: "unknown", message: `HTTP ${status}` };
+  // 未映射的状态码（422 等）只报状态码时无法定位原因，补上 GitHub 的校验摘要。
+  return { code: "unknown", message: `HTTP ${status}${await describeGithubErrorBody(response)}` };
+}
+
+/**
+ * 未映射状态码的补充诊断：把 GitHub 的校验摘要接在状态码后面（如 `HTTP 422 · Validation Failed；files: invalid`）。
+ *
+ * 只取顶层 `message` 的**首行**与 `errors[].field` / `errors[].code` 这类结构信息，**不取**
+ * `errors[].message`、也不回显响应体原文：GitHub 的 schema 报错会把被拒绝的取值写进 message 的后续行
+ * （形如 `For 'anyOf/0', 1 is not a boolean.`），透传就等于把待上传内容带进 `ConfigSyncError.message`
+ * 和日志（约束见 types.ts 的 `message` 注释）。
+ */
+async function describeGithubErrorBody(response: Response): Promise<string> {
+  let raw: string;
+  try {
+    raw = await response.text();
+  } catch {
+    return "";
+  }
+  if (raw.length === 0 || raw.length > ERROR_BODY_MAX_CHARS) return "";
+  let body: unknown;
+  try {
+    body = JSON.parse(raw) as unknown;
+  } catch {
+    return "";
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return "";
+  const record = body as Record<string, unknown>;
+  const parts: string[] = [];
+  const message = firstLineOf(record.message);
+  if (message) parts.push(message);
+  const errors = Array.isArray(record.errors) ? record.errors : [];
+  for (const entry of errors.slice(0, ERROR_DETAIL_MAX_ITEMS)) {
+    if (typeof entry !== "object" || entry === null || Array.isArray(entry)) continue;
+    const detail = entry as Record<string, unknown>;
+    const field = typeof detail.field === "string" ? detail.field.trim() : "";
+    const code = typeof detail.code === "string" ? detail.code.trim() : "";
+    const text = field && code ? `${field}: ${code}` : field || code;
+    if (text) parts.push(text);
+  }
+  if (parts.length === 0) return "";
+  return ` · ${parts.join("；")}`;
+}
+
+function firstLineOf(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const line = value.split("\n", 1)[0]?.trim() ?? "";
+  return line.length > ERROR_MESSAGE_MAX_CHARS ? `${line.slice(0, ERROR_MESSAGE_MAX_CHARS)}…` : line;
 }
