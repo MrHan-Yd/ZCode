@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.18.4](https://github.com/MrHan-Yd/ZCode/compare/v3.18.3...v3.18.4) (2026-10-19)
+
+### Bug Fixes
+
+* **config-sync:** 修正 gist 上传请求体形状并补 422 诊断 ([66b3783](https://github.com/MrHan-Yd/ZCode/commit/66b37839552f71a6b5fb504f72dab10b80e390d4))
+  * 请求体里每个文件改为 `{ content }` 对象：裸字符串被 GitHub 以 422 拒绝，子智能体 / MCP / 模型供应商三处上传一直失败
+  * 新增 GistFilesPayload 类型，buildRemoteFiles 直接产出线上形状，gistClient 只透传，不做二次转换
+  * 未映射状态码带上 GitHub 校验摘要（只取 message 首行与 errors 的 field/code，不回显内容）
+  * 新增 gistClient 请求体单测；三个假 GitHub 改为按真实契约校验 files，形状不符回 422
+  * 补充 config-sync 三份 spec 的请求体契约与 422 失败语义
+
+
+### Documentation
+
+* 补充 README 的 v3.18.3 更新说明 ([df4ac67](https://github.com/MrHan-Yd/ZCode/commit/df4ac67763584f5d3a93ec3d2ea615fa64dbd375))
+
 ## [3.18.3](https://github.com/MrHan-Yd/ZCode/compare/v3.18.2...v3.18.3) (2026-10-18)
 
 ### Features
