@@ -25,8 +25,6 @@ import type {
 
 const log = createServiceLogger("configSync");
 
-const SCHEMA_VERSION = 1;
-
 /**
  * 一个功能的同步适配器：核心只认「条目 + 额外通道 + profile + 读写端口」，
  * 业务语义（子智能体的 md/state、MCP 的 server 配置）留在各自功能里。
@@ -286,7 +284,6 @@ export function createConfigSync<TPlan extends ConfigSyncDownloadPlan = ConfigSy
       if (!written.ok) return { status: "error", error: written.error };
 
       await adapter.metadata.write({
-        schemaVersion: SCHEMA_VERSION,
         gistId: written.value.id,
         lastRemoteRevision: revision,
         lastLocalFingerprint: fingerprint,
@@ -400,7 +397,6 @@ export function createConfigSync<TPlan extends ConfigSyncDownloadPlan = ConfigSy
           });
           const after = await adapter.collectSnapshot();
           await adapter.metadata.write({
-            schemaVersion: SCHEMA_VERSION,
             gistId: source.gist.id,
             lastRemoteRevision: manifest.revision,
             lastLocalFingerprint: fingerprintOf(after),

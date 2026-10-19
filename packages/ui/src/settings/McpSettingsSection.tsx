@@ -610,21 +610,38 @@ export function McpSettingsSection({
   );
   const [restoreBackups, setRestoreBackups] = useState<ConfigSyncBackupList | null>(null);
   const configSyncBusy = configSyncPhase !== "idle";
-  // 同步只作用于**本机**用户级 MCP server：
-  // - 工作区级随仓库版本化，不参与同步；
-  // - 远程 workspace 页面上显示的 user 级 server 来自远端机器的 host，而同步固定读写本机
-  //   `~/.zcode/cli/config.json`，两者不是同一份配置，因此在远端页面上不提供入口。
-  const canSyncConfig = scopeFilter === "user" && !remoteSessionId && !remoteTarget;
+  // 作用域参数：用户分区不带 workspacePath，工作区分区带上当前项目路径。
+  // 用与本节其它工作区写入相同的路径来源（prop 优先，回退 tab store），避免同步落到另一个项目上。
+  const storeActiveWorkspacePath = useTabStore((s) => s.activeWorkspacePath);
+  const configSyncWorkspacePath = (workspacePath ?? storeActiveWorkspacePath ?? "").trim();
+  const configSyncScopeParams = useMemo(
+    () =>
+      scopeFilter === "workspace" && configSyncWorkspacePath.length > 0
+        ? { workspacePath: configSyncWorkspacePath }
+        : {},
+    [configSyncWorkspacePath, scopeFilter],
+  );
+
+  // 同步作用于**本机**的当前分区：用户分区同步用户级 server，工作区分区同步该项目的
+  // `<workspace>/.zcode/config.json`。两条限制：
+  // - 远程 workspace 不提供入口：那里页面上的配置来自远端机器的 host，而同步固定在本机 host 执行；
+  // - 工作区分区必须真的解析到项目路径，否则会静默落到用户级（宁可不出入口，也不能写错作用域）。
+  const canSyncConfig =
+    !remoteSessionId &&
+    !remoteTarget &&
+    (scopeFilter === "user" || configSyncWorkspacePath.length > 0);
 
   const loadConfigSyncStatus = useCallback(async () => {
     try {
-      setConfigSyncStatus(await baseServices.mcpSyncService.getConfigSyncStatus());
+      setConfigSyncStatus(
+        await baseServices.mcpSyncService.getConfigSyncStatus(configSyncScopeParams),
+      );
     } catch (error) {
       logger.warn("[mcp] read config sync status failed", {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-  }, [baseServices.mcpSyncService]);
+  }, [baseServices.mcpSyncService, configSyncScopeParams]);
 
   useEffect(() => {
     if (!canSyncConfig) return;
@@ -635,7 +652,10 @@ export function McpSettingsSection({
     async (params?: { confirmSecretUpload?: boolean }) => {
       setConfigSyncPhase("uploading");
       try {
-        const result = await baseServices.mcpSyncService.syncConfigToGist(params);
+        const result = await baseServices.mcpSyncService.syncConfigToGist({
+          ...params,
+          ...configSyncScopeParams,
+        });
         if (result.status === "error") {
           if (result.error.code === "secret_warning") {
             setSecretWarnings(result.error.secretWarnings ?? []);
@@ -660,13 +680,15 @@ export function McpSettingsSection({
         setConfigSyncPhase("idle");
       }
     },
-    [baseServices.mcpSyncService, intl, loadConfigSyncStatus],
+    [baseServices.mcpSyncService, configSyncScopeParams, intl, loadConfigSyncStatus],
   );
 
   const handleOpenRestore = useCallback(async () => {
     setConfigSyncPhase("previewing");
     try {
-      const backups = await baseServices.mcpSyncService.listConfigSyncBackups();
+      const backups = await baseServices.mcpSyncService.listConfigSyncBackups(
+        configSyncScopeParams,
+      );
       if (backups.backups.length === 0) {
         toast(intl.formatMessage({ id: "settings.configSync.restoreEmpty" }));
         return;
@@ -677,13 +699,16 @@ export function McpSettingsSection({
     } finally {
       setConfigSyncPhase("idle");
     }
-  }, [baseServices.mcpSyncService, intl]);
+  }, [baseServices.mcpSyncService, configSyncScopeParams, intl]);
 
   const handleRestoreConfig = useCallback(
     async (params: { backupDir: string }) => {
       setConfigSyncPhase("applying");
       try {
-        const result = await baseServices.mcpSyncService.restoreConfigSyncBackup(params);
+        const result = await baseServices.mcpSyncService.restoreConfigSyncBackup({
+          ...params,
+          ...configSyncScopeParams,
+        });
         if (result.status === "error") {
           if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
           return;
@@ -705,13 +730,15 @@ export function McpSettingsSection({
         setConfigSyncPhase("idle");
       }
     },
-    [baseServices.mcpSyncService, intl, loadConfigSyncStatus, workspaceIdentity],
+    [baseServices.mcpSyncService, configSyncScopeParams, intl, loadConfigSyncStatus, workspaceIdentity],
   );
 
   const handlePreviewConfig = useCallback(async () => {
     setConfigSyncPhase("previewing");
     try {
-      const result = await baseServices.mcpSyncService.previewConfigFromGist();
+      const result = await baseServices.mcpSyncService.previewConfigFromGist(
+        configSyncScopeParams,
+      );
       if (result.status === "error") {
         if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
         return;
@@ -733,6 +760,7 @@ export function McpSettingsSection({
           strategy: params.strategy,
           expectedRemoteRevision: downloadPlan.remoteRevision,
           confirmReplace: params.strategy === "replace",
+          ...configSyncScopeParams,
         });
         if (result.status === "error") {
           if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
@@ -762,7 +790,14 @@ export function McpSettingsSection({
         setConfigSyncPhase("idle");
       }
     },
-    [baseServices.mcpSyncService, downloadPlan, intl, loadConfigSyncStatus, workspaceIdentity],
+    [
+      baseServices.mcpSyncService,
+      configSyncScopeParams,
+      downloadPlan,
+      intl,
+      loadConfigSyncStatus,
+      workspaceIdentity,
+    ],
   );
   const storedStatusSnapshots = useMcpStore((s) => s.statusSnapshots);
   const plugins = usePluginManagementStore((state) => state.plugins);
@@ -774,7 +809,6 @@ export function McpSettingsSection({
   const initializePlugins = usePluginManagementStore((state) => state.initialize);
   const currentProjectPath = useMcpStore((s) => s.currentProjectPath);
   const currentWorkspaceIdentity = useMcpStore((s) => s.currentWorkspaceIdentity);
-  const storeActiveWorkspacePath = useTabStore((s) => s.activeWorkspacePath);
   const storeActiveWorkspaceIdentity = useTabStore((s) => s.activeWorkspaceIdentity ?? undefined);
   const activeWorkspacePath = workspacePath ?? storeActiveWorkspacePath;
   const activeWorkspaceIdentity = workspaceIdentity ?? storeActiveWorkspaceIdentity;

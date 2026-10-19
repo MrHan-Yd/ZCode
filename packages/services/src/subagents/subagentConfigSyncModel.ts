@@ -162,6 +162,19 @@ export const SUBAGENT_CONFIG_PROFILE: ConfigSyncProfile = {
   maxTotalBytes: 8 * 1024 * 1024,
 };
 
+/**
+ * 工作区级的 profile：条目语义完全相同，但**没有额外通道**——工作区 agent 恒为启用，不存在工作区级的
+ * `agents-state.json`（启用状态与模型覆盖都只写在用户级 state 里）。
+ */
+export const SUBAGENT_WORKSPACE_CONFIG_PROFILE: ConfigSyncProfile = {
+  fileNameFor: agentFileName,
+  nameFromFileName: agentNameFromFileName,
+  isValidContent: isParsableSubagentMarkdown,
+  extraFileNames: [],
+  maxFileBytes: 512 * 1024,
+  maxTotalBytes: 8 * 1024 * 1024,
+};
+
 function canonicalState(state: SubagentConfigCuratedState): SubagentConfigCuratedState {
   const sortedRecord = <T>(record: Record<string, T>): Record<string, T> =>
     Object.fromEntries(Object.entries(record).sort(([left], [right]) => left.localeCompare(right)));

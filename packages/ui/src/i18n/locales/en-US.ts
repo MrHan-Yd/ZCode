@@ -4031,6 +4031,8 @@ const enUS: Record<string, string> = {
   "settings.configSync.planMore": "{count} more…",
   "settings.configSync.replaceAck":
     "Mirror the remote (deletes {count} local-only subagent(s))",
+  "settings.configSync.replaceAckGeneric":
+    "Mirror the remote (deletes {count} local-only item(s))",
   "settings.configSync.localChangedWarning":
     "Local files changed since the last sync; applying will overwrite those changes",
   "settings.configSync.remoteSkipped": "{count} unrecognized file(s) on the remote were skipped",
@@ -4098,6 +4100,7 @@ const enUS: Record<string, string> = {
   "settings.subagents.form.maxTurns.label": "Max turns",
   "settings.subagents.form.maxTurns.placeholder": "Inherit",
   "settings.subagents.form.color.label": "Color",
+  "settings.subagents.form.color.usedHint": "Dotted colors are used by your subagents",
   "settings.subagents.form.tools.label": "Allowed tools",
   "settings.subagents.form.tools.inheritAll": "Inherit all",
   "settings.subagents.form.tools.card.title": "Control which tools this SubAgent can use.",
@@ -4127,6 +4130,10 @@ const enUS: Record<string, string> = {
   "settings.subagents.permissionMode.auto": "Auto",
   "settings.subagents.permissionMode.plan": "Plan",
   "settings.subagents.color.blue": "Blue",
+  "settings.subagents.color.deepBlue": "Deep blue",
+  "settings.subagents.color.deepGreen": "Deep green",
+  "settings.subagents.color.deepPurple": "Deep purple",
+  "settings.subagents.color.deepRed": "Deep red",
   "settings.subagents.color.cyan": "Cyan",
   "settings.subagents.color.fuchsia": "Fuchsia",
   "settings.subagents.color.green": "Green",
@@ -4138,6 +4145,7 @@ const enUS: Record<string, string> = {
   "settings.subagents.color.red": "Red",
   "settings.subagents.color.teal": "Teal",
   "settings.subagents.color.yellow": "Yellow",
+  "settings.subagents.color.usedOption": "{color} (used by {count} of your subagents)",
   "settings.pluginManaged.badge": "Plugin",
   "settings.pluginManaged.modifyInPlugin": "Registered by a plugin. Edit it in the plugin.",
   "settings.plugins.title": "Plugins",

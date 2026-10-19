@@ -24,6 +24,10 @@ const VALID_COLORS = new Set<AgentColor>([
   "indigo",
   "fuchsia",
   "lime",
+  "deepRed",
+  "deepGreen",
+  "deepBlue",
+  "deepPurple",
 ]);
 
 const VALID_PERMISSION_MODES = new Set<AgentPermissionMode>(["auto", "plan"]);

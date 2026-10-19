@@ -9,6 +9,7 @@ import {
   type ConfigSyncAdapter,
   type ConfigSyncOperations,
 } from "../config-sync/orchestrator.js";
+import { resolveConfigSyncScope, scopeBackupDirName, scopeGistDescription } from "../config-sync/scope.js";
 import type { ConfigSyncItem, ConfigSyncSnapshot } from "../config-sync/types.js";
 import {
   MCP_CONFIG_GIST_DESCRIPTION,
@@ -39,6 +40,11 @@ export interface CreateMcpConfigSyncOptions {
   readonly writeUserServers: (servers: Record<string, McpServerConfigObject>) => Promise<void>;
   /** ZCode 用户配置文件绝对路径（备份对象）。 */
   readonly userConfigPath: () => Promise<string>;
+  /**
+   * 给出即**工作区级**。读写端口仍由调用方按同一个 `workspacePath` 绑定，这里只用它推导作用域命名：
+   * gist description、元数据分片与备份子目录。
+   */
+  readonly workspacePath?: string;
   /** 同步元数据与备份的目录；缺省用设置里的数据存储路径（`{dataBaseDir}/.zcode/v2`）。 */
   readonly dataDir?: () => Promise<string>;
   readonly credentialService?: Pick<ICredentialService, "load">;
@@ -50,14 +56,16 @@ export interface CreateMcpConfigSyncOptions {
 export function createMcpConfigSync(options: CreateMcpConfigSyncOptions): ConfigSyncOperations {
   // 元数据与备份跟随设置里的数据存储路径（`{dataBaseDir}/.zcode/v2`）。
   const dataDir = options.dataDir ?? (async () => getAppConfigDir());
+  const scope = resolveConfigSyncScope(options.workspacePath);
   const adapter: ConfigSyncAdapter = {
-    gistDescription: MCP_CONFIG_GIST_DESCRIPTION,
+    gistDescription: scopeGistDescription(MCP_CONFIG_GIST_DESCRIPTION, scope),
     profile: MCP_CONFIG_PROFILE,
-    metadata: createConfigSyncMetadataStore(async () =>
-      join(await dataDir(), "mcp-config-sync.json"),
+    metadata: createConfigSyncMetadataStore(
+      async () => join(await dataDir(), "mcp-config-sync.json"),
+      scope,
     ),
     backup: createConfigSyncBackup({
-      rootDir: async () => join(await dataDir(), "mcp-config-sync-backup"),
+      rootDir: async () => join(await dataDir(), "mcp-config-sync-backup", scopeBackupDirName(scope)),
       entries: async () => [{ source: await options.userConfigPath(), name: "config.json" }],
     }),
     collectSnapshot: () => collectMcpSnapshot(options.readEffectiveServers),

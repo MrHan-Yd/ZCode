@@ -466,3 +466,131 @@ test("还原只接受已知备份：任意路径被拒且本地零变更", async
     assert.equal((await service.listConfigSyncBackups()).backups.length, 0);
   });
 });
+
+/** 工作区级 MCP 配置：`<workspace>/.zcode/config.json`（ZCode 优先来源）。 */
+async function writeWorkspaceZcodeServers(
+  workspacePath: string,
+  servers: Record<string, unknown>,
+): Promise<string> {
+  const filePath = join(workspacePath, ".zcode", "config.json");
+  await mkdir(join(workspacePath, ".zcode"), { recursive: true });
+  await writeFile(filePath, JSON.stringify({ mcp: { servers } }, null, 2), "utf-8");
+  return filePath;
+}
+
+/** 工作区级的回退来源：`<workspace>/.agents/mcp.json`。 */
+async function writeWorkspaceAgentsServers(
+  workspacePath: string,
+  servers: Record<string, unknown>,
+): Promise<void> {
+  await mkdir(join(workspacePath, ".agents"), { recursive: true });
+  await writeFile(
+    join(workspacePath, ".agents", "mcp.json"),
+    JSON.stringify({ mcpServers: servers }),
+    "utf-8",
+  );
+}
+
+async function readWorkspaceZcodeServers(
+  workspacePath: string,
+): Promise<Record<string, Record<string, unknown>>> {
+  const raw = await readFile(join(workspacePath, ".zcode", "config.json"), "utf-8");
+  const parsed = JSON.parse(raw) as { mcp?: { servers?: Record<string, Record<string, unknown>> } };
+  return parsed.mcp?.servers ?? {};
+}
+
+test("项目级上传：gist 描述带项目名，只含该项目的 server", async () => {
+  await withHome(async (home) => {
+    const github = createFakeGithub();
+    const workspacePath = join(home, "my-project");
+    await writeZcodeServers(home, { "user-only": serverConfig("https://user.example.com") });
+    await writeWorkspaceZcodeServers(workspacePath, {
+      "project-alpha": serverConfig("https://alpha.example.com"),
+    });
+
+    const service = createService(github);
+    const result = await service.syncConfigToGist({ workspacePath });
+    assert.equal(result.status, "ok");
+    assert.ok(result.status === "ok");
+    assert.equal(result.itemCount, 1);
+
+    const gist = github.onlyGist();
+    assert.equal(gist?.description, `${GIST_DESCRIPTION}:my-project`);
+    assert.equal(gist?.files.has("server.project-alpha.json"), true);
+    assert.equal(gist?.files.has("server.user-only.json"), false);
+  });
+});
+
+test("项目级生效集合回退 .agents/mcp.json：下载写回 .zcode/config.json", async () => {
+  await withHome(async (home) => {
+    const github = createFakeGithub();
+    const sourcePath = join(home, "source-project");
+    await writeWorkspaceAgentsServers(sourcePath, {
+      "project-legacy": serverConfig("https://legacy.example.com"),
+    });
+
+    const service = createService(github);
+    assert.equal((await service.syncConfigToGist({ workspacePath: sourcePath })).status, "ok");
+    assert.equal(github.onlyGist()?.files.has("server.project-legacy.json"), true);
+
+    // 另一个同名项目（模拟换机器打开同一个项目）：靠 label 找回同一份 gist。
+    const targetPath = join(home, "target", "source-project");
+    await mkdir(targetPath, { recursive: true });
+    const plan = await service.previewConfigFromGist({ workspacePath: targetPath });
+    assert.ok(plan.status === "ok");
+    const applied = await service.applyConfigFromGist({
+      strategy: "merge",
+      expectedRemoteRevision: plan.remoteRevision,
+      workspacePath: targetPath,
+    });
+    assert.equal(applied.status, "ok");
+
+    // 与用户级同一条「优先来源」语义：写回 ZCode 配置。
+    assert.deepEqual(Object.keys(await readWorkspaceZcodeServers(targetPath)), ["project-legacy"]);
+  });
+});
+
+test("项目级备份与用户级备份分目录", async () => {
+  await withHome(async (home) => {
+    const github = createFakeGithub();
+    const workspacePath = join(home, "my-project");
+    await writeWorkspaceZcodeServers(workspacePath, {
+      alpha: serverConfig("https://alpha.example.com"),
+    });
+
+    const service = createService(github);
+    assert.equal((await service.syncConfigToGist({ workspacePath })).status, "ok");
+
+    // 本地改一份再下载：应用前先备份，也验证下载会改动项目里的文件。
+    await writeWorkspaceZcodeServers(workspacePath, {
+      alpha: serverConfig("https://changed.example.com"),
+    });
+    const plan = await service.previewConfigFromGist({ workspacePath });
+    assert.ok(plan.status === "ok");
+    assert.equal(
+      (
+        await service.applyConfigFromGist({
+          strategy: "merge",
+          expectedRemoteRevision: plan.remoteRevision,
+          workspacePath,
+        })
+      ).status,
+      "ok",
+    );
+    assert.equal(
+      (await readWorkspaceZcodeServers(workspacePath)).alpha.args?.[1],
+      "https://alpha.example.com",
+    );
+
+    const workspaceBackups = await service.listConfigSyncBackups({ workspacePath });
+    assert.equal(workspaceBackups.backups.length, 1);
+    assert.equal(
+      workspaceBackups.backupRoot.endsWith(join("mcp-config-sync-backup", "ws-my-project")),
+      true,
+    );
+
+    const userBackups = await service.listConfigSyncBackups();
+    assert.equal(userBackups.backups.length, 0);
+    assert.equal(userBackups.backupRoot.endsWith("mcp-config-sync-backup"), true);
+  });
+});

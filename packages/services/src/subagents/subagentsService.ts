@@ -26,7 +26,11 @@ import {
 } from "@zcode/shared";
 import { normalizeSubagentModelSelection } from "./subagentModelSelection.js";
 import { serializeSubagentMarkdown, parseSubagentMarkdown } from "./subagentMarkdown.js";
-import { createSubagentConfigSync } from "./subagentConfigSync.js";
+import {
+  createSubagentConfigSync,
+  type SubagentConfigDownloadPlan,
+} from "./subagentConfigSync.js";
+import type { ConfigSyncOperations } from "../config-sync/orchestrator.js";
 import { pickCuratedState, type SubagentConfigCuratedState } from "./subagentConfigSyncModel.js";
 import {
   resolveSubagentStateFile,
@@ -580,14 +584,32 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
       storageOptions,
     );
   };
-  const configSync = createSubagentConfigSync({
-    storageOptions,
-    credentialService: options?.credentialService,
-    fetchImpl: options?.fetchImpl,
-    readCuratedState,
-    writeCuratedState,
-    enqueueWrite,
-  });
+  /**
+   * 每个作用域一个同步实例，按 `workspacePath` 记忆化（省略即用户级）。
+   *
+   * 不用 label 当键：两个同名目录的项目共用远端 gist 与元数据分片（按 label 识别），但它们的本机读写
+   * 路径不同，绝不能共用绑定到另一个路径的实例。
+   */
+  const configSyncByScope = new Map<string, ConfigSyncOperations<SubagentConfigDownloadPlan>>();
+  const resolveConfigSync = (
+    workspacePath?: string,
+  ): ConfigSyncOperations<SubagentConfigDownloadPlan> => {
+    const normalized = workspacePath?.trim() ?? "";
+    const cacheKey = normalized.length > 0 ? normalized : "user";
+    const cached = configSyncByScope.get(cacheKey);
+    if (cached) return cached;
+    const created = createSubagentConfigSync({
+      storageOptions,
+      ...(normalized.length > 0 ? { workspacePath: normalized } : {}),
+      credentialService: options?.credentialService,
+      fetchImpl: options?.fetchImpl,
+      readCuratedState,
+      writeCuratedState,
+      enqueueWrite,
+    });
+    configSyncByScope.set(cacheKey, created);
+    return created;
+  };
 
   return {
     async prepareRuntimeState() {
@@ -794,28 +816,28 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
       });
     },
 
-    getConfigSyncStatus() {
-      return configSync.getStatus();
+    getConfigSyncStatus(params) {
+      return resolveConfigSync(params?.workspacePath).getStatus();
     },
 
-    listConfigSyncBackups() {
-      return configSync.listBackups();
+    listConfigSyncBackups(params) {
+      return resolveConfigSync(params?.workspacePath).listBackups();
     },
 
     restoreConfigSyncBackup(params) {
-      return configSync.restore(params);
+      return resolveConfigSync(params.workspacePath).restore(params);
     },
 
     syncConfigToGist(params) {
-      return configSync.upload(params);
+      return resolveConfigSync(params?.workspacePath).upload(params);
     },
 
-    previewConfigFromGist() {
-      return configSync.preview();
+    previewConfigFromGist(params) {
+      return resolveConfigSync(params?.workspacePath).preview();
     },
 
     applyConfigFromGist(params) {
-      return configSync.apply(params);
+      return resolveConfigSync(params.workspacePath).apply(params);
     },
   };
 }

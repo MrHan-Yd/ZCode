@@ -38,20 +38,52 @@
    写盘阶段失败尝试用备份回滚。
 8. **疑似密钥只警告**：上传前扫描待上传内容，命中常见密钥形态时先返回警告（只给文件名、行号、规则名，
    不给命中值），用户确认后才真正上传。私有 gist **不是加密存储**，文案必须如实。
-9. **不做定时/自动同步**，不做逐条挑选，不同步工作区级配置。
+9. **不做定时/自动同步**，不做逐条挑选。
+10. **两个作用域**：用户级与工作区（项目）级各自独立同步，见下节「作用域」。
+
+## 作用域
+
+同步按**作用域**分片：用户级（`{storageRoot}` 下）与工作区级（某个项目目录下）。两者本地路径、远端 gist、
+元数据记录与备份目录全部分开，互不影响。
+
+| | 用户级 | 工作区级 |
+| --- | --- | --- |
+| 条目 | `{storageRoot}/agents/*.md` | `<workspace>/.zcode/agents/*.md` |
+| 额外通道 | `agents-state.json` 的精选子集（`state.json`） | **无**：工作区 agent 恒为启用，没有工作区级 state |
+| gist description | `zcode-subagents-config-sync` | `zcode-subagents-config-sync:<label>` |
+| 元数据记录 | 元数据文件的 `user` 分片 | `workspaces[label]` 分片 |
+| 备份根目录 | `{dataDir}/subagents-config-sync-backup/` | `{dataDir}/subagents-config-sync-backup/ws-<label>/` |
+| 入口 | 「已安装」分组 header（用户分区） | 同一个 header（项目分区），远程 tab 不出入口 |
+
+**项目标识 `label` = 工作区目录名**（`basename(workspacePath)`，取不到时回退 `workspace`）。它同时用于
+gist 的 description 与元数据/备份的分片键，因此**零交互**：切到某个项目就能直接上传，换机器打开同名项目
+也能靠 description 发现回来。已知取舍：
+
+- 两个不同项目若目录同名，会共用同一份 gist 并互相覆盖——这是自动识别方案的固有代价。
+- 项目改名或换路径后 label 变化，会被当作新项目，需要重新上传（旧 gist 仍留在账号里，可手工删）。
+
+作用域由「是否带 `workspacePath`」判定（服务方法上的可选参数，与 MCP 的 `projectPath ? workspace : user`
+同一口径）；省略即用户级。
+
+**工作区级下载会写进项目目录**（`<workspace>/.zcode/agents/*.md` 是仓库内文件，会让 git 工作区变脏）。
+这是该能力的固有后果，靠「应用前整份备份 + 可还原」兜底，不做额外的 git 状态拦截。
+
+**远程 workspace 不提供工作区级同步**：那里读的是远端 host 的文件，而同步固定在本机 host 执行。
 
 ## 同步范围
 
 纳入：
 
-- `{storageRoot}/agents/` **根目录**下的 `*.md` / `*.markdown`（与 `createAgent` 的落盘位置一致）。
-- `agents-state.json` 的精选子集：`disabledAgentIds`、`builtInModelSelectionOverrides`、
+- 用户级：`{storageRoot}/agents/` **根目录**下的 `*.md` / `*.markdown`（与 `createAgent` 的落盘位置一致）。
+- 用户级：`agents-state.json` 的精选子集：`disabledAgentIds`、`builtInModelSelectionOverrides`、
   `pluginAgentModelSelectionOverrides`。
+- 工作区级：`<workspace>/.zcode/agents/` **根目录**下的同类文件（无额外通道）。
 
 排除（在计划里显式报出，不静默丢弃）：
 
 - 子目录里的 agent 文件：`SubagentConfigSyncStatus.skippedNested` 列出相对路径，UI 显示跳过数量。
-- 工作区级 `<workspace>/.zcode/agents/*.md`：它是仓库内文件、已随 git 版本化，跨机路径不同。
+- 插件来源的 agent：内容归插件所有、由插件商店分发，物化成用户级副本会与插件更新打架，另立项。
+- 内置 profile：运行时默认能力，磁盘上没有对应文件。
 - `agents-state.json` 的 `builtInModelOverrides` / `builtInThoughtLevelOverrides`：服务端注释已禁止从这两个
   字段恢复覆盖，带上会把废弃语义重新注入远端。
 
@@ -85,7 +117,7 @@ agent 的身份 = **文件名去掉扩展名**（`agent.<basename>.md` ↔ `{age
 
 ```json
 {
-  "description": "zcode-subagents-config-sync",
+  "description": "zcode-subagents-config-sync 或 zcode-subagents-config-sync:<label>",
   "public": false,
   "files": {
     "manifest.json": { "content": "{…}" },
@@ -100,16 +132,24 @@ agent 的身份 = **文件名去掉扩展名**（`agent.<basename>.md` ↔ `{age
 请求体（含 `null` 删除标记），`gistClient` 原样透传，不再做二次转换；下载侧读的是**响应**形状
 （`{ content, truncated, … }`），与请求形状不同，两者不要混用。
 
+`description` 按作用域拼接（见「作用域」节），发现仍按 description 全等比较，因此工作区级不需要额外的
+manifest 字段；工作区级的 `files` 里没有 `state.json`。
+
 ## 状态所有者
 
 - **access token**：`GithubAuthService`（凭据库 `github:oauth:access_token`）。本改动只 `load`，不 `save`、
   不 `delete`；401 也不删凭据。token 明文只存在于 host 侧函数栈内，不进 RPC 返回值、不进日志。
 - **`agents/*.md` 与 `agents-state.json`**：`SubagentsService` 独占。同步不是第二个所有者，而是它的一个内部
-  代码路径，写盘一律经同一个 `writeQueue`。
+  代码路径，写盘一律经同一个 `writeQueue`（两个作用域共用这一条队列）。
+- **工作区级 `<workspace>/.zcode/agents/*.md`**：同样是 `SubagentsService` 的写路径，但它同时是**仓库内文件**，
+  git 也是它的所有者之一；下载会改动工作区，由备份兜底。
 - **同步元数据与备份**：`{数据存储路径}/.zcode/v2/` 下的 `subagents-config-sync.json` 与
   `subagents-config-sync-backup/`（数据存储路径 = 设置里配置的 `dataBaseDir`，由 `getAppConfigDir()` 解析；
   默认设置下即 `~/.zcode/v2`）。`SubagentsService` 独占，元数据原子写。
-- **远端 gist**：本机元数据里的 `gistId` 是权威定位；`description` 标记只在「本机没有 gistId」时用于一次性发现。
+  元数据文件是**一份文件、按作用域分片**（`{ schemaVersion: 2, user: {…}, workspaces: { "<label>": {…} } }`），
+  每个作用域只读写自己那一片；同一文件的写入经模块级写入链串行，避免两个作用域并发写时丢更新。
+- **远端 gist**：本机元数据里该作用域的 `gistId` 是权威定位；`description` 只在「本机没有 gistId」时用于
+  一次性发现。
 
 ## 接口
 
@@ -133,22 +173,33 @@ gist 客户端、远端定位、元数据、备份回滚、编排），MCP 配�
 请求统一带 `authorization: Bearer <token>`、`accept: application/vnd.github+json`、
 `x-github-api-version: 2022-11-28`、`AbortSignal.timeout(20_000)`。
 
-`packages/services/src/subagents/subagents.ts`：`ISubagentsService` 增加 4 个方法（channel 仍是 `subagents`）
+`packages/services/src/subagents/subagents.ts`：`ISubagentsService` 增加 6 个方法（channel 仍是 `subagents`）。
+每个方法都接受可选的 `workspacePath`：**省略即用户级**，给出即工作区级（该项目的 label 由路径推出）。
 
 ```ts
-getConfigSyncStatus(): Promise<SubagentConfigSyncStatus>;
-syncConfigToGist(): Promise<SubagentConfigSyncResult<SubagentConfigUploadResult>>;
-previewConfigFromGist(): Promise<SubagentConfigSyncResult<SubagentConfigDownloadPlan>>;
+getConfigSyncStatus(params?: { workspacePath?: string }): Promise<SubagentConfigSyncStatus>;
+syncConfigToGist(params?: {
+  confirmSecretUpload?: boolean;
+  workspacePath?: string;
+}): Promise<SubagentConfigSyncResult<SubagentConfigUploadResult>>;
+previewConfigFromGist(params?: {
+  workspacePath?: string;
+}): Promise<SubagentConfigSyncResult<SubagentConfigDownloadPlan>>;
 applyConfigFromGist(params: {
   strategy: "merge" | "replace";
   expectedRemoteRevision: number;
   confirmReplace?: boolean;
+  workspacePath?: string;
 }): Promise<SubagentConfigSyncResult<SubagentConfigDownloadResult>>;
-listConfigSyncBackups(): Promise<ConfigSyncBackupList>;
+listConfigSyncBackups(params?: { workspacePath?: string }): Promise<ConfigSyncBackupList>;
 restoreConfigSyncBackup(params: {
   backupDir: string;
+  workspacePath?: string;
 }): Promise<ConfigSyncResult<ConfigSyncRestoreResult>>;
 ```
+
+服务内部按 label 记忆化每个工作区的同步实例（用户级一个），并共用同一条 `writeQueue`。单飞是
+**每作用域一条**：用户级与某个工作区级的上传可以并发，但两者写不同文件、不同 gist，互不影响。
 
 ## 时序
 
@@ -201,6 +252,8 @@ UI ─ 确认（列出 add/update/localOnly；replace 需勾选）─▶ applyCo
   - 还原是整份覆盖、不是合并，UI 必须二次确认。
   - 还原**不改同步元数据**：还原后本地与上次同步不一致，状态行会如实显示「本地有未上传的修改」。
   - 还原参与单飞（进行中返回 `busy`）并在同一个写队列内执行。
+- **按作用域分根目录**：备份目录名是 `ws-<label>`（用户级沿用原来的根目录）。因此列表、还原与
+  「每份最多 10 个 / 超过 30 天清理」的裁剪都天然按作用域隔离，切换分区看到的是该作用域自己的备份。
 
 ## 失败语义
 
@@ -234,8 +287,9 @@ UI ─ 确认（列出 add/update/localOnly；replace 需勾选）─▶ applyCo
 ## UI
 
 - 入口：`SubagentsSection` 用户级分组 header 的 `SettingsResourceHeaderActions` 溢出菜单里新增
-  「上传到 GitHub」「从 GitHub 下载」（与本地「导入 / 导出」用分隔线分开）。仅当 `activeScope === "user"`
-  且宿主支持用户级目录（`capability.userScopeAvailable`）时才出现。
+  「上传到 GitHub」「从 GitHub 下载」（与本地「导入 / 导出」用分隔线分开）。用户分区要求宿主支持用户级目录
+  （`capability.userScopeAvailable`）；**项目分区**要求当前选中了工作区（`targetWorkspacePath` 非空），
+  远程 tab 本就被过滤掉，因此工作区级只作用于本机。
 - 状态行、下载确认弹窗与密钥确认弹窗复用 `packages/ui/src/settings/ConfigSyncParts.tsx`（MCP 同步同一套组件，
   文案在 `settings.configSync.*`）。
 - 状态行（`data-testid="subagent-config-sync-status"`）：未登录显示引导 + 「去登录」（跳「同步配置」分区）；
@@ -271,6 +325,12 @@ UI ─ 确认（列出 add/update/localOnly；replace 需勾选）─▶ applyCo
 14. `agents/sub/x.md` 不出现在快照，`skippedNested` 含该路径。
 15. 本机 `agents-state.json` 含 `builtInModelOverrides`：上传的 `state.json` 不含该字段。
 16. 应用成功或失败后：列表与 mention store 都刷新（成功时出现新 agent）。
+17. 项目级上传：description 为 `zcode-subagents-config-sync:<label>`，gist 内**没有** `state.json`，
+    元数据写进 `workspaces[label]` 分片，`user` 分片不变。
+18. 两个项目（label 不同）各上传一次：得到两份独立 gist，互不覆盖；同名 label 的两个项目按同一份处理。
+19. 项目级下载：预览为 `add`，应用后文件落在 `<workspace>/.zcode/agents/`，本机 `agents-state.json` 零变更。
+20. 项目级还原：`listConfigSyncBackups({ workspacePath })` 只列该项目的备份；用户级备份不出现在列表里。
+21. 切换分区：用户分区显示用户级状态行，项目分区显示该项目自己的状态行与备份列表。
 
 ## 非目标
 

@@ -19,8 +19,10 @@ import type {
   SettingsDirectorySource,
 } from "@zcode/shared";
 import type { ICredentialService } from "../credential/credential.js";
-import { createMcpConfigSync } from "./mcpConfigSync.js";
+import { createMcpConfigSync, type McpConfigSyncServerRecord } from "./mcpConfigSync.js";
+import type { McpServerConfigObject } from "./mcpConfigSyncModel.js";
 import type { IMcpSyncService } from "./mcpSync.js";
+import type { ConfigSyncOperations } from "../config-sync/orchestrator.js";
 import { checkRemoteSyncDirectoryWriteAccess } from "../remote-sync/remoteSyncWriteAccess.js";
 
 type McpConfigKeyName = "mcp.servers" | "mcpServers";
@@ -102,24 +104,55 @@ export function createMcpSyncService(
     );
     return queued;
   };
-  const configSync = createMcpConfigSync({
-    readEffectiveServers: async () =>
-      (await collectEffectiveUserMcpRecords()).map((record) => ({
-        name: record.name,
-        config: record.config as Record<string, unknown>,
-        enabled: record.enabled,
-      })),
-    writeUserServers: async (servers) => {
-      await writeZCodeServersToFile("user", servers);
-    },
-    userConfigPath: async () => getUserZcodeMcpConfigPath(),
-    dataDir: dependencies.dataDir ?? defaultMcpSyncDataDir,
-    ...(dependencies.credentialService
-      ? { credentialService: dependencies.credentialService }
-      : {}),
-    ...(dependencies.fetchImpl ? { fetchImpl: dependencies.fetchImpl } : {}),
-    enqueueWrite,
-  });
+  /**
+   * 每个作用域一个同步实例：端口（读生效集合 / 写回目标 / 备份源）绑定到具体路径，所以按
+   * `workspacePath` 而不是 label 记忆化——同名目录的两个项目会共用远端 gist（按 label 识别），
+   * 但绝不能共用绑定到另一个路径的读写端口。
+   */
+  const configSyncByScope = new Map<string, ConfigSyncOperations>();
+  const resolveConfigSync = (workspacePath?: string): ConfigSyncOperations => {
+    const normalized = workspacePath?.trim() ?? "";
+    const cacheKey = normalized.length > 0 ? normalized : "user";
+    const cached = configSyncByScope.get(cacheKey);
+    if (cached) return cached;
+    const created = createMcpConfigSync({
+      ...(normalized.length > 0 ? { workspacePath: normalized } : {}),
+      ...resolveConfigSyncPorts(normalized),
+      dataDir: dependencies.dataDir ?? defaultMcpSyncDataDir,
+      ...(dependencies.credentialService
+        ? { credentialService: dependencies.credentialService }
+        : {}),
+      ...(dependencies.fetchImpl ? { fetchImpl: dependencies.fetchImpl } : {}),
+      enqueueWrite,
+    });
+    configSyncByScope.set(cacheKey, created);
+    return created;
+  };
+
+  /** 作用域决定「读哪一份生效集合、写回哪一份文件、备份哪一份文件」。 */
+  function resolveConfigSyncPorts(workspacePath: string): {
+    readEffectiveServers: () => Promise<readonly McpConfigSyncServerRecord[]>;
+    writeUserServers: (servers: Record<string, McpServerConfigObject>) => Promise<void>;
+    userConfigPath: () => Promise<string>;
+  } {
+    if (workspacePath.length > 0) {
+      return {
+        readEffectiveServers: async () =>
+          toConfigSyncRecords(await collectEffectiveWorkspaceMcpRecords(workspacePath)),
+        writeUserServers: async (servers) => {
+          await writeZCodeServersToFile("workspace", servers, workspacePath);
+        },
+        userConfigPath: async () => getWorkspaceZcodeMcpConfigPath(workspacePath),
+      };
+    }
+    return {
+      readEffectiveServers: async () => toConfigSyncRecords(await collectEffectiveUserMcpRecords()),
+      writeUserServers: async (servers) => {
+        await writeZCodeServersToFile("user", servers);
+      },
+      userConfigPath: async () => getUserZcodeMcpConfigPath(),
+    };
+  }
 
   return {
     async loadMcpFromUserDirectory(request) {
@@ -141,23 +174,23 @@ export function createMcpSyncService(
         localHomeDir,
       };
     },
-    getConfigSyncStatus() {
-      return configSync.getStatus();
+    getConfigSyncStatus(params) {
+      return resolveConfigSync(params?.workspacePath).getStatus();
     },
-    listConfigSyncBackups() {
-      return configSync.listBackups();
+    listConfigSyncBackups(params) {
+      return resolveConfigSync(params?.workspacePath).listBackups();
     },
     restoreConfigSyncBackup(params) {
-      return configSync.restore(params);
+      return resolveConfigSync(params.workspacePath).restore(params);
     },
     syncConfigToGist(params) {
-      return configSync.upload(params);
+      return resolveConfigSync(params?.workspacePath).upload(params);
     },
-    previewConfigFromGist() {
-      return configSync.preview();
+    previewConfigFromGist(params) {
+      return resolveConfigSync(params?.workspacePath).preview();
     },
     applyConfigFromGist(params) {
-      return configSync.apply(params);
+      return resolveConfigSync(params.workspacePath).apply(params);
     },
     async listRemoteUserMcpStatuses(params) {
       const remoteHomeDir = resolveUserHomeDir();
@@ -236,6 +269,11 @@ export function getUserZcodeMcpConfigPath(): string {
   return buildUserConfigPath(ZCODE_MCP_DESCRIPTOR);
 }
 
+/** 工作区级写入目标：`<workspace>/.zcode/config.json`（同步的备份源也是它）。 */
+export function getWorkspaceZcodeMcpConfigPath(workspacePath: string): string {
+  return buildDirectoryConfigPath(ZCODE_MCP_DESCRIPTOR, "workspace", workspacePath);
+}
+
 function buildDirectoryMcpLocation(
   descriptor: DirectoryMcpDescriptor,
   scope: Exclude<McpScope, "common">,
@@ -261,11 +299,36 @@ function findDescriptorByLocation(location: SettingsDirectoryLocation): Director
 }
 
 export async function collectEffectiveUserMcpRecords(): Promise<UserMcpRecord[]> {
-  const zcodeRecords = await readUserMcpRecordsFromFile(ZCODE_MCP_DESCRIPTOR);
+  const zcodeRecords = await readMcpRecordsFromFile(ZCODE_MCP_DESCRIPTOR, "user");
   if (zcodeRecords.length > 0) {
     return sortMcpRecords(zcodeRecords);
   }
-  return sortMcpRecords(await readUserMcpRecordsFromFile(AGENTS_MCP_DESCRIPTOR));
+  return sortMcpRecords(await readMcpRecordsFromFile(AGENTS_MCP_DESCRIPTOR, "user"));
+}
+
+/**
+ * 工作区级生效集合：`<workspace>/.zcode/config.json` 优先，为空时回退 `<workspace>/.agents/mcp.json`
+ * ——与用户级同一条「优先来源」规则，只是根目录换成工作区。
+ */
+export async function collectEffectiveWorkspaceMcpRecords(
+  workspacePath: string,
+): Promise<UserMcpRecord[]> {
+  const zcodeRecords = await readMcpRecordsFromFile(ZCODE_MCP_DESCRIPTOR, "workspace", workspacePath);
+  if (zcodeRecords.length > 0) {
+    return sortMcpRecords(zcodeRecords);
+  }
+  return sortMcpRecords(
+    await readMcpRecordsFromFile(AGENTS_MCP_DESCRIPTOR, "workspace", workspacePath),
+  );
+}
+
+/** 把本机记录转成同步模块认的条目形状（名称 + 配置对象 + 启用状态）。 */
+function toConfigSyncRecords(records: readonly UserMcpRecord[]): McpConfigSyncServerRecord[] {
+  return records.map((record) => ({
+    name: record.name,
+    config: record.config as Record<string, unknown>,
+    enabled: record.enabled,
+  }));
 }
 
 async function collectEffectiveUserMcpRecordByName(): Promise<Map<string, UserMcpRecord>> {
@@ -475,10 +538,12 @@ async function writeServerEnabledToFile(
   await writeTextAtomic(filePath, `${JSON.stringify(next, null, 2)}\n`);
 }
 
-async function readUserMcpRecordsFromFile(
+async function readMcpRecordsFromFile(
   descriptor: DirectoryMcpDescriptor,
+  scope: Exclude<McpScope, "common">,
+  workspacePath?: string,
 ): Promise<UserMcpRecord[]> {
-  const filePath = buildUserConfigPath(descriptor);
+  const filePath = buildDirectoryConfigPath(descriptor, scope, workspacePath);
   const parsed = await readJsonObject(filePath);
   if (!parsed) {
     return [];

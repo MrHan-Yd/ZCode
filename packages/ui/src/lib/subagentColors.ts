@@ -1,23 +1,35 @@
 import type { AgentColor } from "@zcode/shared";
 
 // 按色环顺序排列，让单行色板呈现连续的暖→冷→暖过渡。
+// 四个深色档紧跟在同色相的浅色档后面（red/deepRed、purple/deepPurple…），
+// 既保持色环单调，也让「同色相、两种深浅」在单行里相邻可比。
 export const SUBAGENT_COLORS: AgentColor[] = [
   "yellow",
   "orange",
   "red",
+  "deepRed",
   "pink",
   "fuchsia",
   "purple",
+  "deepPurple",
   "indigo",
   "blue",
+  "deepBlue",
   "cyan",
   "teal",
   "green",
+  "deepGreen",
   "lime",
 ];
 
 export const SUBAGENT_COLOR_CLASS: Record<AgentColor, string> = {
   blue: "bg-sky-300 text-sky-900 dark:bg-sky-400/32 dark:text-sky-50",
+  // 深色档在两个主题下都用实色 -600：浅色档在深色主题里是 32% 的淡色，
+  // 实色才能让「深浅两档」在暗色背景下也分得出来。
+  deepBlue: "bg-sky-600 text-sky-50",
+  deepGreen: "bg-emerald-600 text-emerald-50",
+  deepPurple: "bg-violet-600 text-violet-50",
+  deepRed: "bg-rose-600 text-rose-50",
   cyan: "bg-cyan-300 text-cyan-900 dark:bg-cyan-400/32 dark:text-cyan-50",
   fuchsia: "bg-fuchsia-300 text-fuchsia-900 dark:bg-fuchsia-400/32 dark:text-fuchsia-50",
   green: "bg-emerald-300 text-emerald-900 dark:bg-emerald-400/32 dark:text-emerald-50",
@@ -33,6 +45,10 @@ export const SUBAGENT_COLOR_CLASS: Record<AgentColor, string> = {
 
 export const SUBAGENT_TEXT_COLOR_CLASS: Record<AgentColor, string> = {
   blue: "text-sky-700 dark:text-sky-300",
+  deepBlue: "text-sky-800 dark:text-sky-400",
+  deepGreen: "text-emerald-800 dark:text-emerald-400",
+  deepPurple: "text-violet-800 dark:text-violet-400",
+  deepRed: "text-rose-800 dark:text-rose-400",
   cyan: "text-cyan-700 dark:text-cyan-300",
   fuchsia: "text-fuchsia-700 dark:text-fuchsia-300",
   green: "text-emerald-700 dark:text-emerald-300",

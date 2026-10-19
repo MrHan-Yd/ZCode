@@ -1,8 +1,17 @@
 /* eslint-disable max-lines -- 子智能体管理页集中维护作用域列表、表单和启用状态，避免状态分散 */
 import { useStartPlanRecommendation } from "@/hooks/useStartPlanRecommendation.js";
 import { hasExplicitModelChanged } from "@/lib/startPlanRecommendation.js";
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { Bot, Check, Plus, Trash2 } from "lucide-react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FormEvent,
+  type ReactNode,
+} from "react";
+import { Bot, Check, CircleAlert, Plus, Trash2 } from "lucide-react";
+import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { completeNewModelSelection } from "@zcode/provider";
 import {
   TID_SUBAGENT_BUILT_IN_MODEL_TRIGGER,
@@ -60,6 +69,7 @@ import { resolveModelThoughtOption } from "@/lib/modelThoughtOption.js";
 import { parseModelPickerValue } from "@/lib/zcodeSessionProjection.js";
 import { encodeCustomModelValue } from "@/lib/zcodeCustomModelValue.js";
 import { SUBAGENT_COLORS, SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
+import { countSubagentColorUsage, isSelfCreatedSubagent } from "@/lib/subagentColorUsage.js";
 import { SettingsResourceGroupHeader } from "@/settings/SettingsResourceGroupHeader.js";
 import { SettingsResourceHeaderActions } from "@/settings/SettingsResourceHeaderActions.js";
 import {
@@ -150,24 +160,37 @@ interface SubagentsSectionProps {
   onOpenSyncConfigSettings?: () => void;
 }
 
-function isEditableUserAgent(agent: AgentSummary): boolean {
-  return (
-    (agent.scope === "user" || agent.scope === "workspace") &&
-    agent.source === "user" &&
-    agent.readOnly !== true
-  );
-}
-
 // runtime 只对 user scope 应用 disabledAgentIds（CLI 侧 isDisabledUserProfile 对
 // source !== "user" 直接返回 false，workspace profile 的 source 是 "project"），服务端
 // attachEnabledState 也据此对非 user scope 恒返回 enabled: true。因此 workspace agent 不能
 // 展示启用开关——点了会静默回弹，还会往 user 级 agents-state.json 写入永不生效的记录。
 function supportsEnabledToggle(agent: AgentSummary): boolean {
-  return isEditableUserAgent(agent) && agent.scope === "user";
+  return isSelfCreatedSubagent(agent) && agent.scope === "user";
 }
 
 function isBuiltInAgent(agent: AgentSummary): boolean {
   return agent.scope === "built-in" || agent.source === "built-in";
+}
+
+/**
+ * 当前分区能看到哪些 agent。列表渲染与「颜色已被占用」统计必须共用这一份口径，
+ * 否则两处对「这个分区的自建子智能体」的判断会漂移。
+ */
+function matchesActiveScope(
+  agent: AgentSummary,
+  activeScope: "user" | "workspace",
+  targetWorkspacePath: string,
+): boolean {
+  if (activeScope === "user") {
+    return agent.scope !== "workspace";
+  }
+  if (isBuiltInAgent(agent) || agent.scope !== "workspace") {
+    return false;
+  }
+  if (agent.source === "plugin") {
+    return agent.projectPath === targetWorkspacePath;
+  }
+  return !agent.projectPath || agent.projectPath === targetWorkspacePath;
 }
 
 /**
@@ -360,11 +383,13 @@ function resolveSubagentModelLabel(params: {
   return resolveModelDisplayName(params.modelGroups, trimmedModel) ?? trimmedModel;
 }
 
-function FormFieldLabel({ children }: { children: string }) {
+/** `trailing` 用于标签右侧的提示图标；放在 label 外，避免按钮成为 label 的关联控件。 */
+function FormFieldLabel({ children, trailing }: { children: string; trailing?: ReactNode }) {
   return (
-    <label className="mb-1.5 block text-ui-base font-medium text-foreground-subtle">
-      {children}
-    </label>
+    <div className="mb-1.5 flex items-center gap-1">
+      <label className="min-w-0 text-ui-base font-medium text-foreground-subtle">{children}</label>
+      {trailing}
+    </div>
   );
 }
 
@@ -396,7 +421,7 @@ function AgentBadge({ children, className }: { children: string; className?: str
 function groupAgentsByScope(agents: readonly AgentSummary[]): AgentGroups {
   const groups: AgentGroups = { builtIn: [], plugin: [], user: [] };
   for (const agent of agents) {
-    if (isEditableUserAgent(agent)) {
+    if (isSelfCreatedSubagent(agent)) {
       groups.user.push(agent);
     } else if (agent.source === "plugin") {
       groups.plugin.push(agent);
@@ -492,7 +517,7 @@ function AgentListRow({
   onToggle: (agent: AgentSummary, enabled: boolean) => void;
 }) {
   const { intl } = useZCodeIntl();
-  const editable = isEditableUserAgent(agent);
+  const editable = isSelfCreatedSubagent(agent);
   const showEnabledToggle = supportsEnabledToggle(agent);
   const rowEditable = editable && !isOperating;
   const hasModelOverrideControl = supportsModelOverride(agent);
@@ -819,6 +844,7 @@ function SubagentForm({
   scopeKey,
   workspaceTabs,
   onScopeKeyChange,
+  usedColorCounts,
 }: {
   initial?: AgentSummary;
   modelSelectionView?: ModelSelectionView | null;
@@ -832,6 +858,8 @@ function SubagentForm({
   scopeKey: string;
   workspaceTabs: WorkspaceTabState[];
   onScopeKeyChange: (scopeKey: string) => void;
+  /** 当前分区里自建子智能体已占用的颜色及数量；只做提示，不限制选择。 */
+  usedColorCounts: ReadonlyMap<AgentColor, number>;
 }) {
   const recommendStartPlan = useStartPlanRecommendation(modelSelectionView, "subagent");
   const { intl } = useZCodeIntl();
@@ -856,6 +884,9 @@ function SubagentForm({
   const [modelError, setModelError] = useState<string | null>(null);
   const inheritModelLabel = intl.formatMessage({
     id: "settings.subagents.model.inherit",
+  });
+  const colorUsedHintLabel = intl.formatMessage({
+    id: "settings.subagents.form.color.usedHint",
   });
   const handleModelChange = useCallback(
     (nextModel: string) => {
@@ -1080,7 +1111,22 @@ function SubagentForm({
           {nameError ? <p className="text-ui-base text-destructive">{nameError}</p> : null}
         </div>
         <div className="space-y-1.5">
-          <FormFieldLabel>
+          <FormFieldLabel
+            trailing={
+              // 只有真的存在「已被占用」的颜色时才提示，空色板不额外占位。
+              usedColorCounts.size > 0 ? (
+                <ControlHintTooltip title={colorUsedHintLabel}>
+                  <button
+                    type="button"
+                    aria-label={colorUsedHintLabel}
+                    className="inline-flex size-3.5 items-center justify-center rounded-full text-foreground-subtle outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <CircleAlert className="size-3.5" aria-hidden="true" />
+                  </button>
+                </ControlHintTooltip>
+              ) : undefined
+            }
+          >
             {intl.formatMessage({ id: "settings.subagents.form.color.label" })}
           </FormFieldLabel>
           <div
@@ -1097,21 +1143,40 @@ function SubagentForm({
               }}
               aria-hidden="true"
             />
-            {AGENT_COLORS.map((option) => (
-              <button
-                key={option}
-                type="button"
-                role="radio"
-                aria-checked={color === option}
-                aria-label={intl.formatMessage({
-                  id: `settings.subagents.color.${option}`,
-                })}
-                className="relative z-10 flex size-6 items-center justify-center rounded-full outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
-                onClick={() => setColor(option)}
-              >
-                <span className={cn("size-3.5 rounded-full", COLOR_DOT_CLASS[option])} />
-              </button>
-            ))}
+            {AGENT_COLORS.map((option) => {
+              const usedCount = usedColorCounts.get(option) ?? 0;
+              const colorLabel = intl.formatMessage({
+                id: `settings.subagents.color.${option}`,
+              });
+              // 已占用的颜色只加提示，不禁用：用户仍可选择重复颜色。
+              const optionLabel =
+                usedCount > 0
+                  ? intl.formatMessage(
+                      { id: "settings.subagents.color.usedOption" },
+                      { color: colorLabel, count: usedCount },
+                    )
+                  : colorLabel;
+              return (
+                <button
+                  key={option}
+                  type="button"
+                  role="radio"
+                  aria-checked={color === option}
+                  aria-label={optionLabel}
+                  title={optionLabel}
+                  className="relative z-10 flex size-6 items-center justify-center rounded-full outline-none transition-colors hover:bg-hover focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => setColor(option)}
+                >
+                  <span className={cn("size-3.5 rounded-full", COLOR_DOT_CLASS[option])} />
+                  {usedCount > 0 ? (
+                    <span
+                      aria-hidden="true"
+                      className="pointer-events-none absolute right-0 top-0 size-1.5 rounded-full bg-foreground"
+                    />
+                  ) : null}
+                </button>
+              );
+            })}
           </div>
         </div>
         <div className="space-y-1.5">
@@ -1445,22 +1510,35 @@ export function SubagentsSection({
     });
   }, [subagentsService, targetWorkspaceIdentity, targetWorkspacePath]);
 
+  // 同步作用域：用户级不带 workspacePath，项目级带上当前项目路径（远端 gist 与元数据都按它分片）。
+  // 路径取不到时宁可不带参数（回到用户级），也不要发出一个空路径。
+  const configSyncScopeParams = useMemo(() => {
+    const target = activeScope === "workspace" ? targetWorkspacePath.trim() : "";
+    return target.length > 0 ? { workspacePath: target } : {};
+  }, [activeScope, targetWorkspacePath]);
+
   const loadConfigSyncStatus = useCallback(async () => {
     try {
-      setConfigSyncStatus(await subagentsService.getConfigSyncStatus());
+      setConfigSyncStatus(await subagentsService.getConfigSyncStatus(configSyncScopeParams));
     } catch (error) {
       logger.warn("[SubagentsSection] 读取子智能体同步状态失败", {
         error: error instanceof Error ? error.message : String(error),
       });
     }
-  }, [subagentsService]);
+  }, [configSyncScopeParams, subagentsService]);
 
-  // 同步只作用于本机用户级目录；Web/无用户目录的宿主不做这次 RPC。
   const userScopeAvailable = capability?.userScopeAvailable === true;
+  // 用户级要求宿主有用户目录（Web/无用户目录的宿主不做这次 RPC）；项目级要求选中了本机工作区。
+  const canSyncConfig =
+    activeScope === "workspace" ? targetWorkspacePath.trim().length > 0 : userScopeAvailable;
+
   useEffect(() => {
-    if (!userScopeAvailable) return;
+    if (!canSyncConfig) {
+      setConfigSyncStatus(null);
+      return;
+    }
     void loadConfigSyncStatus();
-  }, [loadConfigSyncStatus, userScopeAvailable]);
+  }, [canSyncConfig, configSyncScopeParams, loadConfigSyncStatus]);
 
   // 本地改动（新建/编辑/删除/启停）会改变「本地有未上传的修改」，刷新列表时一并刷新状态行。
   const refreshWithSyncStatus = useCallback(async () => {
@@ -1471,7 +1549,10 @@ export function SubagentsSection({
     async (params?: { confirmSecretUpload?: boolean }) => {
       setConfigSyncPhase("uploading");
       try {
-        const result = await subagentsService.syncConfigToGist(params);
+        const result = await subagentsService.syncConfigToGist({
+          ...params,
+          ...configSyncScopeParams,
+        });
         if (result.status === "error") {
           if (result.error.code === "secret_warning") {
             setSecretWarnings(result.error.secretWarnings ?? []);
@@ -1496,13 +1577,13 @@ export function SubagentsSection({
         setConfigSyncPhase("idle");
       }
     },
-    [intl, loadConfigSyncStatus, subagentsService],
+    [configSyncScopeParams, intl, loadConfigSyncStatus, subagentsService],
   );
 
   const handleOpenRestore = useCallback(async () => {
     setConfigSyncPhase("previewing");
     try {
-      const backups = await subagentsService.listConfigSyncBackups();
+      const backups = await subagentsService.listConfigSyncBackups(configSyncScopeParams);
       if (backups.backups.length === 0) {
         toast(intl.formatMessage({ id: "settings.configSync.restoreEmpty" }));
         return;
@@ -1513,13 +1594,16 @@ export function SubagentsSection({
     } finally {
       setConfigSyncPhase("idle");
     }
-  }, [intl, subagentsService]);
+  }, [configSyncScopeParams, intl, subagentsService]);
 
   const handleRestoreConfig = useCallback(
     async (params: { backupDir: string }) => {
       setConfigSyncPhase("applying");
       try {
-        const result = await subagentsService.restoreConfigSyncBackup(params);
+        const result = await subagentsService.restoreConfigSyncBackup({
+          ...params,
+          ...configSyncScopeParams,
+        });
         if (result.status === "error") {
           if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
           return;
@@ -1538,13 +1622,13 @@ export function SubagentsSection({
         setConfigSyncPhase("idle");
       }
     },
-    [intl, loadConfigSyncStatus, refresh, refreshMentionStore, subagentsService],
+    [configSyncScopeParams, intl, loadConfigSyncStatus, refresh, refreshMentionStore, subagentsService],
   );
 
   const handlePreviewConfig = useCallback(async () => {
     setConfigSyncPhase("previewing");
     try {
-      const result = await subagentsService.previewConfigFromGist();
+      const result = await subagentsService.previewConfigFromGist(configSyncScopeParams);
       if (result.status === "error") {
         if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
         return;
@@ -1566,6 +1650,7 @@ export function SubagentsSection({
           strategy: params.strategy,
           expectedRemoteRevision: downloadPlan.remoteRevision,
           confirmReplace: params.strategy === "replace",
+          ...configSyncScopeParams,
         });
         if (result.status === "error") {
           if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
@@ -1592,7 +1677,15 @@ export function SubagentsSection({
         setConfigSyncPhase("idle");
       }
     },
-    [downloadPlan, intl, loadConfigSyncStatus, refresh, refreshMentionStore, subagentsService],
+    [
+      configSyncScopeParams,
+      downloadPlan,
+      intl,
+      loadConfigSyncStatus,
+      refresh,
+      refreshMentionStore,
+      subagentsService,
+    ],
   );
 
   const handleSave = useCallback(
@@ -1640,7 +1733,7 @@ export function SubagentsSection({
 
   const handleDelete = useCallback(
     async (agent: AgentSummary) => {
-      if (!isEditableUserAgent(agent)) {
+      if (!isSelfCreatedSubagent(agent)) {
         return;
       }
       const confirmed = await confirmDialog({
@@ -1726,7 +1819,7 @@ export function SubagentsSection({
   );
 
   const handleEdit = useCallback((agent: AgentSummary) => {
-    if (!isEditableUserAgent(agent)) {
+    if (!isSelfCreatedSubagent(agent)) {
       return;
     }
     setEditingAgent(agent);
@@ -1737,9 +1830,6 @@ export function SubagentsSection({
     activeScope === "workspace"
       ? Boolean(targetWorkspacePath)
       : capability?.userScopeAvailable === true;
-
-  // 同步只作用于用户级 agents（工作区级随 git 版本化），因此只在用户级 scope 且本机有用户目录时提供入口。
-  const canSyncConfig = activeScope === "user" && capability?.userScopeAvailable === true;
 
   const handleAddNew = useCallback(() => {
     if (!canManageUserAgents) {
@@ -1754,21 +1844,19 @@ export function SubagentsSection({
     setShowForm(false);
   }, []);
 
+  // 颜色占用只统计当前分区里的自建子智能体；搜索框不参与（关键字过滤不该改变标记）。
+  const usedColorCounts = useMemo(
+    () =>
+      countSubagentColorUsage(
+        agents.filter((agent) => matchesActiveScope(agent, activeScope, targetWorkspacePath)),
+      ),
+    [activeScope, agents, targetWorkspacePath],
+  );
+
   const filteredAgents = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return agents.filter((agent) => {
-      if (activeScope === "user") {
-        if (agent.scope === "workspace") return false;
-      } else {
-        if (isBuiltInAgent(agent) || agent.scope !== "workspace") return false;
-        if (agent.source === "plugin" && agent.projectPath !== targetWorkspacePath) return false;
-        if (
-          agent.source !== "plugin" &&
-          agent.projectPath &&
-          agent.projectPath !== targetWorkspacePath
-        )
-          return false;
-      }
+      if (!matchesActiveScope(agent, activeScope, targetWorkspacePath)) return false;
       if (!normalizedQuery) return true;
       const haystack = [
         agent.name,
@@ -1863,6 +1951,7 @@ export function SubagentsSection({
             scopeKey={selectedScopeKey}
             workspaceTabs={workspaceTabs}
             onScopeKeyChange={setSelectedScopeKey}
+            usedColorCounts={usedColorCounts}
           />
         </div>
       </div>
@@ -2059,6 +2148,7 @@ export function SubagentsSection({
           onConfirm={(params) => void handleApplyConfig(params)}
           testId="subagent-config-sync-confirm"
           replaceAckTestId="subagent-config-sync-replace-ack"
+          replaceAckLabelId="settings.configSync.replaceAck"
         />
       ) : null}
       {restoreBackups ? (

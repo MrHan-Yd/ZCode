@@ -39,6 +39,21 @@
 9. **疑似密钥只警告**：MCP 配置的 `env` / `headers` 常含 API Key，上传前扫描命中时先返回警告
    （只给文件名、行号、规则名，不给命中值），确认后才上传。私有 gist **不是加密存储**，文案必须如实。
 10. **不做定时/自动同步**，不做逐条挑选。
+11. **两个作用域**：用户级与工作区（项目）级各自独立同步。作用域模型（项目标识 = 工作区目录名、
+    gist description 为 `<base>:<label>`、元数据按作用域分片、备份分根目录、远程 workspace 不出入口）
+    与子智能体完全一致，见 `specs/subagent-config-sync.md` 的「作用域」节；MCP 侧的差异只有下面几条。
+
+## 作用域（MCP 侧差异）
+
+| | 用户级 | 工作区级 |
+| --- | --- | --- |
+| 读生效集合 | `collectEffectiveUserMcpRecords()`：`~/.zcode/cli/config.json` 优先，回退 `~/.agents/mcp.json` | `readDirectoryServersFromPreferredSources("workspace", workspacePath)`：`<workspace>/.zcode/config.json` 优先，回退 `<workspace>/.agents/mcp.json` |
+| 写回目标 | `writeZCodeServersToFile("user", …)` → `~/.zcode/cli/config.json` | `writeZCodeServersToFile("workspace", …, workspacePath)` → `<workspace>/.zcode/config.json` |
+| 备份源 | 用户配置文件 | `<workspace>/.zcode/config.json` |
+| gist description | `zcode-mcp-config-sync` | `zcode-mcp-config-sync:<label>` |
+
+「整份重写」「优先来源」「启用状态」这些写入语义两个作用域相同；工作区级同样只备份**写入目标**那一份，
+回退来源（`.agents/mcp.json`）不在备份范围内——与用户级对 `~/.agents/mcp.json` 的处理一致。
 
 ## 写入语义（MCP 特有）
 
@@ -59,11 +74,14 @@
 
 - **access token**：`GithubAuthService`（凭据库 `github:oauth:access_token`）。本改动只 `load`，不 `save`/`delete`。
 - **用户级 MCP 配置**：`McpSyncService` 独占。设置页的增删改（`saveMcpToUserDirectory`）与同步落地经**同一个写队列**
-  串行，不出现「同步写盘期间用户改了一个 server」的交错。
+  串行，不出现「同步写盘期间用户改了一个 server」的交错。工作区级配置（`<workspace>/.zcode/config.json`）同样
+  经这条队列，但它同时是仓库内文件。
 - **同步元数据与备份**：`{数据存储路径}/.zcode/v2/mcp-config-sync.json` 与
   `mcp-config-sync-backup/`（数据存储路径 = 设置里的 `dataBaseDir`，由 `getAppConfigDir()` 解析；
-  默认即 `~/.zcode/v2`）。`McpSyncService` 独占。
-- **远端 gist**：本机元数据里的 `gistId` 是权威定位；`description` 标记只在「本机没有 gistId」时用于一次性发现。
+  默认即 `~/.zcode/v2`）。`McpSyncService` 独占。元数据是一份文件、按作用域分片
+  （`user` / `workspaces[label]`），备份目录按作用域分根（工作区级为 `ws-<label>/`）。
+- **远端 gist**：本机元数据里该作用域的 `gistId` 是权威定位；`description` 只在「本机没有 gistId」时用于
+  一次性发现。
 
 ## 接口
 
@@ -80,17 +98,29 @@
 端口由 `McpSyncService` 注入：`readEffectiveServers` / `writeUserServers` / `userConfigPath` / `dataDir` /
 `credentialService` / `fetchImpl` / `enqueueWrite`。
 
-`IMcpSyncService` 增加 4 个方法（channel 仍是 `mcp-sync`），形状与子智能体同步一致：
+`IMcpSyncService` 增加 6 个方法（channel 仍是 `mcp-sync`），形状与子智能体同步一致；
+每个方法都接受可选的 `workspacePath`（**省略即用户级**，给出即工作区级）：
 
 ```ts
-getConfigSyncStatus(): Promise<ConfigSyncStatus>;
-syncConfigToGist(params?: { confirmSecretUpload?: boolean }): Promise<ConfigSyncResult<ConfigSyncUploadResult>>;
-previewConfigFromGist(): Promise<ConfigSyncResult<ConfigSyncDownloadPlan>>;
+getConfigSyncStatus(params?: { workspacePath?: string }): Promise<ConfigSyncStatus>;
+syncConfigToGist(params?: {
+  confirmSecretUpload?: boolean;
+  workspacePath?: string;
+}): Promise<ConfigSyncResult<ConfigSyncUploadResult>>;
+previewConfigFromGist(params?: {
+  workspacePath?: string;
+}): Promise<ConfigSyncResult<ConfigSyncDownloadPlan>>;
 applyConfigFromGist(params: {
   strategy: "merge" | "replace";
   expectedRemoteRevision: number;
   confirmReplace?: boolean;
+  workspacePath?: string;
 }): Promise<ConfigSyncResult<ConfigSyncDownloadResult>>;
+listConfigSyncBackups(params?: { workspacePath?: string }): Promise<ConfigSyncBackupList>;
+restoreConfigSyncBackup(params: {
+  backupDir: string;
+  workspacePath?: string;
+}): Promise<ConfigSyncResult<ConfigSyncRestoreResult>>;
 ```
 
 ## 共享核心
@@ -98,6 +128,7 @@ applyConfigFromGist(params: {
 `packages/services/src/config-sync/`（子智能体与 MCP 共用，不含业务语义）
 
 - `types.ts`：`ConfigSync*` 契约类型（状态 / 计划 / 结果 / 错误码）。
+- `scope.ts`：作用域模型（`ConfigSyncScope`、项目标识推导、gist description 拼接、备份子目录名）。
 - `manifest.ts`：远端 manifest schema、`canonicalJson`、`computeFingerprint`、`buildRemoteFiles`、
   `parseRemoteFiles`（校验 sha256 / 大小 / 可加载性 / 未知文件）、`findOversizedItem`。
 - `plan.ts`：`buildPlan`、`resolveApplySet`、`countPlanEntries`。
@@ -154,10 +185,12 @@ UI ─ 确认（列出 add/update/localOnly；replace 需勾选）─▶ applyCo
 
 ## UI
 
-- 入口：MCP 设置页「已安装」分组 header 的 `SettingsResourceHeaderActions` 溢出菜单，仅在
-  `scopeFilter === "user"` **且当前不是远程 workspace**（`remoteSessionId` / `remoteTarget` 为空）时出现。
-  原因：MCP 设置页在远程 workspace 上显示的是**远端 host** 的 user 级 server，而同步固定读写本机
-  `~/.zcode/cli/config.json`，两者不是同一份配置，不能混用（子智能体设置页不存在这个问题：它只消费本机 host）。
+- 入口：MCP 设置页「已安装」分组 header 的 `SettingsResourceHeaderActions` 溢出菜单，用户分区与工作区分区
+  都有，唯一条件是**当前不是远程 workspace**（`remoteSessionId` / `remoteTarget` 为空）。
+  原因：MCP 设置页在远程 workspace 上显示的是**远端 host** 的配置，而同步固定在本机 host 执行，两者不是同一份
+  配置，不能混用（子智能体设置页不存在这个问题：它只消费本机 host）。作用域本身不再参与门控——用户分区同步
+  用户级配置，工作区分区同步该项目的 `<workspace>/.zcode/config.json`。
+- 切换分区时状态行、备份列表都跟着切到该作用域（服务方法带上 `workspacePath`）。
 - 状态行、下载确认弹窗、疑似密钥确认弹窗**复用** `packages/ui/src/settings/ConfigSyncParts.tsx`
   （与子智能体同一套组件与 `settings.configSync.*` 文案）；`testid` 为 `mcp-config-sync-status` /
   `mcp-config-sync-go-login` / `mcp-config-sync-confirm` / `mcp-config-sync-replace-ack` /
@@ -180,6 +213,11 @@ UI ─ 确认（列出 add/update/localOnly；replace 需勾选）─▶ applyCo
 9. 远端文件非法（非 JSON / sha256 不符）或 revision 不符：拒绝写入，本地零变更。
 10. `env` 里含 `ghp_...`：先返回 `secret_warning` 且不含命中值；确认后上传成功。
 11. 401：返回 `unauthorized`，凭据未被删除。
+12. 项目级上传：description 为 `zcode-mcp-config-sync:<label>`，元数据写进 `workspaces[label]` 分片，
+    `user` 分片不变。
+13. 项目级生效集合来自 `<workspace>/.agents/mcp.json`：上传包含这些 server；下载写回
+    `<workspace>/.zcode/config.json`（ZCode 优先来源语义与用户级一致）。
+14. 项目级还原：`listConfigSyncBackups({ workspacePath })` 只列 `ws-<label>/` 下的备份。
 12. 应用一次下载后还原：本地 `mcp.servers` 回到下载前，且多出一份安全备份；元数据未改写。
 13. 传入任意路径调用还原：被拒绝，本地零变更。
 

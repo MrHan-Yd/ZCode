@@ -8,6 +8,7 @@ import { setDataBaseDir } from "../src/paths.js";
 import {
   resolveSubagentStateFile,
   resolveUserSubagentRoot,
+  resolveWorkspaceSubagentRoot,
 } from "../src/subagents/subagentStorage.js";
 import { createSubagentsService } from "../src/subagents/subagentsService.js";
 
@@ -187,6 +188,21 @@ async function writeLocalState(home: string, state: Record<string, unknown> = {}
 
 async function readLocalAgent(home: string, name: string): Promise<string> {
   return readFile(join(await resolveUserSubagentRoot({ homeDir: home }), `${name}.md`), "utf-8");
+}
+
+/** 项目级 agent 落在 `<workspace>/.zcode/agents`。 */
+async function writeWorkspaceAgent(
+  workspacePath: string,
+  name: string,
+  content: string,
+): Promise<void> {
+  const agentsRoot = resolveWorkspaceSubagentRoot(workspacePath);
+  await mkdir(agentsRoot, { recursive: true });
+  await writeFile(join(agentsRoot, `${name}.md`), content, "utf-8");
+}
+
+async function readWorkspaceAgent(workspacePath: string, name: string): Promise<string> {
+  return readFile(join(resolveWorkspaceSubagentRoot(workspacePath), `${name}.md`), "utf-8");
 }
 
 function createService(
@@ -639,5 +655,124 @@ test("还原只接受已知备份：任意路径被拒且本地零变更", async
     assert.equal(error.code, "unknown");
     assert.match(await readLocalAgent(home, "reviewer"), /name: reviewer/);
     assert.equal((await service.listConfigSyncBackups()).backups.length, 0);
+  });
+});
+
+test("项目级上传：gist 描述带项目名，远端只有该项目的 agent 且没有 state.json", async () => {
+  await withHome(async (home) => {
+    const github = createFakeGithub();
+    const workspacePath = join(home, "my-project");
+    await writeWorkspaceAgent(workspacePath, "reviewer", agentMarkdown("reviewer"));
+    await writeLocalAgent(home, "user-agent", agentMarkdown("user-agent"));
+
+    const service = createService(home, github);
+    const result = await service.syncConfigToGist({ workspacePath });
+    assert.equal(result.status, "ok");
+    assert.ok(result.status === "ok");
+    assert.equal(result.itemCount, 1);
+
+    const gist = github.onlyGist();
+    assert.equal(gist?.description, `${GIST_DESCRIPTION}:my-project`);
+    assert.equal(gist?.files.has("agent.reviewer.md"), true);
+    assert.equal(gist?.files.has("agent.user-agent.md"), false);
+    // 工作区级没有 state 额外通道。
+    assert.equal(gist?.files.has("state.json"), false);
+    assert.equal(gist?.files.has("manifest.json"), true);
+  });
+});
+
+test("两个项目各自一份 gist，描述按项目名区分", async () => {
+  await withHome(async (home) => {
+    const github = createFakeGithub();
+    const projectA = join(home, "project-a");
+    const projectB = join(home, "project-b");
+    await writeWorkspaceAgent(projectA, "alpha", agentMarkdown("alpha"));
+    await writeWorkspaceAgent(projectB, "beta", agentMarkdown("beta"));
+
+    const service = createService(home, github);
+    assert.equal((await service.syncConfigToGist({ workspacePath: projectA })).status, "ok");
+    assert.equal((await service.syncConfigToGist({ workspacePath: projectB })).status, "ok");
+
+    assert.equal(github.gists.size, 2);
+    assert.deepEqual(
+      [...github.gists.values()].map((gist) => gist.description).sort(),
+      [`${GIST_DESCRIPTION}:project-a`, `${GIST_DESCRIPTION}:project-b`],
+    );
+  });
+});
+
+test("项目级下载：写进项目目录，且不碰用户级 agents-state.json", async () => {
+  await withHome(async (home) => {
+    const github = createFakeGithub();
+    const sourcePath = join(home, "source-project");
+    await writeWorkspaceAgent(sourcePath, "reviewer", agentMarkdown("reviewer"));
+    await writeLocalState(home, { disabledAgentIds: ["keep-me"] });
+    assert.equal((await createService(home, github).syncConfigToGist({ workspacePath: sourcePath })).status, "ok");
+
+    // 另一个目录但同名（模拟换机器打开同一个项目）：靠 label 找回同一份 gist。
+    const targetPath = join(home, "target", "source-project");
+    await mkdir(targetPath, { recursive: true });
+    const service = createService(home, github);
+    const plan = await service.previewConfigFromGist({ workspacePath: targetPath });
+    assert.ok(plan.status === "ok");
+    assert.deepEqual(
+      plan.entries.map((entry) => [entry.name, entry.kind]),
+      [["reviewer", "add"]],
+    );
+    // 项目级没有 state，变更摘要为空。
+    assert.deepEqual(plan.stateChange, {
+      disabledAdded: [],
+      disabledRemoved: [],
+      overrideKeysChanged: [],
+    });
+
+    const applied = await service.applyConfigFromGist({
+      strategy: "merge",
+      expectedRemoteRevision: plan.remoteRevision,
+      workspacePath: targetPath,
+    });
+    assert.equal(applied.status, "ok");
+    assert.match(await readWorkspaceAgent(targetPath, "reviewer"), /name: reviewer/);
+
+    const state = JSON.parse(
+      await readFile(await resolveSubagentStateFile({ homeDir: home }), "utf-8"),
+    ) as { disabledAgentIds?: string[] };
+    assert.deepEqual(state.disabledAgentIds, ["keep-me"]);
+  });
+});
+
+test("项目级备份与用户级备份分目录，列表按作用域隔离", async () => {
+  await withHome(async (home) => {
+    const github = createFakeGithub();
+    const workspacePath = join(home, "my-project");
+    await writeWorkspaceAgent(workspacePath, "reviewer", agentMarkdown("reviewer"));
+    const service = createService(home, github);
+    assert.equal((await service.syncConfigToGist({ workspacePath })).status, "ok");
+
+    // 本地改一份再下载：应用前会先备份，验证下载确实会改动项目里的文件。
+    await writeWorkspaceAgent(workspacePath, "reviewer", agentMarkdown("reviewer", "local edit"));
+    const plan = await service.previewConfigFromGist({ workspacePath });
+    assert.ok(plan.status === "ok");
+    assert.equal(
+      (
+        await service.applyConfigFromGist({
+          strategy: "merge",
+          expectedRemoteRevision: plan.remoteRevision,
+          workspacePath,
+        })
+      ).status,
+      "ok",
+    );
+    assert.doesNotMatch(await readWorkspaceAgent(workspacePath, "reviewer"), /local edit/);
+
+    const workspaceBackups = await service.listConfigSyncBackups({ workspacePath });
+    assert.equal(workspaceBackups.backups.length, 1);
+    assert.equal(
+      workspaceBackups.backupRoot.endsWith(join("subagents-config-sync-backup", "ws-my-project")),
+      true,
+    );
+
+    const userBackups = await service.listConfigSyncBackups();
+    assert.equal(userBackups.backups.length, 0);
   });
 });

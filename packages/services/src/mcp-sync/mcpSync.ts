@@ -52,8 +52,10 @@ export interface IMcpSyncService {
     overwrite?: false;
   }): Promise<McpSyncImportResult>;
 
-  /** 列出本地备份（新的在前，含备份目录路径与条目数）；只读、不联网。 */
-  listConfigSyncBackups(): Promise<ConfigSyncBackupList>;
+  /** 列出本地备份（新的在前，含备份目录路径与条目数）；只读、不联网。按作用域分开。 */
+  listConfigSyncBackups(params?: {
+    workspacePath?: string;
+  }): Promise<ConfigSyncBackupList>;
 
   /**
    * 从指定备份整份还原本地配置（不是合并）。`backupDir` 必须来自 `listConfigSyncBackups`；
@@ -61,22 +63,29 @@ export interface IMcpSyncService {
    */
   restoreConfigSyncBackup(params: {
     backupDir: string;
+    workspacePath?: string;
   }): Promise<ConfigSyncResult<ConfigSyncRestoreResult>>;
 
   /** 只读本机同步状态与元数据（gistId / 上次同步时间 / 本地是否变化）；不联网。 */
-  getConfigSyncStatus(): Promise<ConfigSyncStatus>;
+  getConfigSyncStatus(params?: { workspacePath?: string }): Promise<ConfigSyncStatus>;
 
   /**
-   * 把用户级 MCP server 配置上传到当前登录 GitHub 账号的私有 gist。
+   * 把 MCP server 配置上传到当前登录 GitHub 账号的私有 gist。
    * 本地内容与上次成功上传一致时不发网络请求；命中疑似密钥时先返回 `secret_warning`，
    * 由 UI 确认后带 `confirmSecretUpload` 重调。
+   *
+   * 省略 `workspacePath` 即用户级；给出即工作区级（同步该项目的
+   * `<workspace>/.zcode/config.json`，远端 gist 按项目目录名区分）。
    */
   syncConfigToGist(params?: {
     confirmSecretUpload?: boolean;
+    workspacePath?: string;
   }): Promise<ConfigSyncResult<ConfigSyncUploadResult>>;
 
   /** 只读远端与本地快照产出下载计划；不写任何文件。 */
-  previewConfigFromGist(): Promise<ConfigSyncResult<ConfigSyncDownloadPlan>>;
+  previewConfigFromGist(params?: {
+    workspacePath?: string;
+  }): Promise<ConfigSyncResult<ConfigSyncDownloadPlan>>;
 
   /**
    * 应用下载计划。`merge` 只覆盖远端存在的同名 server、保留本地独有项；
@@ -86,6 +95,7 @@ export interface IMcpSyncService {
     strategy: "merge" | "replace";
     expectedRemoteRevision: number;
     confirmReplace?: boolean;
+    workspacePath?: string;
   }): Promise<ConfigSyncResult<ConfigSyncDownloadResult>>;
 }
 

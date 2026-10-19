@@ -40,7 +40,12 @@ export type AgentColor =
   | "teal"
   | "indigo"
   | "fuchsia"
-  | "lime";
+  | "lime"
+  // 深色档：与浅色档同一批色相里挑出相隔最远的四个，用更深的底色做出可区分的第二档。
+  | "deepRed"
+  | "deepGreen"
+  | "deepBlue"
+  | "deepPurple";
 
 export type SubagentsListMode = "allRuntimeScopes" | "settingsUserOnly";
 

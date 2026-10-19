@@ -34,7 +34,7 @@ export function ConfigSyncDownloadDialog({
   onConfirm,
   testId,
   replaceAckTestId,
-  replaceAckLabelId = "settings.configSync.replaceAck",
+  replaceAckLabelId = "settings.configSync.replaceAckGeneric",
 }: {
   plan: ConfigSyncDownloadPlan;
   applying: boolean;
@@ -44,7 +44,10 @@ export function ConfigSyncDownloadDialog({
   onConfirm: (params: { strategy: "merge" | "replace" }) => void;
   testId: string;
   replaceAckTestId: string;
-  /** 镜像远端确认文案；默认是子智能体措辞，其它功能可换成自己的领域文案。 */
+  /**
+   * 镜像远端确认文案。默认是领域无关的「{count} 项」；子智能体等有明确量词的功能传自己的 key，
+   * 免得 MCP 之类复用这个弹窗时显示成「{count} 个子智能体」。
+   */
   replaceAckLabelId?: string;
 }) {
   const { intl } = useZCodeIntl();

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Archive, ArchiveX, Cloud, Flame, Folder, RefreshCw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
@@ -37,6 +37,14 @@ export function ArchiveManagementSection({ workspaceTabs }: { workspaceTabs: Wor
 
   const [scopeKey, setScopeKey] = useState(ALL_PROJECTS_SCOPE_KEY);
   const [search, setSearch] = useState("");
+
+  // 选中项目可能因为归档被清空而退出下拉（见 selectListedArchiveProjects）。
+  // 留着悬空的作用域会让页面停在一个列表里已经不存在的项目上，这里回落到「全部项目」。
+  useEffect(() => {
+    if (scopeKey === ALL_PROJECTS_SCOPE_KEY) return;
+    if (projects.some((project) => project.key === scopeKey)) return;
+    setScopeKey(ALL_PROJECTS_SCOPE_KEY);
+  }, [projects, scopeKey]);
 
   const visibleStates = useMemo(
     () =>

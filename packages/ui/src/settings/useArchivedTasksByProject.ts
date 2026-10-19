@@ -12,7 +12,7 @@ import {
   type WorkspaceServiceResolverState,
 } from "@/lib/workspaceServiceResolver.js";
 import { deleteArchivedTaskSelection, purgeArchivedTaskSelection } from "@/lib/archivedTaskDeletion.js";
-import { getPluginWorkspaceKey } from "@/settings/PluginScopeMenu.js";
+import { getWorkspaceKey } from "@/lib/workspaceKey.js";
 import { applyTaskQueryCacheMutation } from "@/store/taskQueryCacheStore.js";
 import { useRemoteWorkspaceSessionStore } from "@/store/remoteWorkspaceSessionStore.js";
 import type { WorkspaceTabState } from "@/store/tabStore.js";
@@ -34,28 +34,54 @@ export interface ProjectArchiveState {
   unavailable: boolean;
 }
 
+/** 构建项目来源只依赖这几个字段；收窄入参让这段纯逻辑可以直接单测。 */
+export type ArchiveProjectTab = Pick<
+  WorkspaceTabState,
+  "workspacePath" | "workspaceIdentity" | "label"
+> &
+  Pick<Partial<WorkspaceTabState>, "remoteTarget" | "remoteSessionId">;
+
+export interface ArchiveProjectSources {
+  /** 全部来源（含任务索引），用于逐个读取归档任务。 */
+  projects: ArchiveProject[];
+  /**
+   * 应用自己的项目列表：当前打开的工作区标签，也就是侧边栏「项目」分区的内容。
+   * 应用里的「移除项目」就是关闭该标签，所以移除后项目立刻不在这里；
+   * `recentProjects` / `lastWorkspaceSession` 只是历史记录，不算项目列表。
+   */
+  appProjectKeys: ReadonlySet<string>;
+}
+
 /**
- * 项目列表 = 当前打开的工作区标签 ∪ 持久化的最近/历史项目。
+ * 项目来源 = 当前打开的工作区标签 ∪ 持久化的最近/历史项目 ∪ 任务索引里出现过的项目。
  * 远端项目只有在能解析到在线 session 时才可读，否则标记为不可用（与 MCP 作用域一致）。
  */
-function buildArchiveProjects(
-  workspaceTabs: WorkspaceTabState[],
+export function buildArchiveProjects(
+  workspaceTabs: readonly ArchiveProjectTab[],
   recentProjects: readonly string[],
   persisted: readonly { workspacePath: string; workspaceIdentity?: string }[],
-): ArchiveProject[] {
+): ArchiveProjectSources {
   const byKey = new Map<string, ArchiveProject>();
-  const add = (project: ArchiveProject) => {
-    if (!project.workspacePath?.trim() || byKey.has(project.key)) return;
+  const appProjectKeys = new Set<string>();
+  const add = (project: ArchiveProject, isAppProject = false) => {
+    if (!project.workspacePath?.trim()) return;
+    // 先记应用项目再判重：同一路径可能同时来自标签与历史来源，标签的身份优先。
+    if (isAppProject) appProjectKeys.add(project.key);
+    if (byKey.has(project.key)) return;
     byKey.set(project.key, project);
   };
   for (const tab of workspaceTabs) {
-    add({
-      key: getPluginWorkspaceKey(tab),
-      workspacePath: tab.workspacePath,
-      workspaceIdentity: tab.workspaceIdentity,
-      label: tab.label || getPathLeaf(tab.workspacePath),
-      remote: Boolean(tab.remoteTarget || tab.remoteSessionId),
-    });
+    add(
+      {
+        // 与 MCP / 插件作用域共用同一套 key 口径（identity 优先，回退路径）。
+        key: getWorkspaceKey(tab.workspacePath, tab.workspaceIdentity),
+        workspacePath: tab.workspacePath,
+        workspaceIdentity: tab.workspaceIdentity,
+        label: tab.label || getPathLeaf(tab.workspacePath),
+        remote: Boolean(tab.remoteTarget || tab.remoteSessionId),
+      },
+      true,
+    );
   }
   for (const entry of persisted) {
     add({
@@ -74,7 +100,27 @@ function buildArchiveProjects(
       remote: false,
     });
   }
-  return [...byKey.values()];
+  return { projects: [...byKey.values()], appProjectKeys };
+}
+
+/**
+ * 下拉里展示哪些项目：还在应用的项目列表里，或者本地归档库里还有它的归档任务。
+ *
+ * 只在任务索引里留下痕迹、既没打开也没有归档任务的项目，点进去必然是空的；
+ * 归档数据读回之前（`hasArchiveData === false`）不隐藏任何项目，避免下拉先少后多的跳变。
+ */
+export function selectListedArchiveProjects(params: {
+  projects: readonly ArchiveProject[];
+  appProjectKeys: ReadonlySet<string>;
+  projectKeysWithArchivedTasks: ReadonlySet<string>;
+  hasArchiveData: boolean;
+}): ArchiveProject[] {
+  if (!params.hasArchiveData) return [...params.projects];
+  return params.projects.filter(
+    (project) =>
+      params.appProjectKeys.has(project.key) ||
+      params.projectKeysWithArchivedTasks.has(project.key),
+  );
 }
 
 export function useArchivedTasksByProject(workspaceTabs: WorkspaceTabState[]) {
@@ -131,7 +177,7 @@ export function useArchivedTasksByProject(workspaceTabs: WorkspaceTabState[]) {
     knownScopes.map((scope) => [scope.workspacePath, scope.workspaceIdentity ?? null]),
   ]);
 
-  const projects = useMemo(
+  const projectSources = useMemo(
     () =>
       buildArchiveProjects(
         workspaceTabs,
@@ -147,20 +193,22 @@ export function useArchivedTasksByProject(workspaceTabs: WorkspaceTabState[]) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 值签名等价即复用，避免 settings 身份变化触发重复拉取。
     [projectSourceSignature],
   );
+  const allProjects = projectSources.projects;
 
   const resolverState = useMemo<WorkspaceServiceResolverState<IServiceAccessor>>(
     () => ({ sessionsById, sessionIdByWorkspaceIdentity, sessionIdByWorkspacePath }),
     [sessionIdByWorkspaceIdentity, sessionIdByWorkspacePath, sessionsById],
   );
+  // 读取归档要覆盖全部来源，收口只发生在展示层。
   const serviceLookup = useMemo(
-    () => buildWorkspaceServiceLookup(projects, baseServices, resolverState),
-    [baseServices, projects, resolverState],
+    () => buildWorkspaceServiceLookup(allProjects, baseServices, resolverState),
+    [allProjects, baseServices, resolverState],
   );
 
   const refresh = useCallback(async () => {
     setLoading(true);
     const next = await Promise.all(
-      projects.map(async (project): Promise<ProjectArchiveState> => {
+      allProjects.map(async (project): Promise<ProjectArchiveState> => {
         const resolved = serviceLookup.get(project.key);
         if (!resolved) {
           return { project, tasks: [], unavailable: true };
@@ -187,11 +235,28 @@ export function useArchivedTasksByProject(workspaceTabs: WorkspaceTabState[]) {
     );
     setStates(next);
     setLoading(false);
-  }, [projects, serviceLookup]);
+  }, [allProjects, serviceLookup]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // 归档数据读回之后才谈得上「这个项目在归档页有没有东西可看」。
+  const hasArchiveData = states.length > 0;
+  const projectKeysWithArchivedTasks = useMemo(
+    () => new Set(states.filter((state) => state.tasks.length > 0).map((state) => state.project.key)),
+    [states],
+  );
+  const projects = useMemo(
+    () =>
+      selectListedArchiveProjects({
+        projects: allProjects,
+        appProjectKeys: projectSources.appProjectKeys,
+        projectKeysWithArchivedTasks,
+        hasArchiveData,
+      }),
+    [allProjects, hasArchiveData, projectKeysWithArchivedTasks, projectSources.appProjectKeys],
+  );
 
   const removeTaskLocally = useCallback((projectKey: string, taskId: string) => {
     setStates((current) =>

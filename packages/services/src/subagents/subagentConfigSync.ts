@@ -7,6 +7,7 @@ import {
   type ConfigSyncAdapter,
   type ConfigSyncOperations,
 } from "../config-sync/orchestrator.js";
+import { resolveConfigSyncScope, scopeGistDescription } from "../config-sync/scope.js";
 import type { ConfigSyncDownloadPlan } from "../config-sync/types.js";
 import {
   diffCuratedState,
@@ -16,6 +17,7 @@ import {
   SUBAGENT_CONFIG_GIST_DESCRIPTION,
   SUBAGENT_CONFIG_PROFILE,
   SUBAGENT_CONFIG_STATE_FILE_NAME,
+  SUBAGENT_WORKSPACE_CONFIG_PROFILE,
   type SubagentConfigCuratedState,
   type SubagentConfigStateChange,
 } from "./subagentConfigSyncModel.js";
@@ -37,6 +39,11 @@ export type SubagentConfigDownloadPlan = ConfigSyncDownloadPlan & {
 
 export interface CreateSubagentConfigSyncOptions {
   readonly storageOptions?: SubagentStorageOptions;
+  /**
+   * 给出即**工作区级**：条目读写成 `<workspace>/.zcode/agents`，且没有 state 额外通道
+   * （工作区 agent 恒为启用）。省略即用户级。
+   */
+  readonly workspacePath?: string;
   readonly credentialService?: Pick<ICredentialService, "load">;
   readonly fetchImpl?: typeof fetch;
   /** 读 `agents-state.json` 的精选子集；由 `SubagentsService` 提供（含迁移与归一化）。 */
@@ -50,13 +57,18 @@ export interface CreateSubagentConfigSyncOptions {
 
 /**
  * 子智能体配置 ↔ 私有 gist 的同步：通用编排在 `config-sync/orchestrator.ts`，
- * 这里只描述「条目 = agents 根目录下的 md」「额外通道 = state.json」这两条业务语义。
+ * 这里只描述「条目 = agents 根目录下的 md」「额外通道 = 用户级 state.json」这两条业务语义。
+ *
+ * 作用域（用户级 / 工作区级）只影响四处注入：gist description、profile（额外通道有无）、
+ * 元数据分片与备份根目录、快照的读取根目录；编排层不感知作用域。
  */
 export function createSubagentConfigSync(
   options: CreateSubagentConfigSyncOptions,
 ): ConfigSyncOperations<SubagentConfigDownloadPlan> {
   const storageOptions = options.storageOptions;
   const readCuratedState = options.readCuratedState;
+  const workspacePath = options.workspacePath?.trim() || undefined;
+  const scope = resolveConfigSyncScope(workspacePath);
 
   const parseStateContent = (content: string | undefined): SubagentConfigCuratedState | null => {
     if (!content) return null;
@@ -68,18 +80,19 @@ export function createSubagentConfigSync(
   };
 
   const adapter: ConfigSyncAdapter<SubagentConfigDownloadPlan> = {
-    gistDescription: SUBAGENT_CONFIG_GIST_DESCRIPTION,
-    profile: SUBAGENT_CONFIG_PROFILE,
-    metadata: resolveSubagentSyncMetadataStore(),
+    gistDescription: scopeGistDescription(SUBAGENT_CONFIG_GIST_DESCRIPTION, scope),
+    profile: workspacePath ? SUBAGENT_WORKSPACE_CONFIG_PROFILE : SUBAGENT_CONFIG_PROFILE,
+    metadata: resolveSubagentSyncMetadataStore(workspacePath),
     backup: createConfigSyncBackup({
-      rootDir: () => resolveSubagentSyncBackupRoot(),
-      entries: resolveSubagentSyncBackupEntries(storageOptions),
+      rootDir: () => resolveSubagentSyncBackupRoot(workspacePath),
+      entries: resolveSubagentSyncBackupEntries(workspacePath, storageOptions),
     }),
-    collectSnapshot: () => collectSubagentSyncSnapshot(storageOptions, readCuratedState),
+    collectSnapshot: () =>
+      collectSubagentSyncSnapshot(workspacePath, storageOptions, readCuratedState),
     countBackupItems: countSubagentBackupItems,
 
     async apply({ writes, removals, remoteExtras, strategy }) {
-      const agentsRoot = await resolveSubagentAgentsRoot(storageOptions);
+      const agentsRoot = await resolveSubagentAgentsRoot(workspacePath, storageOptions);
       await mkdir(agentsRoot, { recursive: true });
       for (const write of writes) {
         await atomicWriteText(resolveSubagentAgentPath(agentsRoot, write.name), write.content);
@@ -87,6 +100,7 @@ export function createSubagentConfigSync(
       for (const name of removals) {
         await rm(resolveSubagentAgentPath(agentsRoot, name), { force: true });
       }
+      // 工作区级的 profile 没有额外通道，远端 extras 为空、这里自然跳过 state。
       const remoteState = parseStateContent(remoteExtras.get(SUBAGENT_CONFIG_STATE_FILE_NAME));
       // 远端 state 一定存在（否则 parseRemoteFiles 会拒绝），这里的判断只是类型收窄。
       if (remoteState) {

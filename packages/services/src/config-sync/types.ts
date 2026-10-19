@@ -219,8 +219,10 @@ export type ConfigSyncRemoteParseResult =
       readonly message: string;
     };
 
+/**
+ * 一个作用域在本机的同步元数据。磁盘格式版本由 `metadata.ts` 独占，这里只是某个作用域那一片记录。
+ */
 export interface ConfigSyncMetadata {
-  readonly schemaVersion: number;
   readonly gistId?: string;
   readonly lastRemoteRevision?: number;
   readonly lastLocalFingerprint?: string;
