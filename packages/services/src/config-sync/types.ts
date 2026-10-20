@@ -173,6 +173,13 @@ export interface ConfigSyncRestoreResult {
 export interface ConfigSyncStatus {
   /** 凭据库里是否存在 token（不代表 token 有效）。 */
   readonly connected: boolean;
+  /**
+   * 工作区级作用域的标识（项目目录名），供状态行回显「这次同步的是哪个项目」；用户级不带该字段。
+   *
+   * 由服务按**实际收到的** `workspacePath` 推导，而不是让调用方自己取目录名：调用方的路径有 prop 与
+   * tab store 两条来源，只有服务回传的值才如实对应本次读写的作用域。
+   */
+  readonly scopeLabel?: string;
   readonly gistIdShort?: string;
   readonly gistUrl?: string;
   readonly lastRemoteRevision?: number;

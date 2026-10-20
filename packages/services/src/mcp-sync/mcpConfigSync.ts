@@ -59,6 +59,7 @@ export function createMcpConfigSync(options: CreateMcpConfigSyncOptions): Config
   const scope = resolveConfigSyncScope(options.workspacePath);
   const adapter: ConfigSyncAdapter = {
     gistDescription: scopeGistDescription(MCP_CONFIG_GIST_DESCRIPTION, scope),
+    ...(scope.kind === "workspace" ? { scopeLabel: scope.label } : {}),
     profile: MCP_CONFIG_PROFILE,
     metadata: createConfigSyncMetadataStore(
       async () => join(await dataDir(), "mcp-config-sync.json"),

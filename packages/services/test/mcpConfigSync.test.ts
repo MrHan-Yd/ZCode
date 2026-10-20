@@ -521,6 +521,21 @@ test("项目级上传：gist 描述带项目名，只含该项目的 server", as
   });
 });
 
+test("状态行的作用域标签：工作区级带项目名，用户级不带", async () => {
+  await withHome(async (home) => {
+    const github = createFakeGithub();
+    const workspacePath = join(home, "my-project");
+    await writeWorkspaceZcodeServers(workspacePath, {
+      "project-alpha": serverConfig("https://alpha.example.com"),
+    });
+
+    const service = createService(github);
+    assert.equal((await service.getConfigSyncStatus({ workspacePath })).scopeLabel, "my-project");
+    // 用户级没有作用域可回显，字段整个不出现（而不是空串）。
+    assert.equal("scopeLabel" in (await service.getConfigSyncStatus()), false);
+  });
+});
+
 test("项目级生效集合回退 .agents/mcp.json：下载写回 .zcode/config.json", async () => {
   await withHome(async (home) => {
     const github = createFakeGithub();

@@ -81,6 +81,7 @@ export function createSubagentConfigSync(
 
   const adapter: ConfigSyncAdapter<SubagentConfigDownloadPlan> = {
     gistDescription: scopeGistDescription(SUBAGENT_CONFIG_GIST_DESCRIPTION, scope),
+    ...(scope.kind === "workspace" ? { scopeLabel: scope.label } : {}),
     profile: workspacePath ? SUBAGENT_WORKSPACE_CONFIG_PROFILE : SUBAGENT_CONFIG_PROFILE,
     metadata: resolveSubagentSyncMetadataStore(workspacePath),
     backup: createConfigSyncBackup({

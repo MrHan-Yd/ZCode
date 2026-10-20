@@ -32,6 +32,11 @@ const log = createServiceLogger("configSync");
 export interface ConfigSyncAdapter<TPlan extends ConfigSyncDownloadPlan = ConfigSyncDownloadPlan> {
   /** 私有 gist 的固定 description：只用于「本机没有 gistId」时的一次性发现。 */
   readonly gistDescription: string;
+  /**
+   * 工作区级作用域的标识（项目目录名）；用户级不提供。
+   * 只用于状态行如实回显作用域，不参与发现——发现只认 `gistDescription`。
+   */
+  readonly scopeLabel?: string;
   readonly profile: ConfigSyncProfile;
   readonly metadata: ConfigSyncMetadataStore;
   readonly backup: ConfigSyncBackup;
@@ -155,6 +160,7 @@ export function createConfigSync<TPlan extends ConfigSyncDownloadPlan = ConfigSy
     const localFingerprint = fingerprintOf(snapshot);
     return {
       connected: token !== null,
+      ...(adapter.scopeLabel ? { scopeLabel: adapter.scopeLabel } : {}),
       ...(metadata.gistId ? { gistIdShort: metadata.gistId.slice(0, 8) } : {}),
       ...(metadata.gistId ? { gistUrl: gistHtmlUrl(metadata.gistId) } : {}),
       ...(metadata.lastRemoteRevision !== undefined

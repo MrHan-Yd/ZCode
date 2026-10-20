@@ -294,6 +294,10 @@ UI ─ 确认（列出 add/update/localOnly；replace 需勾选）─▶ applyCo
   文案在 `settings.configSync.*`）。
 - 状态行（`data-testid="subagent-config-sync-status"`）：未登录显示引导 + 「去登录」（跳「同步配置」分区）；
   已登录显示 gist 短 id（外链）、上次同步时间、本地有未上传修改、被跳过的嵌套文件数；同步进行中显示「正在同步…」。
+- 状态行在工作区级额外显示**项目名**（`status.scopeLabel`），让用户不必只靠「我在哪个分区」判断这次同步的是
+  哪个项目。该值由服务按**实际收到的** `workspacePath` 推导后回传，不由 UI 自己取 basename：UI 侧的路径有
+  prop 与 tab store 两条来源（见 MCP 一节），只有服务回传的值才如实对应本次读写的作用域。用户级不带该字段，
+  状态行也就不显示这一项——用户级是默认分区，行内其余项已足够自证。
 - 下载弹窗：列出 `add/update/localOnly`（最多 50 条，其余只报数量）、本地已改动提醒、远端未识别文件数；
   勾选「镜像远端（删除本地独有的 N 个子智能体）」才以 `replace` 应用（勾选即确认，缺省 `merge`）。
 - 上传前命中疑似密钥时弹确认框：只列 `文件名:行号 · 规则名`，不显示命中值；确认后带
@@ -331,6 +335,8 @@ UI ─ 确认（列出 add/update/localOnly；replace 需勾选）─▶ applyCo
 19. 项目级下载：预览为 `add`，应用后文件落在 `<workspace>/.zcode/agents/`，本机 `agents-state.json` 零变更。
 20. 项目级还原：`listConfigSyncBackups({ workspacePath })` 只列该项目的备份；用户级备份不出现在列表里。
 21. 切换分区：用户分区显示用户级状态行，项目分区显示该项目自己的状态行与备份列表。
+22. 工作区级状态行的 `scopeLabel` 等于该项目的目录名（服务按收到的 `workspacePath` 推导）；用户级状态不带
+    `scopeLabel`。标签与同一次调用实际读写的目录一致，不随 UI 侧路径来源变化。
 
 ## 非目标
 

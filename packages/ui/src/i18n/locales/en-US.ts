@@ -4009,6 +4009,7 @@ const enUS: Record<string, string> = {
     "Built-in profiles are runtime defaults and cannot be edited here.",
   "settings.configSync.inProgress": "Syncing…",
   "settings.configSync.statusGist": "Remote gist: {id}",
+  "settings.configSync.statusScopeProject": "Project: {label}",
   "settings.configSync.statusNoGist": "Not uploaded yet",
   "settings.configSync.statusLastSynced": "Last synced: {time}",
   "settings.configSync.statusLocalChanged": "Local changes not uploaded",

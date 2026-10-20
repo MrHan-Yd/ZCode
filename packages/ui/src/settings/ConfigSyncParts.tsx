@@ -75,6 +75,15 @@ export function ConfigSyncStatusRow({
   );
 
   const items: string[] = [];
+  // 工作区级才带 scopeLabel：它标识这次同步实际作用在哪个项目，比「我在哪个分区」更可靠。
+  if (status.scopeLabel) {
+    items.push(
+      intl.formatMessage(
+        { id: "settings.configSync.statusScopeProject" },
+        { label: status.scopeLabel },
+      ),
+    );
+  }
   if (status.lastSyncedAt !== undefined) {
     items.push(
       intl.formatMessage(

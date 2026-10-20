@@ -3746,6 +3746,7 @@ const zhCN: Record<string, string> = {
   "settings.subagents.group.builtIn.hint": "内置 profile 是运行时默认能力，当前不可在这里编辑。",
   "settings.configSync.inProgress": "正在同步…",
   "settings.configSync.statusGist": "远端 Gist：{id}",
+  "settings.configSync.statusScopeProject": "项目：{label}",
   "settings.configSync.statusNoGist": "尚未上传过配置",
   "settings.configSync.statusLastSynced": "上次同步：{time}",
   "settings.configSync.statusLocalChanged": "本地有未上传的修改",

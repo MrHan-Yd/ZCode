@@ -681,6 +681,20 @@ test("项目级上传：gist 描述带项目名，远端只有该项目的 agent
   });
 });
 
+test("状态行的作用域标签：工作区级带项目名，用户级不带", async () => {
+  await withHome(async (home) => {
+    const github = createFakeGithub();
+    const workspacePath = join(home, "my-project");
+    await writeWorkspaceAgent(workspacePath, "reviewer", agentMarkdown("reviewer"));
+
+    const service = createService(home, github);
+    // 标签由服务按收到的 workspacePath 推导，调用方不必自己取目录名。
+    assert.equal((await service.getConfigSyncStatus({ workspacePath })).scopeLabel, "my-project");
+    // 用户级没有作用域可回显，字段整个不出现（而不是空串），UI 才不会渲染出空的「项目：」。
+    assert.equal("scopeLabel" in (await service.getConfigSyncStatus()), false);
+  });
+});
+
 test("两个项目各自一份 gist，描述按项目名区分", async () => {
   await withHome(async (home) => {
     const github = createFakeGithub();
