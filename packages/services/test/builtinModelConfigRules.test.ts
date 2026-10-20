@@ -121,3 +121,136 @@ test("个人精确规则仍然覆盖内置家族规则", async () => {
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+// 上游（models.dev，2026-10-20）公布的 Grok 4.7 / Claude 5.5 / GPT-6 参数。
+test("内置规则覆盖 Grok 4.7，并在 OpenCode Go 放开 500k 输出上限", async () => {
+  const rules = await readBuiltinRules();
+  for (const modelId of ["grok-4.7", "x-ai/grok-4.7", "spacexai/grok-4.7"]) {
+    const resolved = rules.resolve({ providerId: "p", modelId });
+    assert.equal(resolved.properties?.contextWindow, 500000, modelId);
+    assert.equal(resolved.optionSpecs?.maxOutputTokens?.max, 128000, modelId);
+    assert.equal(resolved.properties?.inputFormat?.supportsImage, true, modelId);
+    assert.deepEqual(
+      resolved.optionSpecs?.reasoningLevel?.values,
+      ["low", "medium", "high", "xhigh"],
+      modelId,
+    );
+  }
+
+  const openCodeGo = rules.resolve({
+    providerId: "opencode-go",
+    modelId: "grok-4.7",
+    apiType: "openai-responses",
+    baseUrl: "https://opencode.ai/zen/go/v1",
+  });
+  assert.equal(openCodeGo.optionSpecs?.maxOutputTokens?.max, 500000);
+});
+
+test("内置规则覆盖 GPT-6 变体，且不改写 Astra 的档位", async () => {
+  const rules = await readBuiltinRules();
+  for (const modelId of [
+    "gpt-6-sol",
+    "gpt-6-luna",
+    "gpt-6.1-sol",
+    "openai/gpt-6-sol",
+    "openai/gpt-6-luna",
+    "openai/gpt-6.1-sol",
+  ]) {
+    const resolved = rules.resolve({ providerId: "p", modelId });
+    assert.equal(resolved.properties?.contextWindow, 1050000, modelId);
+    assert.equal(resolved.optionSpecs?.maxOutputTokens?.max, 128000, modelId);
+    assert.equal(resolved.properties?.inputFormat?.supportsPdf, true, modelId);
+    assert.ok(
+      resolved.optionSpecs?.reasoningLevel?.values?.includes("none"),
+      `${modelId} 应支持 none 档`,
+    );
+  }
+
+  const astra = rules.resolve({ providerId: "p", modelId: "gpt-6-astra" });
+  assert.deepEqual(astra.optionSpecs?.reasoningLevel?.values, [
+    "low",
+    "medium",
+    "high",
+    "xhigh",
+    "max",
+  ]);
+});
+
+test("内置规则覆盖 Claude 5.5 家族", async () => {
+  const rules = await readBuiltinRules();
+  for (const modelId of [
+    "claude-opus-5-5",
+    "claude-sonnet-5-5",
+    "anthropic/claude-opus-5.5",
+    "anthropic/claude-sonnet-5.5",
+  ]) {
+    const resolved = rules.resolve({ providerId: "p", modelId });
+    assert.equal(resolved.properties?.contextWindow, 1000000, modelId);
+    assert.equal(resolved.optionSpecs?.maxOutputTokens?.max, 128000, modelId);
+    assert.equal(resolved.properties?.inputFormat?.supportsPdf, true, modelId);
+  }
+
+  const haiku = rules.resolve({ providerId: "p", modelId: "claude-haiku-5-5" });
+  assert.equal(haiku.properties?.contextWindow, 1000000);
+  assert.equal(haiku.optionSpecs?.maxOutputTokens?.max, 128000);
+  assert.ok(haiku.optionSpecs?.reasoningLevel?.values?.includes("disabled"));
+  assert.ok(haiku.optionSpecs?.reasoningLevel?.values?.includes("enabled"));
+});
+
+test("新增模型在对应模板中默认启用", async () => {
+  const rules = await readBuiltinRules();
+  const cases = [
+    ["xai", "grok-4.7"],
+    ["anthropic", "claude-opus-5-5"],
+    ["openai", "gpt-6-sol"],
+    ["openrouter", "x-ai/grok-4.7"],
+    ["openrouter", "anthropic/claude-opus-5.5"],
+    ["opencode-zen-messages", "claude-haiku-5-5"],
+    ["opencode-go-responses", "gpt-6-luna"],
+  ] as const;
+  for (const [templateId, modelId] of cases) {
+    const resolved = rules.resolve({ providerId: "p", templateId, modelId });
+    assert.equal(resolved.enabled, true, `${templateId}:${modelId}`);
+  }
+});
+
+test("内置 release revision 随内容递增", async () => {
+  const release = decodeZCodeBuiltinRelease(JSON.parse(await readFile(BUILTIN_PATH, "utf8")));
+  assert.equal(release.revision, 33);
+});
+
+test("CommandCode / ClinePass 模板内置完整模型清单并默认启用", async () => {
+  const rules = await readBuiltinRules();
+  const cases = [
+    ["commandcode", "claude-opus-5-5"],
+    ["commandcode", "gpt-6-sol"],
+    ["commandcode", "xai/grok-4.7"],
+    ["commandcode", "google/gemini-4-argon"],
+    ["cline-pass", "cline-pass/glm-5.3-flash"],
+    ["cline-pass", "cline-pass/mimo-v2.6-pro"],
+    ["cline-pass", "cline-pass/kimi-k3"],
+  ] as const;
+  for (const [templateId, modelId] of cases) {
+    const resolved = rules.resolve({
+      providerId: `template:${templateId}`,
+      templateId,
+      modelId,
+      apiType: "openai-chat-completions",
+    });
+    assert.equal(resolved.enabled, true, `${templateId}:${modelId}`);
+  }
+});
+
+test("内置规则补齐 MiMo 2.6 与 Muse Wonder", async () => {
+  const rules = await readBuiltinRules();
+  for (const modelId of ["mimo-v2.6-pro", "mimo-v2.6-flash", "cline-pass/mimo-v2.6-pro"]) {
+    const resolved = rules.resolve({ providerId: "p", modelId });
+    assert.equal(resolved.properties?.contextWindow, 1048576, modelId);
+    assert.equal(resolved.optionSpecs?.maxOutputTokens?.max, 131072, modelId);
+    assert.equal(resolved.properties?.inputFormat?.supportsImage, true, modelId);
+  }
+  const wonder = rules.resolve({ providerId: "p", modelId: "meta/muse-wonder-1.0" });
+  assert.equal(wonder.properties?.contextWindow, 1048576);
+  assert.equal(wonder.optionSpecs?.maxOutputTokens?.max, 131072);
+  assert.equal(wonder.properties?.inputFormat?.supportsPdf, true);
+});

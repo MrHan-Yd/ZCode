@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": 31,
+  "revision": 33,
   "config": {
     "providerConfigRules": {
       "templateRules": [
@@ -336,6 +336,9 @@
             },
             "builtinModelIds": [
               "gpt-6-astra",
+              "gpt-6-sol",
+              "gpt-6-luna",
+              "gpt-6.1-sol",
               "gpt-5.6-sol",
               "gpt-5.6-terra",
               "gpt-5.6-luna",
@@ -370,6 +373,9 @@
             "builtinModelIds": [
               "claude-fable-5-1",
               "claude-fable-5",
+              "claude-opus-5-5",
+              "claude-sonnet-5-5",
+              "claude-haiku-5-5",
               "claude-opus-5",
               "claude-sonnet-5",
               "claude-haiku-4-5-20251001"
@@ -395,7 +401,7 @@
               "type": "openai-responses",
               "baseUrl": "https://api.x.ai/v1"
             },
-            "builtinModelIds": ["grok-4.6", "grok-build-0.1", "grok-4.3"],
+            "builtinModelIds": ["grok-4.7", "grok-4.6", "grok-build-0.1", "grok-4.3"],
             "logo": {
               "type": "builtin",
               "key": "xai"
@@ -419,7 +425,13 @@
             },
             "builtinModelIds": [
               "anthropic/claude-fable-5.1",
+              "anthropic/claude-opus-5.5",
+              "anthropic/claude-sonnet-5.5",
+              "anthropic/claude-haiku-5.5",
               "openai/gpt-6-astra",
+              "openai/gpt-6-sol",
+              "openai/gpt-6-luna",
+              "openai/gpt-6.1-sol",
               "openai/gpt-5.6-sol",
               "anthropic/claude-opus-5",
               "deepseek/deepseek-v4-pro",
@@ -428,6 +440,7 @@
               "qwen/qwen3.8-max",
               "minimax/minimax-m3",
               "xiaomi/mimo-v2.5-pro",
+              "x-ai/grok-4.7",
               "x-ai/grok-4.6",
               "deepseek/deepseek-v4.1-flash",
               "qwen/qwen3.8-max-0902",
@@ -539,6 +552,7 @@
             },
             "builtinModelIds": [
               "minimax-m3",
+              "claude-haiku-5-5",
               "qwen3.8-max",
               "qwen3.8-flash",
               "minimax-m2.7",
@@ -568,7 +582,7 @@
               "type": "openai-responses",
               "baseUrl": "https://opencode.ai/zen/go/v1"
             },
-            "builtinModelIds": ["gpt-5.6-luna", "grok-4.6"],
+            "builtinModelIds": ["grok-4.7", "gpt-6-luna", "gpt-5.6-luna", "grok-4.6"],
             "logo": {
               "type": "builtin",
               "key": "opencode"
@@ -592,6 +606,10 @@
             },
             "builtinModelIds": [
               "gpt-6-astra",
+              "gpt-6-sol",
+              "gpt-6-luna",
+              "gpt-6.1-sol",
+              "grok-4.7",
               "gpt-5.6-sol",
               "gpt-5.6-terra",
               "gpt-5.6-luna",
@@ -635,6 +653,9 @@
               "qwen3.5-plus",
               "claude-opus-5",
               "claude-sonnet-5",
+              "claude-opus-5-5",
+              "claude-sonnet-5-5",
+              "claude-haiku-5-5",
               "claude-haiku-4-5",
               "claude-opus-4-8",
               "claude-opus-4-7",
@@ -685,6 +706,133 @@
               "type": "builtin",
               "key": "opencode"
             }
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "templateNameMap": {
+            "zh-CN": "CommandCode",
+            "en-US": "CommandCode"
+          },
+          "config": {
+            "access": {
+              "type": "api-key",
+              "apiKeyManagementUrl": "https://commandcode.ai/docs/provider"
+            },
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://api.commandcode.ai/provider/v1"
+            },
+            "builtinModelIds": [
+              "claude-sonnet-4-6",
+              "claude-opus-4-8",
+              "claude-haiku-4-5-20251001",
+              "claude-fable-5",
+              "gpt-5.6-terra",
+              "claude-sonnet-5-5",
+              "gpt-5.3-codex",
+              "gpt-6.1-sol",
+              "gpt-6-luna",
+              "gpt-5.5",
+              "claude-opus-5-5",
+              "claude-opus-5",
+              "claude-opus-4-7",
+              "gpt-6-astra",
+              "claude-sonnet-5",
+              "gpt-5.4",
+              "gpt-5.6-sol",
+              "claude-haiku-5-5",
+              "claude-fable-5-1",
+              "gpt-5.4-mini",
+              "gpt-5.6-luna",
+              "gpt-6-sol",
+              "moonshotai/Kimi-K2.7-Code-Highspeed",
+              "moonshotai/Kimi-K3",
+              "moonshotai/Kimi-K2.7-Code",
+              "meta/muse-spark-1.3",
+              "meta/muse-spark-1.3-contributor",
+              "meta/muse-wonder-1.0",
+              "meta/muse-spark-1.2-contributor",
+              "meta/muse-spark-1.1",
+              "meta/muse-spark-1.2",
+              "zai-org/GLM-5.3",
+              "zai-org/GLM-5.2-Fast",
+              "zai-org/GLM-5.2",
+              "google/gemini-4-argon",
+              "google/gemini-3.1-flash-lite",
+              "google/gemini-3.6-flash",
+              "google/gemini-3.5-flash",
+              "google/gemini-3.7-flash",
+              "google/gemini-3.5-flash-lite",
+              "google/gemini-3.8-flash",
+              "thinkingmachines/inkling-small",
+              "thinkingmachines/inkling",
+              "mistral/mistral-large-4",
+              "xai/grok-4.7",
+              "xai/grok-4.6",
+              "xai/grok-4.5",
+              "Qwen/Qwen3.8-Flash",
+              "Qwen/Qwen3.8-Max-0902",
+              "Qwen/Qwen3.8-Max",
+              "Qwen/Qwen3.8-Omni-Flash",
+              "Qwen/Qwen3.8-27B",
+              "MiniMaxAI/MiniMax-M2.5",
+              "MiniMaxAI/MiniMax-M3",
+              "MiniMaxAI/MiniMax-M2.7",
+              "sakana/fugu-ultra",
+              "tencent/hy4-preview",
+              "tencent/hy3-paid",
+              "stepfun/Step-3.5-Flash",
+              "stepfun/Step-5-Preview",
+              "stepfun/Step-3.7-Flash",
+              "nvidia/nemotron-3-ultra-550b-a55b",
+              "z-ai/glm-5.3-flash",
+              "z-ai/glm-5.3-flashx",
+              "deepseek/deepseek-v4-flash-fast",
+              "deepseek/deepseek-v4-pro",
+              "deepseek/deepseek-v4-flash",
+              "deepseek/deepseek-v4-flash-vision-exp",
+              "deepseek/deepseek-v4.1-flash",
+              "deepseek/deepseek-v4.1-flash-fast",
+              "inclusionai/ling-3.1-flash:free"
+            ]
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "templateNameMap": {
+            "zh-CN": "ClinePass",
+            "en-US": "ClinePass"
+          },
+          "config": {
+            "access": {
+              "type": "api-key",
+              "apiKeyManagementUrl": "https://docs.cline.bot/getting-started/clinepass"
+            },
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://api.cline.bot/api/v1"
+            },
+            "builtinModelIds": [
+              "cline-pass/glm-5.3-flash",
+              "cline-pass/deepseek-v4-pro",
+              "cline-pass/qwen3.7-max",
+              "cline-pass/glm-5.2",
+              "cline-pass/mimo-v2.5",
+              "cline-pass/deepseek-v4-flash",
+              "cline-pass/muse-spark-1.3-contributor",
+              "cline-pass/glm-5.3",
+              "cline-pass/mimo-v2.6-flash",
+              "cline-pass/qwen3.8-max",
+              "cline-pass/qwen3.7-plus",
+              "cline-pass/deepseek-v4.1-flash",
+              "cline-pass/kimi-k3",
+              "cline-pass/mimo-v2.5-pro",
+              "cline-pass/mimo-v2.6-pro",
+              "cline-pass/kimi-k2.6",
+              "cline-pass/kimi-k2.7-code",
+              "cline-pass/minimax-m3"
+            ]
           }
         }
       ],
@@ -1420,6 +1568,29 @@
           }
         },
         {
+          "modelMatch": ".*gpt-6(?:\\.1)?(?:-(?:sol|luna|terra))?(?:[.\\-:/\\[].*)?",
+          "config": {
+            "properties": {
+              "contextWindow": 1050000,
+              "inputFormat": {
+                "supportsImage": true,
+                "supportsVideo": false,
+                "supportsAudio": false,
+                "supportsPdf": true
+              },
+              "supportsJsonSchemaOutput": true
+            },
+            "optionSpecs": {
+              "reasoningLevel": {
+                "values": ["none", "low", "medium", "high", "xhigh", "max"]
+              },
+              "maxOutputTokens": {
+                "max": 128000
+              }
+            }
+          }
+        },
+        {
           "modelMatch": ".*gpt-6-astra(?:[.\\-:/\\[].*)?",
           "config": {
             "properties": {
@@ -1578,6 +1749,29 @@
           }
         },
         {
+          "modelMatch": ".*claude-haiku-5[.-]5(?:[.\\-:/\\[].*)?",
+          "config": {
+            "properties": {
+              "contextWindow": 1000000,
+              "inputFormat": {
+                "supportsImage": true,
+                "supportsVideo": false,
+                "supportsAudio": false,
+                "supportsPdf": true
+              },
+              "supportsJsonSchemaOutput": true
+            },
+            "optionSpecs": {
+              "reasoningLevel": {
+                "values": ["disabled", "enabled", "low", "medium", "high", "xhigh", "max"]
+              },
+              "maxOutputTokens": {
+                "max": 128000
+              }
+            }
+          }
+        },
+        {
           "modelMatch": ".*claude-(?:fable|mythos)-5[.-]1(?:[.\\-:/\\[].*)?",
           "config": {
             "properties": {
@@ -1602,6 +1796,29 @@
         },
         {
           "modelMatch": ".*grok-4\\.6(?:[.\\-:/\\[].*)?",
+          "config": {
+            "properties": {
+              "contextWindow": 500000,
+              "inputFormat": {
+                "supportsImage": true,
+                "supportsVideo": false,
+                "supportsAudio": false,
+                "supportsPdf": false
+              },
+              "supportsJsonSchemaOutput": true
+            },
+            "optionSpecs": {
+              "reasoningLevel": {
+                "values": ["low", "medium", "high", "xhigh"]
+              },
+              "maxOutputTokens": {
+                "max": 128000
+              }
+            }
+          }
+        },
+        {
+          "modelMatch": ".*grok-4\\.7(?:[.\\-:/\\[].*)?",
           "config": {
             "properties": {
               "contextWindow": 500000,
@@ -2406,6 +2623,27 @@
           }
         },
         {
+          "modelMatch": ".*mimo-v2\\.6(?:-(?:pro|flash))?(?:[.\\-:/\\[].*)?",
+          "config": {
+            "properties": {
+              "contextWindow": 1048576,
+              "inputFormat": {
+                "supportsImage": true,
+                "supportsVideo": true,
+                "supportsAudio": true
+              }
+            },
+            "optionSpecs": {
+              "reasoningLevel": {
+                "values": ["none", "low", "medium", "high", "xhigh"]
+              },
+              "maxOutputTokens": {
+                "max": 131072
+              }
+            }
+          }
+        },
+        {
           "modelMatch": ".*mimo-v2\\.5-pro(?:[.\\-:/\\[].*)?",
           "config": {
             "properties": {
@@ -2495,6 +2733,28 @@
             "optionSpecs": {
               "reasoningLevel": {
                 "values": ["disabled", "enabled"]
+              },
+              "maxOutputTokens": {
+                "max": 131072
+              }
+            }
+          }
+        },
+        {
+          "modelMatch": ".*muse-wonder-1[.\\-]\\d(?:[.\\-:/\\[].*)?",
+          "config": {
+            "properties": {
+              "contextWindow": 1048576,
+              "inputFormat": {
+                "supportsImage": true,
+                "supportsVideo": true,
+                "supportsAudio": true,
+                "supportsPdf": true
+              }
+            },
+            "optionSpecs": {
+              "reasoningLevel": {
+                "values": ["low", "medium", "high", "xhigh", "max"]
               },
               "maxOutputTokens": {
                 "max": 131072
@@ -3296,6 +3556,28 @@
         },
         {
           "modelMatch": ".*qwen3\\.8-omni-flash(?:-20\\d{2}(?:-?\\d{2}){2})?(?:[:/\\[].*)?",
+          "apiTypeMatch": "openai-responses",
+          "config": {
+            "optionSpecs": {
+              "reasoningLevel": {
+                "map": "{\n  \"reasoning\": {\n    \"effort\": reasoningLevel\n  }\n}"
+              }
+            }
+          }
+        },
+        {
+          "modelMatch": ".*gpt-6(?:\\.1)?(?:-(?:sol|luna|terra))?(?:[.\\-:/\\[].*)?",
+          "apiTypeMatch": "openai-responses",
+          "config": {
+            "optionSpecs": {
+              "reasoningLevel": {
+                "map": "{\n  \"reasoning\": {\n    \"effort\": reasoningLevel\n  }\n}"
+              }
+            }
+          }
+        },
+        {
+          "modelMatch": ".*grok-4\\.7(?:[.\\-:/\\[].*)?",
           "apiTypeMatch": "openai-responses",
           "config": {
             "optionSpecs": {
@@ -4331,6 +4613,46 @@
           "config": {
             "properties": {
               "supportsJsonSchemaOutput": true
+            }
+          }
+        },
+        {
+          "modelMatch": "grok-4\\.7",
+          "apiTypeMatch": "openai-responses",
+          "baseUrlMatch": "https://opencode\\.ai/zen/go/v1/?",
+          "config": {
+            "properties": {
+              "contextWindow": 500000,
+              "inputFormat": {
+                "supportsText": true,
+                "supportsImage": true,
+                "supportsVideo": false,
+                "supportsPdf": false,
+                "supportsAudio": false
+              },
+              "supportsJsonSchemaOutput": true,
+              "supportsNativeWebSearch": false
+            },
+            "optionSpecs": {
+              "reasoningLevel": {
+                "values": ["low", "medium", "high", "xhigh"],
+                "map": "{\n  \"reasoning\": {\n    \"effort\": reasoningLevel\n  }\n}"
+              },
+              "maxOutputTokens": {
+                "max": 500000
+              }
+            }
+          }
+        },
+        {
+          "modelMatch": ".*gpt-6(?:\\.1)?(?:-(?:sol|luna|terra))?(?:[.\\-:/\\[].*)?",
+          "apiTypeMatch": "anthropic-messages",
+          "baseUrlMatch": "https://openrouter\\.ai/api(?:/v1)?/?",
+          "config": {
+            "optionSpecs": {
+              "reasoningLevel": {
+                "map": "{\n  \"output_config\": {\n    \"effort\": reasoningLevel\n  }\n}"
+              }
             }
           }
         }
@@ -6042,6 +6364,797 @@
           "modelId": "qwen/qwen3.8-max-0902",
           "config": {
             "enabled": false
+          }
+        },
+        {
+          "templateId": "openai",
+          "modelId": "gpt-6-sol",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "openai",
+          "modelId": "gpt-6-luna",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "openai",
+          "modelId": "gpt-6.1-sol",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "anthropic",
+          "modelId": "claude-opus-5-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "anthropic",
+          "modelId": "claude-sonnet-5-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "anthropic",
+          "modelId": "claude-haiku-5-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "xai",
+          "modelId": "grok-4.7",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "openrouter",
+          "modelId": "openai/gpt-6-sol",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "openrouter",
+          "modelId": "openai/gpt-6-luna",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "openrouter",
+          "modelId": "openai/gpt-6.1-sol",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "openrouter",
+          "modelId": "x-ai/grok-4.7",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "openrouter",
+          "modelId": "anthropic/claude-opus-5.5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "openrouter",
+          "modelId": "anthropic/claude-sonnet-5.5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "openrouter",
+          "modelId": "anthropic/claude-haiku-5.5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "opencode-go-responses",
+          "modelId": "grok-4.7",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "opencode-go-responses",
+          "modelId": "gpt-6-luna",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "opencode-go-messages",
+          "modelId": "claude-haiku-5-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "opencode-zen-responses",
+          "modelId": "grok-4.7",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "opencode-zen-responses",
+          "modelId": "gpt-6-sol",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "opencode-zen-responses",
+          "modelId": "gpt-6-luna",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "opencode-zen-responses",
+          "modelId": "gpt-6.1-sol",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "opencode-zen-messages",
+          "modelId": "claude-opus-5-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "opencode-zen-messages",
+          "modelId": "claude-sonnet-5-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "opencode-zen-messages",
+          "modelId": "claude-haiku-5-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "claude-sonnet-4-6",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "claude-opus-4-8",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "claude-haiku-4-5-20251001",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "claude-fable-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "gpt-5.6-terra",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "claude-sonnet-5-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "gpt-5.3-codex",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "gpt-6.1-sol",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "gpt-6-luna",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "gpt-5.5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "claude-opus-5-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "claude-opus-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "claude-opus-4-7",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "gpt-6-astra",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "claude-sonnet-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "gpt-5.4",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "gpt-5.6-sol",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "claude-haiku-5-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "claude-fable-5-1",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "gpt-5.4-mini",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "gpt-5.6-luna",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "gpt-6-sol",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "moonshotai/Kimi-K2.7-Code-Highspeed",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "moonshotai/Kimi-K3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "moonshotai/Kimi-K2.7-Code",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "meta/muse-spark-1.3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "meta/muse-spark-1.3-contributor",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "meta/muse-wonder-1.0",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "meta/muse-spark-1.2-contributor",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "meta/muse-spark-1.1",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "meta/muse-spark-1.2",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "zai-org/GLM-5.3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "zai-org/GLM-5.2-Fast",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "zai-org/GLM-5.2",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "google/gemini-4-argon",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "google/gemini-3.1-flash-lite",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "google/gemini-3.6-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "google/gemini-3.5-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "google/gemini-3.7-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "google/gemini-3.5-flash-lite",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "google/gemini-3.8-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "thinkingmachines/inkling-small",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "thinkingmachines/inkling",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "mistral/mistral-large-4",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "xai/grok-4.7",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "xai/grok-4.6",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "xai/grok-4.5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "Qwen/Qwen3.8-Flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "Qwen/Qwen3.8-Max-0902",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "Qwen/Qwen3.8-Max",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "Qwen/Qwen3.8-Omni-Flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "Qwen/Qwen3.8-27B",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "MiniMaxAI/MiniMax-M2.5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "MiniMaxAI/MiniMax-M3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "MiniMaxAI/MiniMax-M2.7",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "sakana/fugu-ultra",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "tencent/hy4-preview",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "tencent/hy3-paid",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "stepfun/Step-3.5-Flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "stepfun/Step-5-Preview",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "stepfun/Step-3.7-Flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "nvidia/nemotron-3-ultra-550b-a55b",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "z-ai/glm-5.3-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "z-ai/glm-5.3-flashx",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "deepseek/deepseek-v4-flash-fast",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "deepseek/deepseek-v4-pro",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "deepseek/deepseek-v4-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "deepseek/deepseek-v4-flash-vision-exp",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "deepseek/deepseek-v4.1-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "deepseek/deepseek-v4.1-flash-fast",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode",
+          "modelId": "inclusionai/ling-3.1-flash:free",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/glm-5.3-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/deepseek-v4-pro",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/qwen3.7-max",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/glm-5.2",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/mimo-v2.5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/deepseek-v4-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/muse-spark-1.3-contributor",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/glm-5.3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/mimo-v2.6-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/qwen3.8-max",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/qwen3.7-plus",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/deepseek-v4.1-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/kimi-k3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/mimo-v2.5-pro",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/mimo-v2.6-pro",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/kimi-k2.6",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/kimi-k2.7-code",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass",
+          "modelId": "cline-pass/minimax-m3",
+          "config": {
+            "enabled": true
           }
         }
       ],
