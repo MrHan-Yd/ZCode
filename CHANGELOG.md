@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.18.5](https://github.com/MrHan-Yd/ZCode/compare/v3.18.4...v3.18.5) (2026-10-20)
+
+### Features
+
+* **config-sync:** 支持用户与工作区作用域分片同步配置 ([1af768f](https://github.com/MrHan-Yd/ZCode/commit/1af768f422dbf64eec32b0842e537a9cf68ac69f))
+
+* **config-sync:** 状态行回显工作区作用域的项目名 ([6206f66](https://github.com/MrHan-Yd/ZCode/commit/6206f666fe2bfcea7c4ffde7d6200eda54d33354))
+
+
+### Documentation
+
+* 补充 README 的 v3.18.4 更新说明 ([747e39a](https://github.com/MrHan-Yd/ZCode/commit/747e39a05a37bfec66f3fec60381b0eb0166f256))
+
+* 补充 README 的 v3.18.5 更新说明 ([6b76344](https://github.com/MrHan-Yd/ZCode/commit/6b76344bd5910805819ad949fea6dabc7ed8331a))
+
 ## [3.18.4](https://github.com/MrHan-Yd/ZCode/compare/v3.18.3...v3.18.4) (2026-10-19)
 
 ### Bug Fixes
