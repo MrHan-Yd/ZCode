@@ -1,5 +1,16 @@
 # Changelog
 
+## [3.18.6](https://github.com/MrHan-Yd/ZCode/compare/v3.18.5...v3.18.6) (2026-10-20)
+
+### Bug Fixes
+
+* **subagent:** 补齐 CLI 侧 AgentProfile.color 的四个深色 ([d4630fe](https://github.com/MrHan-Yd/ZCode/commit/d4630feaea50c6bd1786765f3472d52a35858af8))
+
+
+### Documentation
+
+* 补充 README 的 v3.18.6 更新说明 ([5bd4914](https://github.com/MrHan-Yd/ZCode/commit/5bd4914054fb60e3e660c5d5b5d468f62387e354))
+
 ## [3.18.5](https://github.com/MrHan-Yd/ZCode/compare/v3.18.4...v3.18.5) (2026-10-20)
 
 ### Features
