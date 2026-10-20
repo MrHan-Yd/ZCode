@@ -20,6 +20,10 @@ export type AgentMemoryScope = "user" | "project" | "local";
 
 export interface AgentProfile {
   background?: boolean;
+  /**
+   * 与 `@zcode/shared` 的 `AgentColor` 同步：这里是 CLI 侧独立的一份联合类型，不是从 shared 引的。
+   * 漏加颜色只会在发版打包时（`prepare:agent-bundle` 跑 tsc）报错，`pnpm typecheck` 覆盖不到 CLI。
+   */
   color?:
     | "red"
     | "blue"
@@ -32,7 +36,11 @@ export interface AgentProfile {
     | "teal"
     | "indigo"
     | "fuchsia"
-    | "lime";
+    | "lime"
+    | "deepRed"
+    | "deepGreen"
+    | "deepBlue"
+    | "deepPurple";
   description: string;
   disallowedTools?: readonly string[];
   injectAgentsMd?: boolean;
