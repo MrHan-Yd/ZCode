@@ -1,5 +1,23 @@
 # Changelog
 
+## [3.18.7](https://github.com/MrHan-Yd/ZCode/compare/v3.18.6...v3.18.7) (2026-10-21)
+
+### Features
+
+* **config:** 补齐内置模型规则并接入 CommandCode/ClinePass 模板 ([564f633](https://github.com/MrHan-Yd/ZCode/commit/564f633c209cd290a91a5ec30911dbff803fa14c))
+
+* **skills:** 技能支持同步到 GitHub 私有 Gist ([f7e5945](https://github.com/MrHan-Yd/ZCode/commit/f7e594512a909b864208ff75381c8b9184b46506))
+
+
+### Performance
+
+* **usage-stats:** 应用用量聚合改为单遍查询并补覆盖索引 ([695a264](https://github.com/MrHan-Yd/ZCode/commit/695a264afcf1303a7d103dcea68836cf2bf8a526))
+
+
+### Documentation
+
+* 补充 README 的 v3.18.7 更新说明 ([e5f2801](https://github.com/MrHan-Yd/ZCode/commit/e5f2801570d09496fbfbd7e290766250619ad089))
+
 ## [3.18.6](https://github.com/MrHan-Yd/ZCode/compare/v3.18.5...v3.18.6) (2026-10-20)
 
 ### Bug Fixes
