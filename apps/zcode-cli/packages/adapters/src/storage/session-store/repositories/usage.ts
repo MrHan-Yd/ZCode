@@ -392,22 +392,93 @@ export async function queryAppUsage(
   const { since, until, tzOffsetMs } = input;
   const DAY_MS = 86_400_000;
 
-  const totals = db
+  // 首次打开设置页时 range=all 会扫全表。旧实现把 totals/models/days/dayModels 拆成 4 条
+  // SQL、tool 拆成 2 条，每条都要回表读 token 列；这里按 (本地日, model) 一次分组，
+  // 再由同一批行派生 4 个视图。配合迁移 0023 的覆盖索引可走 index-only scan。
+  const modelGroups = db
     .prepare(
       `select
-         coalesce(sum(computed_total_tokens), 0) as totalTokens,
-         coalesce(sum(input_tokens), 0) as inputTokens,
-         coalesce(sum(output_tokens), 0) as outputTokens,
-         coalesce(sum(reasoning_tokens), 0) as reasoningTokens,
-         coalesce(sum(cache_creation_input_tokens), 0) as cacheCreationTokens,
-         coalesce(sum(cache_read_input_tokens), 0) as cacheReadTokens,
-         count(*) as modelRequestCount,
-         coalesce(sum(case when status = 'error' then 1 else 0 end), 0) as modelErrorCount,
-         avg(time_to_first_token_ms) as avgTimeToFirstTokenMs
+         cast((started_at + ?) / ? as integer) as dayIndex,
+         model_id as modelId,
+         sum(computed_total_tokens) as totalTokens,
+         sum(input_tokens) as inputTokens,
+         sum(output_tokens) as outputTokens,
+         sum(reasoning_tokens) as reasoningTokens,
+         sum(cache_creation_input_tokens) as cacheCreationTokens,
+         sum(cache_read_input_tokens) as cacheReadTokens,
+         count(*) as requestCount,
+         sum(case when status = 'error' then 1 else 0 end) as modelErrorCount,
+         sum(time_to_first_token_ms) as ttftSumMs,
+         count(time_to_first_token_ms) as ttftCount
        from model_usage
-       where started_at >= ? and started_at <= ?`,
+       where started_at >= ? and started_at <= ?
+       group by dayIndex, model_id`,
     )
-    .get(since, until) as Record<string, number | null>;
+    .all(tzOffsetMs, DAY_MS, since, until) as Array<{
+    dayIndex: number;
+    modelId: string | null;
+    totalTokens: number | null;
+    inputTokens: number | null;
+    outputTokens: number | null;
+    reasoningTokens: number | null;
+    cacheCreationTokens: number | null;
+    cacheReadTokens: number | null;
+    requestCount: number;
+    modelErrorCount: number | null;
+    ttftSumMs: number | null;
+    ttftCount: number;
+  }>;
+
+  const totals = {
+    totalTokens: 0,
+    inputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    cacheCreationTokens: 0,
+    cacheReadTokens: 0,
+    modelRequestCount: 0,
+    modelErrorCount: 0,
+    ttftSumMs: 0,
+    ttftCount: 0,
+  };
+  const modelAgg = new Map<string | null, AppUsageModelRow>();
+  const dayAgg = new Map<number, { dayIndex: number; totalTokens: number }>();
+  const dayModels: AppUsageDayModelRow[] = [];
+  for (const row of modelGroups) {
+    const totalTokens = Number(row.totalTokens ?? 0);
+    const inputTokens = Number(row.inputTokens ?? 0);
+    const outputTokens = Number(row.outputTokens ?? 0);
+    const requestCount = Number(row.requestCount ?? 0);
+    totals.totalTokens += totalTokens;
+    totals.inputTokens += inputTokens;
+    totals.outputTokens += outputTokens;
+    totals.reasoningTokens += Number(row.reasoningTokens ?? 0);
+    totals.cacheCreationTokens += Number(row.cacheCreationTokens ?? 0);
+    totals.cacheReadTokens += Number(row.cacheReadTokens ?? 0);
+    totals.modelRequestCount += requestCount;
+    totals.modelErrorCount += Number(row.modelErrorCount ?? 0);
+    totals.ttftSumMs += Number(row.ttftSumMs ?? 0);
+    totals.ttftCount += Number(row.ttftCount ?? 0);
+
+    const model = modelAgg.get(row.modelId) ?? {
+      modelId: row.modelId,
+      totalTokens: 0,
+      inputTokens: 0,
+      outputTokens: 0,
+      requestCount: 0,
+    };
+    model.totalTokens += totalTokens;
+    model.inputTokens += inputTokens;
+    model.outputTokens += outputTokens;
+    model.requestCount += requestCount;
+    modelAgg.set(row.modelId, model);
+
+    const day = dayAgg.get(row.dayIndex) ?? { dayIndex: row.dayIndex, totalTokens: 0 };
+    day.totalTokens += totalTokens;
+    dayAgg.set(row.dayIndex, day);
+
+    dayModels.push({ dayIndex: row.dayIndex, modelId: row.modelId, totalTokens });
+  }
 
   const turnTotals = db
     .prepare(
@@ -432,55 +503,60 @@ export async function queryAppUsage(
     )
     .get(since, until) as Record<string, number | null>;
 
-  const toolTotals = db
-    .prepare(
-      `select
-         count(*) as toolCallCount,
-         coalesce(sum(case when status = 'error' then 1 else 0 end), 0) as toolErrorCount
-       from tool_usage
-       where started_at >= ? and started_at <= ?`,
-    )
-    .get(since, until) as Record<string, number>;
-
-  const models = db
-    .prepare(
-      `select
-         model_id as modelId,
-         coalesce(sum(computed_total_tokens), 0) as totalTokens,
-         coalesce(sum(input_tokens), 0) as inputTokens,
-         coalesce(sum(output_tokens), 0) as outputTokens,
-         count(*) as requestCount
-       from model_usage
-       where started_at >= ? and started_at <= ?
-       group by model_id
-       order by totalTokens desc`,
-    )
-    .all(since, until) as unknown as AppUsageModelRow[];
-
-  const tools = db
-    .prepare(
-      `select
-         tool_name as toolName,
-         count(*) as callCount,
-         coalesce(sum(case when status = 'error' then 1 else 0 end), 0) as errorCount,
-         avg(duration_ms) as avgDurationMs
-       from tool_usage
-       where started_at >= ? and started_at <= ?
-       group by tool_name
-       order by callCount desc`,
-    )
-    .all(since, until) as unknown as AppUsageToolRow[];
-
-  const days = db
+  // 同上：toolTotals / tools / toolDays 共用一次 (本地日, tool) 分组。
+  const toolGroups = db
     .prepare(
       `select
          cast((started_at + ?) / ? as integer) as dayIndex,
-         coalesce(sum(computed_total_tokens), 0) as totalTokens
-       from model_usage
+         tool_name as toolName,
+         count(*) as callCount,
+         sum(case when status = 'error' then 1 else 0 end) as errorCount,
+         sum(duration_ms) as durationSumMs,
+         count(duration_ms) as durationCount
+       from tool_usage
        where started_at >= ? and started_at <= ?
-       group by dayIndex`,
+       group by dayIndex, tool_name`,
     )
-    .all(tzOffsetMs, DAY_MS, since, until) as Array<{ dayIndex: number; totalTokens: number }>;
+    .all(tzOffsetMs, DAY_MS, since, until) as Array<{
+    dayIndex: number;
+    toolName: string;
+    callCount: number;
+    errorCount: number | null;
+    durationSumMs: number | null;
+    durationCount: number;
+  }>;
+
+  const toolTotals = { toolCallCount: 0, toolErrorCount: 0 };
+  const toolAgg = new Map<
+    string,
+    {
+      toolName: string;
+      callCount: number;
+      errorCount: number;
+      durationSumMs: number;
+      durationCount: number;
+    }
+  >();
+  const toolDayAgg = new Map<number, number>();
+  for (const row of toolGroups) {
+    const callCount = Number(row.callCount ?? 0);
+    const errorCount = Number(row.errorCount ?? 0);
+    toolTotals.toolCallCount += callCount;
+    toolTotals.toolErrorCount += errorCount;
+    const tool = toolAgg.get(row.toolName) ?? {
+      toolName: row.toolName,
+      callCount: 0,
+      errorCount: 0,
+      durationSumMs: 0,
+      durationCount: 0,
+    };
+    tool.callCount += callCount;
+    tool.errorCount += errorCount;
+    tool.durationSumMs += Number(row.durationSumMs ?? 0);
+    tool.durationCount += Number(row.durationCount ?? 0);
+    toolAgg.set(row.toolName, tool);
+    toolDayAgg.set(row.dayIndex, (toolDayAgg.get(row.dayIndex) ?? 0) + callCount);
+  }
 
   const turnDays = db
     .prepare(
@@ -491,18 +567,9 @@ export async function queryAppUsage(
     )
     .all(tzOffsetMs, DAY_MS, since, until) as Array<{ dayIndex: number; turnCount: number }>;
 
-  const toolDays = db
-    .prepare(
-      `select cast((started_at + ?) / ? as integer) as dayIndex, count(*) as toolCallCount
-       from tool_usage
-       where started_at >= ? and started_at <= ?
-       group by dayIndex`,
-    )
-    .all(tzOffsetMs, DAY_MS, since, until) as Array<{ dayIndex: number; toolCallCount: number }>;
-
   // 合并三类按日统计到同一 dayIndex
   const dayMap = new Map<number, AppUsageDayRow>();
-  for (const row of days) {
+  for (const row of dayAgg.values()) {
     dayMap.set(row.dayIndex, {
       dayIndex: row.dayIndex,
       totalTokens: Number(row.totalTokens),
@@ -520,41 +587,41 @@ export async function queryAppUsage(
     existing.turnCount = Number(row.turnCount);
     dayMap.set(row.dayIndex, existing);
   }
-  for (const row of toolDays) {
-    const existing = dayMap.get(row.dayIndex) ?? {
-      dayIndex: row.dayIndex,
+  for (const [dayIndex, toolCallCount] of toolDayAgg) {
+    const existing = dayMap.get(dayIndex) ?? {
+      dayIndex,
       totalTokens: 0,
       turnCount: 0,
       toolCallCount: 0,
     };
-    existing.toolCallCount = Number(row.toolCallCount);
-    dayMap.set(row.dayIndex, existing);
+    existing.toolCallCount = toolCallCount;
+    dayMap.set(dayIndex, existing);
   }
 
-  const dayModels = db
-    .prepare(
-      `select
-         cast((started_at + ?) / ? as integer) as dayIndex,
-         model_id as modelId,
-         coalesce(sum(computed_total_tokens), 0) as totalTokens
-       from model_usage
-       where started_at >= ? and started_at <= ?
-       group by dayIndex, model_id`,
-    )
-    .all(tzOffsetMs, DAY_MS, since, until) as unknown as AppUsageDayModelRow[];
+  const models = [...modelAgg.values()].sort(
+    (left, right) => right.totalTokens - left.totalTokens,
+  );
+  const tools: AppUsageToolRow[] = [...toolAgg.values()]
+    .map((tool) => ({
+      toolName: tool.toolName,
+      callCount: tool.callCount,
+      errorCount: tool.errorCount,
+      avgDurationMs: tool.durationCount > 0 ? tool.durationSumMs / tool.durationCount : null,
+    }))
+    .sort((left, right) => right.callCount - left.callCount);
 
   return {
     totals: {
-      totalTokens: Number(totals.totalTokens ?? 0),
-      inputTokens: Number(totals.inputTokens ?? 0),
-      outputTokens: Number(totals.outputTokens ?? 0),
-      reasoningTokens: Number(totals.reasoningTokens ?? 0),
-      cacheCreationTokens: Number(totals.cacheCreationTokens ?? 0),
-      cacheReadTokens: Number(totals.cacheReadTokens ?? 0),
-      modelRequestCount: Number(totals.modelRequestCount ?? 0),
-      modelErrorCount: Number(totals.modelErrorCount ?? 0),
+      totalTokens: totals.totalTokens,
+      inputTokens: totals.inputTokens,
+      outputTokens: totals.outputTokens,
+      reasoningTokens: totals.reasoningTokens,
+      cacheCreationTokens: totals.cacheCreationTokens,
+      cacheReadTokens: totals.cacheReadTokens,
+      modelRequestCount: totals.modelRequestCount,
+      modelErrorCount: totals.modelErrorCount,
       avgTimeToFirstTokenMs:
-        totals.avgTimeToFirstTokenMs == null ? null : Number(totals.avgTimeToFirstTokenMs),
+        totals.ttftCount > 0 ? totals.ttftSumMs / totals.ttftCount : null,
     },
     turnTotals: {
       totalSessions: Number(turnTotals.totalSessions ?? 0),
@@ -564,28 +631,13 @@ export async function queryAppUsage(
       longestSessionMs: Number(longestSession.longestSessionMs ?? 0),
     },
     toolTotals: {
-      toolCallCount: Number(toolTotals.toolCallCount ?? 0),
-      toolErrorCount: Number(toolTotals.toolErrorCount ?? 0),
+      toolCallCount: toolTotals.toolCallCount,
+      toolErrorCount: toolTotals.toolErrorCount,
     },
-    models: models.map((m) => ({
-      modelId: m.modelId ?? null,
-      totalTokens: Number(m.totalTokens),
-      inputTokens: Number(m.inputTokens),
-      outputTokens: Number(m.outputTokens),
-      requestCount: Number(m.requestCount),
-    })),
-    tools: tools.map((t) => ({
-      toolName: t.toolName,
-      callCount: Number(t.callCount),
-      errorCount: Number(t.errorCount),
-      avgDurationMs: t.avgDurationMs == null ? null : Number(t.avgDurationMs),
-    })),
+    models,
+    tools,
     days: [...dayMap.values()].sort((a, b) => a.dayIndex - b.dayIndex),
-    dayModels: dayModels.map((d) => ({
-      dayIndex: Number(d.dayIndex),
-      modelId: d.modelId ?? null,
-      totalTokens: Number(d.totalTokens),
-    })),
+    dayModels,
   };
 }
 

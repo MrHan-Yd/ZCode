@@ -118,7 +118,7 @@ export function AppUsagePanel() {
           size="sm"
           className="h-8 rounded-md bg-background"
           onClick={() => {
-            void Promise.all([refresh(), refreshLifetime()]);
+            void Promise.all([refresh({ force: true }), refreshLifetime({ force: true })]);
           }}
         >
           <RefreshCcw className="size-3.5" />

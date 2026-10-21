@@ -10,6 +10,11 @@ import type {
   ZCodeProviderAccountAccess,
 } from "@zcode/shared";
 import { logger } from "@/logger.js";
+import {
+  APP_USAGE_SNAPSHOT_CACHE_TTL_MS,
+  getAppUsageSnapshotCache,
+  setAppUsageSnapshotCacheEntry,
+} from "@/lib/appUsageSnapshotCache.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useStableAccountAccess } from "@/hooks/useStableAccountAccess.js";
 import { USAGE_ENTITLEMENT_ACCESS_REFRESH_MS } from "@/lib/usageEntitlementRefreshPolicy.js";
@@ -197,41 +202,79 @@ export function useAppUsageStats(range: AppUsageRange) {
   });
   const requestVersionRef = useRef(0);
 
-  const refresh = useCallback(async () => {
-    const requestVersion = requestVersionRef.current + 1;
-    requestVersionRef.current = requestVersion;
-    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    setState((current) => ({
-      snapshot: current.snapshot,
-      loading: true,
-      error: null,
-    }));
-    try {
-      const snapshot = await usageStatsService.getAppUsageSnapshot({
-        range,
-        timeZone,
-      });
-      if (requestVersionRef.current !== requestVersion) {
+  const refresh = useCallback(
+    async (options: { force?: boolean } = {}) => {
+      const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      const cache = getAppUsageSnapshotCache(usageStatsService);
+      const cacheKey = `${range}\0${timeZone}`;
+      const cached = cache.get(cacheKey);
+
+      if (
+        !options.force &&
+        cached?.snapshot &&
+        !cached.inFlight &&
+        Date.now() - cached.requestedAt < APP_USAGE_SNAPSHOT_CACHE_TTL_MS
+      ) {
+        setState({ snapshot: cached.snapshot, loading: false, error: null });
         return;
       }
-      setState({ snapshot, loading: false, error: null });
-    } catch (error) {
-      if (requestVersionRef.current !== requestVersion) {
-        return;
-      }
-      const message = getErrorMessage(error);
-      logger.warn("[useAppUsageStats] 读取本地使用统计失败", {
-        range,
-        timeZone,
-        error: message,
-      });
+
+      let request = options.force ? undefined : cached?.inFlight;
+      const requestVersion = requestVersionRef.current + 1;
+      requestVersionRef.current = requestVersion;
       setState((current) => ({
-        snapshot: current.snapshot,
-        loading: false,
-        error: message,
+        snapshot: current.snapshot ?? cached?.snapshot ?? null,
+        loading: true,
+        error: null,
       }));
-    }
-  }, [range, usageStatsService]);
+      if (!request) {
+        request = usageStatsService.getAppUsageSnapshot({ range, timeZone });
+        setAppUsageSnapshotCacheEntry(cache, cacheKey, {
+          snapshot: cached?.snapshot ?? null,
+          requestedAt: cached?.requestedAt ?? 0,
+          inFlight: request,
+        });
+      }
+      try {
+        const snapshot = await request;
+        if (requestVersionRef.current !== requestVersion) {
+          return;
+        }
+        if (cache.get(cacheKey)?.inFlight === request) {
+          setAppUsageSnapshotCacheEntry(cache, cacheKey, {
+            snapshot,
+            requestedAt: Date.now(),
+          });
+        }
+        setState({ snapshot, loading: false, error: null });
+      } catch (error) {
+        if (requestVersionRef.current !== requestVersion) {
+          return;
+        }
+        const message = getErrorMessage(error);
+        logger.warn("[useAppUsageStats] 读取本地使用统计失败", {
+          range,
+          timeZone,
+          error: message,
+        });
+        // 失败不缓存：下次挂载必须重试，而不是在 TTL 内展示空态。
+        const entry = cache.get(cacheKey);
+        if (entry?.inFlight === request) {
+          if (entry.snapshot) {
+            cache.set(cacheKey, { snapshot: entry.snapshot, requestedAt: entry.requestedAt });
+          } else {
+            cache.delete(cacheKey);
+          }
+        }
+        setState((current) => ({
+          snapshot: current.snapshot,
+          loading: false,
+          error: message,
+        }));
+      }
+    },
+    [range, usageStatsService],
+  );
 
   useEffect(() => {
     void refresh();
