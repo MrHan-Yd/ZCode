@@ -4,7 +4,6 @@ import { existsSync } from "node:fs";
 import { cp, lstat, mkdir, readFile, readdir, realpath, rm, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, relative } from "node:path";
-import { parse as parseYaml } from "yaml";
 import type {
   SkillSyncArchiveExportResult,
   SkillSyncCandidate,
@@ -13,9 +12,13 @@ import type {
   SkillSyncRemoteStatusResult,
 } from "@zcode/shared";
 import type { ISkillSyncService } from "./skillSync.js";
+import { createSkillConfigSync, resolveSkillSyncRoots, type SkillSyncRoots } from "./skillConfigSync.js";
 import { createSkillSyncArchive, extractSkillSyncArchive } from "./skillSyncArchive.js";
 import { normalizeSkillSyncRelativePath, resolveSkillSyncPathWithin } from "./skillSyncPath.js";
 import { createSkillSyncSizeLimitError } from "./skillSyncErrors.js";
+import { normalizeSkillNameKey, parseSkillSyncMetadata } from "./skillSyncMetadata.js";
+import type { ICredentialService } from "../credential/credential.js";
+import type { ConfigSyncOperations } from "../config-sync/orchestrator.js";
 import {
   MAX_SKILL_SCAN_DEPTH,
   shouldWalkSkillDirectoryEntry,
@@ -26,9 +29,75 @@ import { checkRemoteSyncDirectoryWriteAccess } from "../remote-sync/remoteSyncWr
 const SKILL_FILE_NAME = "SKILL.md";
 const DEFAULT_MAX_ARCHIVE_BYTES = 20 * 1024 * 1024;
 
-export function createSkillSyncService(options?: { maxArchiveBytes?: number }): ISkillSyncService {
-  const maxArchiveBytes = options?.maxArchiveBytes ?? DEFAULT_MAX_ARCHIVE_BYTES;
+export interface CreateSkillSyncServiceOptions {
+  maxArchiveBytes?: number;
+  /** GitHub 登录凭据；缺省时 Gist 同步一律返回 `not_authenticated`。 */
+  credentialService?: Pick<ICredentialService, "load">;
+  /** 代理感知的 fetch；host 必须注入 `hostApiNetworkTransport.fetch`。 */
+  fetchImpl?: typeof fetch;
+  /** 同步元数据与备份目录；缺省用设置里的数据存储路径。 */
+  dataDir?: () => Promise<string>;
+  /** 测试/宿主覆盖 skills 根解析（默认按 HOME 或 workspacePath 推导）。 */
+  resolveRoots?: (workspacePath?: string) => SkillSyncRoots;
+  now?: () => number;
+}
+
+export function createSkillSyncService(
+  options: CreateSkillSyncServiceOptions = {},
+): ISkillSyncService {
+  const maxArchiveBytes = options.maxArchiveBytes ?? DEFAULT_MAX_ARCHIVE_BYTES;
+  // 技能目录写入串行化：远端归档导入与 Gist 同步落地共用同一条队列。
+  let writeQueue = Promise.resolve();
+  const enqueueWrite = <T>(run: () => Promise<T>): Promise<T> => {
+    const queued = writeQueue.then(run, run);
+    writeQueue = queued.then(
+      () => undefined,
+      () => undefined,
+    );
+    return queued;
+  };
+  const configSyncByScope = new Map<string, ConfigSyncOperations>();
+  const resolveRoots =
+    options.resolveRoots ??
+    ((workspacePath?: string) =>
+      resolveSkillSyncRoots({ homeDir: resolveUserHomeDir(), workspacePath }));
+  const resolveConfigSync = (workspacePath?: string): ConfigSyncOperations => {
+    const normalized = workspacePath?.trim() ?? "";
+    const cacheKey = normalized.length > 0 ? normalized : "user";
+    const cached = configSyncByScope.get(cacheKey);
+    if (cached) return cached;
+    const created = createSkillConfigSync({
+      roots: () => resolveRoots(normalized.length > 0 ? normalized : undefined),
+      ...(normalized.length > 0 ? { workspacePath: normalized } : {}),
+      ...(options.dataDir ? { dataDir: options.dataDir } : {}),
+      ...(options.credentialService ? { credentialService: options.credentialService } : {}),
+      ...(options.fetchImpl ? { fetchImpl: options.fetchImpl } : {}),
+      enqueueWrite,
+      ...(options.now ? { now: options.now } : {}),
+    });
+    configSyncByScope.set(cacheKey, created);
+    return created;
+  };
+
   return {
+    getConfigSyncStatus(params) {
+      return resolveConfigSync(params?.workspacePath).getStatus();
+    },
+    listConfigSyncBackups(params) {
+      return resolveConfigSync(params?.workspacePath).listBackups();
+    },
+    restoreConfigSyncBackup(params) {
+      return resolveConfigSync(params.workspacePath).restore(params);
+    },
+    syncConfigToGist(params) {
+      return resolveConfigSync(params?.workspacePath).upload(params);
+    },
+    previewConfigFromGist(params) {
+      return resolveConfigSync(params?.workspacePath).preview();
+    },
+    applyConfigFromGist(params) {
+      return resolveConfigSync(params.workspacePath).apply(params);
+    },
     async listLocalUserSkillCandidates(): Promise<SkillSyncCandidateListResult> {
       return {
         candidates: await collectUserSkillCandidates(),
@@ -121,7 +190,8 @@ export function createSkillSyncService(options?: { maxArchiveBytes?: number }): 
           phase: "archive",
         });
       }
-      return await importArchive(params.archive, maxArchiveBytes);
+      // 与 Gist 同步落地共用写队列，避免两个写入路径同时改 skills 根。
+      return await enqueueWrite(() => importArchive(params.archive, maxArchiveBytes));
     },
   };
 }
@@ -193,7 +263,7 @@ async function collectUserSkillCandidatesInRoot(root: string): Promise<SkillSync
     }
     const content = await readSkillFileOrNull(skillPath);
     if (content !== null) {
-      const metadata = parseSkillMetadata(content, basename(relativePath));
+      const metadata = parseSkillSyncMetadata(content, basename(relativePath));
       candidates.push({
         id: createCandidateId(directoryPath),
         name: metadata.name,
@@ -266,10 +336,6 @@ function normalizeSkillDirectoryRelativePath(root: string, directoryPath: string
   return relative(root, directoryPath).replaceAll("\\", "/");
 }
 
-function normalizeSkillNameKey(name: string): string {
-  return name.trim().toLowerCase();
-}
-
 function joinSkillRelativePath(parent: string, child: string): string {
   return parent ? `${parent}/${child}` : child;
 }
@@ -283,31 +349,6 @@ async function readSkillFileOrNull(skillPath: string): Promise<string | null> {
     }
     throw error;
   }
-}
-
-function parseSkillMetadata(
-  content: string,
-  fallbackName: string,
-): {
-  name: string;
-  description: string;
-} {
-  const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/u.exec(content);
-  if (!match) {
-    return { name: fallbackName, description: "" };
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = parseYaml(match[1] ?? "");
-  } catch {
-    return { name: fallbackName, description: "" };
-  }
-  const metadata = parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : {};
-  const name =
-    typeof metadata.name === "string" && metadata.name.trim() ? metadata.name.trim() : fallbackName;
-  const description = typeof metadata.description === "string" ? metadata.description.trim() : "";
-  return { name, description };
 }
 
 function createCandidateId(skillDirectoryPath: string): string {
@@ -368,7 +409,7 @@ async function collectSkillDirectoryPathByName(root: string): Promise<Map<string
       continue;
     }
     const directoryPath = dirname(skillPath);
-    const metadata = parseSkillMetadata(content, basename(directoryPath));
+    const metadata = parseSkillSyncMetadata(content, basename(directoryPath));
     const nameKey = normalizeSkillNameKey(metadata.name);
     if (!result.has(nameKey)) {
       result.set(nameKey, directoryPath);
@@ -421,7 +462,7 @@ async function importArchive(
         continue;
       }
 
-      const metadata = parseSkillMetadata(skillContent, directoryName);
+      const metadata = parseSkillSyncMetadata(skillContent, directoryName);
       const nameKey = normalizeSkillNameKey(metadata.name);
       if (existsSync(targetPath)) {
         results.push({

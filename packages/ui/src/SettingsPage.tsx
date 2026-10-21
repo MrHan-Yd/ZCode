@@ -1808,6 +1808,9 @@ export function SettingsPage({
                             workspacePath={activeWorkspacePath}
                             workspaceIdentity={activeWorkspaceIdentity}
                             onCreateTask={onCreateTask}
+                            onOpenSyncConfigSettings={() =>
+                              setActiveSettingsSection("modelSmartConfig")
+                            }
                             onOpenPluginStore={(_returnScopeKey, intent) => {
                               // 添加市场与浏览插件都先离开设置层，再显示商店。
                               requestPluginStoreOpen({ returnScopeKey: "user", intent });

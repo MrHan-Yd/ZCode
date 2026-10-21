@@ -452,6 +452,12 @@ export const TID_MCP_CONFIG_DOWNLOAD = "mcp-config-download";
 export const TID_SUBAGENT_CONFIG_RESTORE = "subagent-config-restore";
 /** 从本地备份还原 MCP 服务器配置 */
 export const TID_MCP_CONFIG_RESTORE = "mcp-config-restore";
+/** 技能目录上传到 GitHub（当前登录账号的私有 gist） */
+export const TID_SKILL_CONFIG_UPLOAD = "skill-config-upload";
+/** 从 GitHub 下载技能目录并同步到本地 */
+export const TID_SKILL_CONFIG_DOWNLOAD = "skill-config-download";
+/** 从本地备份还原技能目录 */
+export const TID_SKILL_CONFIG_RESTORE = "skill-config-restore";
 /** 模型设置（供应商 / 模型配置）的 GitHub 同步与本地备份还原入口（同步内容不含 API Key） */
 export const TID_MODEL_CONFIG_UPLOAD = "model-config-upload";
 export const TID_MODEL_CONFIG_DOWNLOAD = "model-config-download";

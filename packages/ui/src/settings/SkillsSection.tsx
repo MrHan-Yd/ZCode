@@ -24,9 +24,23 @@ import type {
   RemoteTarget,
 } from "@zcode/shared";
 import { ZCODE_AGENT_PROVIDER } from "@zcode/shared";
+import type {
+  ConfigSyncBackupList,
+  ConfigSyncDownloadPlan,
+  ConfigSyncSecretWarning,
+  ConfigSyncStatus,
+} from "@zcode/services";
 import type { CreateTaskRequest } from "@/app-shell/types.js";
+import { logger } from "@/logger.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { toast } from "@/components/ui/toast.js";
+import {
+  ConfigSyncDownloadDialog,
+  ConfigSyncRestoreDialog,
+  ConfigSyncSecretWarningDialog,
+} from "@/settings/ConfigSyncDialogs.js";
+import { ConfigSyncStatusRow, describeConfigSyncError } from "@/settings/ConfigSyncParts.js";
+import { TID_SKILL_CONFIG_DOWNLOAD, TID_SKILL_CONFIG_RESTORE, TID_SKILL_CONFIG_UPLOAD } from "@zcode/shared";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useZCodeSessionService } from "@/hooks/useZCodeSessionService.js";
 import {
@@ -153,6 +167,8 @@ interface SkillsSectionProps {
   onCreateTask?: (request?: CreateTaskRequest) => void;
   onDetailOpenChange?: (open: boolean) => void;
   onOpenPluginStore?: () => void;
+  /** 跳到「同步配置」分区（未登录 GitHub 时状态行的「去登录」）。 */
+  onOpenSyncConfigSettings?: () => void;
   showMarketplaceBreadcrumb?: boolean;
   reportDetailBreadcrumb?: boolean;
 }
@@ -168,6 +184,7 @@ export function SkillsSection({
   onCreateTask,
   onDetailOpenChange,
   onOpenPluginStore,
+  onOpenSyncConfigSettings,
   showMarketplaceBreadcrumb = false,
   reportDetailBreadcrumb = false,
 }: SkillsSectionProps) {
@@ -361,6 +378,212 @@ export function SkillsSection({
       skillsService,
     });
   }, [activeWorkspaceIdentity, activeWorkspacePath, skillsService]);
+
+  // GitHub 私有 gist 同步：只服务本机 workspace；页面上的远端 workspace 展示的是远端 host 的技能，
+  // 而同步固定在本机 host 执行，两者不能混用（与 MCP 设置页同一门控）。
+  const [configSyncStatus, setConfigSyncStatus] = useState<ConfigSyncStatus | null>(null);
+  const [configSyncPhase, setConfigSyncPhase] = useState<
+    "idle" | "uploading" | "previewing" | "applying"
+  >("idle");
+  const [configSyncDownloadPlan, setConfigSyncDownloadPlan] =
+    useState<ConfigSyncDownloadPlan | null>(null);
+  const [configSyncSecretWarnings, setConfigSyncSecretWarnings] = useState<
+    readonly ConfigSyncSecretWarning[] | null
+  >(null);
+  const [configSyncRestoreBackups, setConfigSyncRestoreBackups] =
+    useState<ConfigSyncBackupList | null>(null);
+  const configSyncBusy = configSyncPhase !== "idle";
+  const canSyncSkillConfig =
+    !remoteSessionId && !remoteTarget && (scopeFilter === "user" || Boolean(activeWorkspacePath));
+  const skillConfigSyncScopeParams = useMemo(
+    () =>
+      scopeFilter === "workspace" && activeWorkspacePath
+        ? { workspacePath: activeWorkspacePath }
+        : {},
+    [activeWorkspacePath, scopeFilter],
+  );
+
+  const loadSkillConfigSyncStatus = useCallback(async () => {
+    try {
+      setConfigSyncStatus(
+        await skillSyncService.getConfigSyncStatus(skillConfigSyncScopeParams),
+      );
+    } catch (error) {
+      logger.warn("[skills] 读取 GitHub 同步状态失败", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }, [skillConfigSyncScopeParams, skillSyncService]);
+
+  useEffect(() => {
+    if (!canSyncSkillConfig || !targetServiceResolution.rpcReady) return;
+    void loadSkillConfigSyncStatus();
+  }, [canSyncSkillConfig, loadSkillConfigSyncStatus, targetServiceResolution.rpcReady]);
+
+  const reloadAfterSkillConfigWrite = useCallback(async () => {
+    await invalidateDeferredDraftSessionForSkillChange({
+      zcodeSessionService,
+      workspacePath: activeWorkspacePath,
+      workspaceIdentity: activeWorkspaceIdentity,
+      reason: "settings-skill-config-sync",
+    });
+    await Promise.all([
+      refresh(),
+      refreshSharedSkillStoreForCurrentWorkspace(),
+      loadSkillConfigSyncStatus(),
+    ]);
+  }, [
+    activeWorkspaceIdentity,
+    activeWorkspacePath,
+    loadSkillConfigSyncStatus,
+    refresh,
+    refreshSharedSkillStoreForCurrentWorkspace,
+    zcodeSessionService,
+  ]);
+
+  const handleUploadSkillConfig = useCallback(
+    async (params?: { confirmSecretUpload?: boolean }) => {
+      setConfigSyncPhase("uploading");
+      try {
+        const result = await skillSyncService.syncConfigToGist({
+          ...params,
+          ...skillConfigSyncScopeParams,
+        });
+        if (result.status === "error") {
+          if (result.error.code === "secret_warning") {
+            setConfigSyncSecretWarnings(result.error.secretWarnings ?? []);
+            return;
+          }
+          if (result.error.code !== "busy") {
+            toast(describeConfigSyncError(intl, result.error));
+          }
+          return;
+        }
+        setConfigSyncSecretWarnings(null);
+        toast(
+          result.status === "unchanged"
+            ? intl.formatMessage({ id: "settings.configSync.unchanged" })
+            : intl.formatMessage(
+                { id: "settings.configSync.uploadedSkill" },
+                { count: result.itemCount },
+              ),
+        );
+        await loadSkillConfigSyncStatus();
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error));
+      } finally {
+        setConfigSyncPhase("idle");
+      }
+    },
+    [intl, loadSkillConfigSyncStatus, skillConfigSyncScopeParams, skillSyncService],
+  );
+
+  const handlePreviewSkillConfig = useCallback(async () => {
+    setConfigSyncPhase("previewing");
+    try {
+      const result = await skillSyncService.previewConfigFromGist(skillConfigSyncScopeParams);
+      if (result.status === "error") {
+        if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
+        return;
+      }
+      setConfigSyncDownloadPlan(result);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error));
+    } finally {
+      setConfigSyncPhase("idle");
+    }
+  }, [intl, skillConfigSyncScopeParams, skillSyncService]);
+
+  const handleApplySkillConfig = useCallback(
+    async (params: { strategy: "merge" | "replace" }) => {
+      if (!configSyncDownloadPlan) return;
+      setConfigSyncPhase("applying");
+      try {
+        const result = await skillSyncService.applyConfigFromGist({
+          strategy: params.strategy,
+          expectedRemoteRevision: configSyncDownloadPlan.remoteRevision,
+          confirmReplace: params.strategy === "replace",
+          ...skillConfigSyncScopeParams,
+        });
+        if (result.status === "error") {
+          if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
+          return;
+        }
+        setConfigSyncDownloadPlan(null);
+        toast(
+          result.status === "up_to_date"
+            ? intl.formatMessage({ id: "settings.configSync.upToDate" })
+            : intl.formatMessage(
+                { id: "settings.configSync.downloaded" },
+                {
+                  added: result.applied.added,
+                  updated: result.applied.updated,
+                  removed: result.applied.removed,
+                  kept: result.applied.kept,
+                },
+              ),
+        );
+        await reloadAfterSkillConfigWrite();
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error));
+      } finally {
+        setConfigSyncPhase("idle");
+      }
+    },
+    [
+      configSyncDownloadPlan,
+      intl,
+      reloadAfterSkillConfigWrite,
+      skillConfigSyncScopeParams,
+      skillSyncService,
+    ],
+  );
+
+  const handleOpenSkillConfigRestore = useCallback(async () => {
+    setConfigSyncPhase("previewing");
+    try {
+      const backups = await skillSyncService.listConfigSyncBackups(skillConfigSyncScopeParams);
+      if (backups.backups.length === 0) {
+        toast(intl.formatMessage({ id: "settings.configSync.restoreEmpty" }));
+        return;
+      }
+      setConfigSyncRestoreBackups(backups);
+    } catch (error) {
+      toast(error instanceof Error ? error.message : String(error));
+    } finally {
+      setConfigSyncPhase("idle");
+    }
+  }, [intl, skillConfigSyncScopeParams, skillSyncService]);
+
+  const handleRestoreSkillConfig = useCallback(
+    async (params: { backupDir: string }) => {
+      setConfigSyncPhase("applying");
+      try {
+        const result = await skillSyncService.restoreConfigSyncBackup({
+          ...params,
+          ...skillConfigSyncScopeParams,
+        });
+        if (result.status === "error") {
+          if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
+          return;
+        }
+        setConfigSyncRestoreBackups(null);
+        toast(
+          intl.formatMessage(
+            { id: "settings.configSync.restored" },
+            { count: result.itemCount ?? 0 },
+          ),
+        );
+        await reloadAfterSkillConfigWrite();
+      } catch (error) {
+        toast(error instanceof Error ? error.message : String(error));
+      } finally {
+        setConfigSyncPhase("idle");
+      }
+    },
+    [intl, reloadAfterSkillConfigWrite, skillConfigSyncScopeParams, skillSyncService],
+  );
+
 
   const setEnabled = useCallback(
     async (skillId: string, enabled: boolean) => {
@@ -657,7 +880,20 @@ export function SkillsSection({
       onRefresh={() => void Promise.all([refresh(), refreshSharedSkillStoreForCurrentWorkspace()])}
       onImport={() => setImportDialogOpen(true)}
       onNew={handleCreateSkill}
-      importDisabled={!capability?.userScopeAvailable}
+      onUploadToGithub={canSyncSkillConfig ? () => void handleUploadSkillConfig() : undefined}
+      onDownloadFromGithub={canSyncSkillConfig ? () => void handlePreviewSkillConfig() : undefined}
+      onRestoreFromBackup={
+        canSyncSkillConfig ? () => void handleOpenSkillConfigRestore() : undefined
+      }
+      uploadToGithubDisabled={configSyncBusy}
+      downloadFromGithubDisabled={configSyncBusy}
+      restoreFromBackupDisabled={configSyncBusy || (configSyncStatus?.backupCount ?? 0) === 0}
+      uploadToGithubTestId={TID_SKILL_CONFIG_UPLOAD}
+      downloadFromGithubTestId={TID_SKILL_CONFIG_DOWNLOAD}
+      restoreFromBackupTestId={TID_SKILL_CONFIG_RESTORE}
+      refreshDisabled={configSyncBusy}
+      newDisabled={configSyncBusy}
+      importDisabled={!capability?.userScopeAvailable || configSyncBusy}
       importActionId="settings.skills.import.open"
       newActionId="settings.skills.create.open"
     />
@@ -810,6 +1046,15 @@ export function SkillsSection({
                 })}
               />
             </div>
+            {canSyncSkillConfig && configSyncStatus ? (
+              <ConfigSyncStatusRow
+                status={configSyncStatus}
+                busy={configSyncBusy}
+                onOpenSyncConfigSettings={onOpenSyncConfigSettings}
+                testId="skill-config-sync-status"
+                goLoginTestId="skill-config-sync-go-login"
+              />
+            ) : null}
             {groupedSkills.local.length > 0 ? (
               renderSkillList(groupedSkills.local)
             ) : directInstalledSkillCount === 0 && !query.trim() ? (
@@ -1002,6 +1247,36 @@ export function SkillsSection({
         }}
         onMcpSynced={() => {}}
       />
+      {/* GitHub 同步先预览再确认：这里按需挂载，勾选状态随关闭一起丢弃。 */}
+      {configSyncDownloadPlan ? (
+        <ConfigSyncDownloadDialog
+          plan={configSyncDownloadPlan}
+          applying={configSyncPhase === "applying"}
+          onCancel={() => setConfigSyncDownloadPlan(null)}
+          onConfirm={(params) => void handleApplySkillConfig(params)}
+          testId="skill-config-sync-confirm"
+          replaceAckTestId="skill-config-sync-replace-ack"
+        />
+      ) : null}
+      {configSyncRestoreBackups ? (
+        <ConfigSyncRestoreDialog
+          backups={configSyncRestoreBackups}
+          restoring={configSyncPhase === "applying"}
+          onCancel={() => setConfigSyncRestoreBackups(null)}
+          onConfirm={(params) => void handleRestoreSkillConfig(params)}
+          testId="skill-config-sync-restore-confirm"
+          optionTestId="skill-config-sync-restore-option"
+        />
+      ) : null}
+      {configSyncSecretWarnings ? (
+        <ConfigSyncSecretWarningDialog
+          warnings={configSyncSecretWarnings}
+          uploading={configSyncPhase === "uploading"}
+          onCancel={() => setConfigSyncSecretWarnings(null)}
+          onConfirm={() => void handleUploadSkillConfig({ confirmSecretUpload: true })}
+          testId="skill-config-sync-secret-warning"
+        />
+      ) : null}
     </div>
   );
 }

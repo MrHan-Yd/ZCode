@@ -2612,7 +2612,15 @@ export function createLocalServices(options: {
       })(),
     )
     .register(ISkillsService, skillsService)
-    .register(ISkillSyncService, createSkillSyncService())
+    .register(
+      ISkillSyncService,
+      createSkillSyncService({
+        // 技能 Gist 同步复用 GitHub 登录凭据与代理感知传输，元数据/备份跟随数据存储路径。
+        credentialService,
+        fetchImpl: hostApiNetworkTransport.fetch,
+        dataDir: async () => resolveAppConfigDir(),
+      }),
+    )
     .register(IMcpSyncService, mcpSyncService)
     // 合并 MCP/Plugin Management 服务装配时误删了 plugin-sync 注册，
     // RemoteServiceAccess 仍会请求该频道，导致本地候选枚举超时、远端同步无法开始。

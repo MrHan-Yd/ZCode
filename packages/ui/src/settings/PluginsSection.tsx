@@ -1357,6 +1357,7 @@ export function PluginsSection({
                 showMarketplaceBreadcrumb={showMarketplaceBreadcrumb}
                 reportDetailBreadcrumb={mode === "plugin"}
                 onVisibleCountChange={updateSkillCount}
+                onOpenSyncConfigSettings={onOpenSyncConfigSettings}
               />
             ) : (
               <EmptyState

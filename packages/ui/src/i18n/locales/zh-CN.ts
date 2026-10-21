@@ -3755,6 +3755,7 @@ const zhCN: Record<string, string> = {
   "settings.configSync.statusNotConnected": "尚未登录 GitHub 账号",
   "settings.configSync.goToLogin": "去登录",
   "settings.configSync.uploaded": "已上传到私有 Gist（{count} 个子智能体）",
+  "settings.configSync.uploadedSkill": "已上传到私有 Gist（{count} 个技能文件）",
   "settings.configSync.unchanged": "本地配置未变化，无需上传",
   "settings.configSync.downloaded":
     "已同步到本地：新增 {added}、更新 {updated}、删除 {removed}、保留 {kept}",

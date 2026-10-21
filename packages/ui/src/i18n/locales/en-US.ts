@@ -4018,6 +4018,7 @@ const enUS: Record<string, string> = {
   "settings.configSync.statusNotConnected": "Not signed in to GitHub",
   "settings.configSync.goToLogin": "Sign in",
   "settings.configSync.uploaded": "Uploaded to a private gist ({count} subagents)",
+  "settings.configSync.uploadedSkill": "Uploaded to a private gist ({count} skill files)",
   "settings.configSync.unchanged": "Local config unchanged; nothing to upload",
   "settings.configSync.downloaded":
     "Synced locally: {added} added, {updated} updated, {removed} removed, {kept} kept",
