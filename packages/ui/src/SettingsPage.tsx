@@ -4,6 +4,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ButtonHTMLAttributes,
   type ReactNode,
@@ -69,6 +70,10 @@ import { SegmentPill } from "@/settings/PluginStoreListView.js";
 import { PluginsSection } from "@/settings/PluginsSection.js";
 import { ArchiveManagementSection } from "@/settings/ArchiveManagementSection.js";
 import { HooksSection } from "@/settings/HooksSection.js";
+import {
+  PromptLibrarySection,
+  type PromptLibraryLeaveGuard,
+} from "@/settings/PromptLibrarySection.js";
 import { WorkspaceFileSearchSection } from "@/settings/WorkspaceFileSearchSection.js";
 import { MemorySettingsSection } from "@/settings/MemorySettingsSection.js";
 import { BrowserSettingsSection } from "@/settings/BrowserSettingsSection.js";
@@ -595,6 +600,22 @@ export function SettingsPage({
     },
     [activeSection],
   );
+  // 提示词库编辑态的未保存拦截：分区内部注册 guard，设置页在切区/返回工作区前调用。
+  const settingsLeaveGuardRef = useRef<PromptLibraryLeaveGuard | null>(null);
+  const handlePromptLibraryLeaveGuardChange = useCallback(
+    (guard: PromptLibraryLeaveGuard | null) => {
+      settingsLeaveGuardRef.current = guard;
+    },
+    [],
+  );
+  const runWithSettingsLeaveGuard = useCallback((action: () => void) => {
+    const guard = settingsLeaveGuardRef.current;
+    if (guard) {
+      guard(action);
+      return;
+    }
+    action();
+  }, []);
   const handleOpenModelProviderSettings = useCallback(() => {
     setActiveSettingsSection("modelProvider");
   }, [setActiveSettingsSection]);
@@ -728,26 +749,28 @@ export function SettingsPage({
         // SettingsPage 已打开时再次从 quickpick 点“个性化/MCP”等设置入口，
         // 页面不会重新挂载，之前写入的 pending section 无人消费，看起来像点击没反应。
         // 这里订阅同窗口跳转意图，立即切换当前设置分区。
-        setActiveSettingsSection(section, activeSection);
-        // 设置入口是一级路由边界。即使仍落在同一 section，也必须销毁旧的 New/Edit/Detail 子状态。
-        setSettingsSectionNavigationVersion((version) => version + 1);
-        if (section === "usage" && detail?.usageTab) {
-          setUsageActiveTab(detail.usageTab);
-        }
-        if (resolveSettingsSection(section) === "plugin" && detail?.pluginTab) {
-          setPluginTab(detail.pluginTab);
-          setPluginNavigationOrigin(detail.pluginOrigin);
-          setPluginScopeKey(detail.pluginScopeKey);
-        } else if (resolveSettingsSection(section) !== "plugin") {
-          setPluginNavigationOrigin(undefined);
-        }
-        if (section === "modelProvider" && detail?.modelProviderId) {
-          setPendingModelProviderTarget({
-            providerId: detail.modelProviderId,
-          });
-        }
+        runWithSettingsLeaveGuard(() => {
+          setActiveSettingsSection(section, activeSection);
+          // 设置入口是一级路由边界。即使仍落在同一 section，也必须销毁旧的 New/Edit/Detail 子状态。
+          setSettingsSectionNavigationVersion((version) => version + 1);
+          if (section === "usage" && detail?.usageTab) {
+            setUsageActiveTab(detail.usageTab);
+          }
+          if (resolveSettingsSection(section) === "plugin" && detail?.pluginTab) {
+            setPluginTab(detail.pluginTab);
+            setPluginNavigationOrigin(detail.pluginOrigin);
+            setPluginScopeKey(detail.pluginScopeKey);
+          } else if (resolveSettingsSection(section) !== "plugin") {
+            setPluginNavigationOrigin(undefined);
+          }
+          if (section === "modelProvider" && detail?.modelProviderId) {
+            setPendingModelProviderTarget({
+              providerId: detail.modelProviderId,
+            });
+          }
+        });
       }),
-    [activeSection, setActiveSettingsSection],
+    [activeSection, runWithSettingsLeaveGuard, setActiveSettingsSection],
   );
 
   useEffect(() => {
@@ -1379,10 +1402,12 @@ export function SettingsPage({
                             trigger: "button",
                           },
                           operation: () => {
-                            if (pluginNavigationOrigin === "plugin-store") {
-                              requestPluginStoreOpen("user");
-                            }
-                            onBack?.();
+                            runWithSettingsLeaveGuard(() => {
+                              if (pluginNavigationOrigin === "plugin-store") {
+                                requestPluginStoreOpen("user");
+                              }
+                              onBack?.();
+                            });
                           },
                           completed: { resultSource: "local_commit" },
                           failureStage: "navigation_commit",
@@ -1453,9 +1478,11 @@ export function SettingsPage({
                                     trigger: "button",
                                   },
                                   operation: () => {
-                                    setPluginNavigationOrigin(undefined);
-                                    setSettingsSectionNavigationVersion((version) => version + 1);
-                                    setActiveSettingsSection(id);
+                                    runWithSettingsLeaveGuard(() => {
+                                      setPluginNavigationOrigin(undefined);
+                                      setSettingsSectionNavigationVersion((version) => version + 1);
+                                      setActiveSettingsSection(id);
+                                    });
                                   },
                                   completed: { resultSource: "local_commit", sectionId: id },
                                   failureStage: "navigation_commit",
@@ -1478,8 +1505,8 @@ export function SettingsPage({
                   localeMenuValue={localePreference}
                   onLocaleChange={handleFooterLocaleChange}
                   onThemeChange={handleFooterThemeChange}
-                  onSettingsButtonClick={onBack}
-                  onUsageClick={handleOpenUsageSettings}
+                  onSettingsButtonClick={() => runWithSettingsLeaveGuard(() => onBack?.())}
+                  onUsageClick={() => runWithSettingsLeaveGuard(handleOpenUsageSettings)}
                   onLogout={onLogout}
                   settingsButtonMode="back"
                   user={user}
@@ -1859,6 +1886,16 @@ export function SettingsPage({
                               onBack?.();
                             }}
                           />
+                        ) : activeSection === "promptLibrary" ? (
+                          <ServiceProvider services={localHostServices}>
+                            {/* 提示词库是用户级数据；激活远程 workspace 时也必须读写本机 Host。 */}
+                            <PromptLibrarySection
+                              onLeaveGuardChange={handlePromptLibraryLeaveGuardChange}
+                              onOpenSyncConfigSettings={() =>
+                                setActiveSettingsSection("modelSmartConfig")
+                              }
+                            />
+                          </ServiceProvider>
                         ) : activeSection === "hooks" ? (
                           <HooksSection
                             workspacePath={activeWorkspacePath}

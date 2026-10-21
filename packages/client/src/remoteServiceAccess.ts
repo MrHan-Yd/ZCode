@@ -34,6 +34,7 @@ import {
   IPluginManagementService,
   ISubagentsService,
   ICommandsService,
+  IPromptLibraryService,
   IHooksService,
   IMemoryService,
   IModelSmartConfigService,
@@ -90,6 +91,7 @@ export class RemoteServiceAccess implements IServiceAccessor {
   readonly pluginManagementService: IPluginManagementService;
   readonly subagentsService: ISubagentsService;
   readonly commandsService: ICommandsService;
+  readonly promptLibraryService: IPromptLibraryService;
   readonly hooksService: IHooksService;
   readonly memoryService: IMemoryService;
   readonly modelSmartConfigService: IModelSmartConfigService;
@@ -209,6 +211,9 @@ export class RemoteServiceAccess implements IServiceAccessor {
     );
     this.commandsService = ProxyChannel.toService<ICommandsService>(
       channelClient.getChannel(ICommandsService.channelName),
+    );
+    this.promptLibraryService = ProxyChannel.toService<IPromptLibraryService>(
+      channelClient.getChannel(IPromptLibraryService.channelName),
     );
     this.hooksService = ProxyChannel.toService<IHooksService>(
       channelClient.getChannel(IHooksService.channelName),

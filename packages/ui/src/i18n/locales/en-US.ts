@@ -4031,10 +4031,8 @@ const enUS: Record<string, string> = {
   "settings.configSync.planSame": "Unchanged",
   "settings.configSync.planLocalOnly": "Local only",
   "settings.configSync.planMore": "{count} more…",
-  "settings.configSync.replaceAck":
-    "Mirror the remote (deletes {count} local-only subagent(s))",
-  "settings.configSync.replaceAckGeneric":
-    "Mirror the remote (deletes {count} local-only item(s))",
+  "settings.configSync.replaceAck": "Mirror the remote (deletes {count} local-only subagent(s))",
+  "settings.configSync.replaceAckGeneric": "Mirror the remote (deletes {count} local-only item(s))",
   "settings.configSync.localChangedWarning":
     "Local files changed since the last sync; applying will overwrite those changes",
   "settings.configSync.remoteSkipped": "{count} unrecognized file(s) on the remote were skipped",
@@ -4061,7 +4059,9 @@ const enUS: Record<string, string> = {
   "settings.configSync.replaceAckModel": "Mirror remote (delete {count} local-only providers)",
   "settings.configSync.modelApiKeyNotice":
     "API keys are never uploaded and are not overwritten by a download; enter them again on a new machine.",
-  "settings.configSync.notFound": "The remote gist is missing, inaccessible, or has never been uploaded ({detail})",  "settings.configSync.rateLimited": "GitHub rate limit reached; try again later ({detail})",
+  "settings.configSync.notFound":
+    "The remote gist is missing, inaccessible, or has never been uploaded ({detail})",
+  "settings.configSync.rateLimited": "GitHub rate limit reached; try again later ({detail})",
   "settings.configSync.networkError": "Network request failed: {detail}",
   "settings.configSync.timeout": "Request timed out; check your network or proxy settings",
   "settings.configSync.remoteInvalid": "Remote config is invalid: {detail}",
@@ -7015,6 +7015,98 @@ const enUS: Record<string, string> = {
   "scheduledPreview.toast.running": "Running “{title}”…",
   "scheduledPreview.toast.view": "View",
   "scheduledPreview.addSchedule": "Add schedule",
+  // Prompt library: settings
+  "settings.promptLibrary.title": "Prompt Library",
+  "settings.promptLibrary.description":
+    "Save reusable prompts and insert them from the composer with ;.",
+  "settings.promptLibrary.searchPlaceholder": "Search name, content, or tag…",
+  "settings.promptLibrary.clearSearch": "Clear search",
+  "settings.promptLibrary.sort.label": "Sort",
+  "settings.promptLibrary.sort.recentUsed": "Recently used",
+  "settings.promptLibrary.sort.recentUpdated": "Recently updated",
+  "settings.promptLibrary.sort.name": "Name",
+  "settings.promptLibrary.new": "New prompt",
+  "settings.promptLibrary.edit": "Edit prompt",
+  "settings.promptLibrary.backToList": "Back to Prompt Library",
+  "settings.promptLibrary.group.pinned": "Pinned",
+  "settings.promptLibrary.group.all": "All prompts",
+  "settings.promptLibrary.group.search": "Search results",
+  "settings.promptLibrary.empty.title": "No saved prompts yet",
+  "settings.promptLibrary.empty.description":
+    "Create your first prompt, then type ; in the composer to insert it.",
+  "settings.promptLibrary.searchEmpty": "No prompts match your search.",
+  "settings.promptLibrary.loading": "Loading prompts…",
+  "settings.promptLibrary.loadFailed": "Couldn't load the prompt library.",
+  "settings.promptLibrary.unsupported": "The current Host does not support the prompt library.",
+  "settings.promptLibrary.readOnly":
+    "The prompt library is read-only right now, so it can't be changed.",
+  "settings.promptLibrary.warning.rebuild": "Rebuild empty library",
+  "settings.promptLibrary.warning.rebuildConfirm":
+    "Back up the current file and rebuild an empty prompt library. Continue?",
+  "settings.promptLibrary.pin.add": "Pin",
+  "settings.promptLibrary.pin.remove": "Unpin",
+  "settings.promptLibrary.row.lastUsed": "Last used {time}",
+  "settings.promptLibrary.row.neverUsed": "Never used",
+  "settings.promptLibrary.row.aliasHint": "Type ;{alias} to filter",
+  "settings.promptLibrary.form.name.label": "Name",
+  "settings.promptLibrary.form.name.validation.required": "Name is required",
+  "settings.promptLibrary.form.name.validation.tooLong": "Name must be {max} characters or fewer",
+  "settings.promptLibrary.form.content.label": "Content",
+  "settings.promptLibrary.form.content.placeholder":
+    "Enter the prompt to insert into the conversation…",
+  "settings.promptLibrary.form.content.helper":
+    "Prompts are inserted as plain text; line breaks are preserved.",
+  "settings.promptLibrary.form.content.sendHint":
+    "Content starting with /, $, or @ may be treated as a command or mention when sent.",
+  "settings.promptLibrary.form.content.validation.required": "Content is required",
+  "settings.promptLibrary.form.content.validation.tooLong":
+    "Content must be {max} characters or fewer",
+  "settings.promptLibrary.form.tags.label": "Tags (optional, up to {max})",
+  "settings.promptLibrary.form.tags.placeholder": "Type and press Enter to add",
+  "settings.promptLibrary.form.tags.hint": "Used for search and filtering; tags are not inserted.",
+  "settings.promptLibrary.form.tags.remove": "Remove tag {tag}",
+  "settings.promptLibrary.form.alias.label": "Shortcut alias (optional)",
+  "settings.promptLibrary.form.alias.placeholder": "e.g. review",
+  "settings.promptLibrary.form.alias.hint": "Type ;{alias} to match this prompt first.",
+  "settings.promptLibrary.form.alias.validation.characters":
+    "Use letters, numbers, hyphens, and underscores only",
+  "settings.promptLibrary.form.alias.validation.tooLong": "Alias must be {max} characters or fewer",
+  "settings.promptLibrary.form.alias.validation.duplicate":
+    "This alias is already used by another prompt",
+  "settings.promptLibrary.form.unsaved.title": "Discard unsaved changes?",
+  "settings.promptLibrary.form.unsaved.keepEditing": "Keep editing",
+  "settings.promptLibrary.form.unsaved.discard": "Discard changes",
+  "settings.promptLibrary.form.delete.title": "Delete prompt",
+  "settings.promptLibrary.form.delete.description": 'Delete "{name}"? This can\'t be undone.',
+  "settings.promptLibrary.toast.created": "Prompt created",
+  "settings.promptLibrary.toast.saved": "Prompt saved",
+  "settings.promptLibrary.toast.deleted": "Prompt deleted",
+  "settings.promptLibrary.delete": "Delete prompt",
+  "settings.promptLibrary.sync.uploaded": "Uploaded to private gist ({count} prompts)",
+  "settings.promptLibrary.sync.downloaded": "Prompts downloaded from private gist",
+  "settings.promptLibrary.sync.uploadTitle": "Upload prompt library",
+  "settings.promptLibrary.sync.downloadTitle": "Download prompt library",
+  "settings.promptLibrary.sync.restoreTitle": "Restore prompt library",
+  "settings.promptLibrary.sync.readOnlyDisabled":
+    "The prompt library is read-only and can't be synced",
+  "settings.promptLibrary.sync.planItemName": "Prompt library",
+  // Prompt library: composer panel
+  "composer.promptLibrary.title": "Prompt Library",
+  "composer.promptLibrary.section.pinned": "Pinned",
+  "composer.promptLibrary.section.recent": "Recently used",
+  "composer.promptLibrary.section.all": "All prompts",
+  "composer.promptLibrary.section.results": "Results",
+  "composer.promptLibrary.emptyLibrary": "No saved prompts yet.",
+  "composer.promptLibrary.emptyLibraryHint": "Create one in Settings › Prompt Library.",
+  "composer.promptLibrary.emptyResults": "No matching prompts.",
+  "composer.promptLibrary.loading": "Loading prompts…",
+  "composer.promptLibrary.error": "Couldn't load prompts.",
+  "composer.promptLibrary.deletedWhileOpen": "This prompt was deleted.",
+  "composer.promptLibrary.insertedAnnouncement": 'Inserted "{name}"; the cursor is at the end.',
+  "composer.promptLibrary.footer.trigger": "Prompt library",
+  "composer.promptLibrary.footer.navigate": "Navigate",
+  "composer.promptLibrary.footer.insert": "Insert",
+  "composer.promptLibrary.footer.close": "Close",
 };
 
 export default enUS;

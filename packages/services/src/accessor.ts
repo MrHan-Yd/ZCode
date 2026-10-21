@@ -31,6 +31,7 @@ import type { IPluginsService } from "./plugins/plugins.js";
 import type { IPluginManagementService } from "./plugins/pluginManagement.js";
 import type { ISubagentsService } from "./subagents/subagents.js";
 import type { ICommandsService } from "./commands/commands.js";
+import type { IPromptLibraryService } from "./prompt-library/promptLibrary.js";
 import type { IHooksService } from "./hooks/hooks.js";
 import type { IMemoryService } from "./memory/memory.js";
 import type { ISettingsSyncService } from "./settings-sync/settingsSync.js";
@@ -86,6 +87,8 @@ export interface IServiceAccessor {
   readonly pluginManagementService: IPluginManagementService;
   readonly subagentsService: ISubagentsService;
   readonly commandsService: ICommandsService;
+  /** 用户级提示词库；旧 Host / 测试替身可不提供，UI 需显示不支持并保持 `;` 为普通文本。 */
+  readonly promptLibraryService?: IPromptLibraryService;
   readonly hooksService: IHooksService;
   readonly memoryService: IMemoryService;
   readonly settingsSyncService: ISettingsSyncService;

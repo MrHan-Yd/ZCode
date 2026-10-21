@@ -133,6 +133,8 @@ export const ServiceChannels = {
   Subagents: "subagents",
   /** Commands 管理服务 */
   Commands: "commands",
+  /** 用户级提示词库服务（独立 JSON 文件，不区分 workspace） */
+  PromptLibrary: "prompt-library",
   /** Hooks 管理服务 */
   Hooks: "hooks",
   /** Memory 管理服务 */

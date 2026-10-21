@@ -56,6 +56,8 @@ import {
   type ActivePromptInputTokenSnapshot,
 } from "./activePromptInputToken.js";
 import { getCurrentTextNodeSelection } from "./mentionHelpers.js";
+import { shouldFreezeMentionRecalcWhileComposing } from "@/lib/imeComposition.js";
+import { PROMPT_LIBRARY_INSERT_UPDATE_TAG } from "@/lib/editorUpdateTags.js";
 
 interface MentionPluginProps {
   container?: HTMLElement | null;
@@ -117,16 +119,6 @@ function coerceEnabledMentionIndex(
   }
   const firstEnabledIndex = items.findIndex((item) => !item.disabled);
   return firstEnabledIndex >= 0 ? firstEnabledIndex : boundedIndex;
-}
-
-/**
- * IME 组合期间（拼音未上屏）是否冻结 @ 面板重算：中间态字母会被当作 query 逐字过滤一轮，
- * 面板闪烁且中间态结果错误；composition 提交后 Lexical 会再派发一次 update 完成重算。
- * Android 例外：Chrome + Gboard 对拉丁词也走 composition（整词到空格才 compositionend），
- * 冻结会让手机 Web 的 @ 面板失去逐字过滤，因此 Android 保持实时重算。
- */
-function shouldFreezeMentionRecalcWhileComposing(isComposing: boolean, userAgent: string): boolean {
-  return isComposing && !/Android/i.test(userAgent);
 }
 
 export function MentionPlugin({
@@ -381,7 +373,12 @@ export function MentionPlugin({
   }, [disabled]);
 
   useEffect(() => {
-    return editor.registerUpdateListener(({ dirtyElements, dirtyLeaves, editorState }) => {
+    return editor.registerUpdateListener(({ dirtyElements, dirtyLeaves, editorState, tags }) => {
+      // 提示词库插入是纯文本替换，可能以 `@`、`$`、`#` 结尾。
+      // 若在这里继续按用户输入重算，会把插入内容重新识别为 mention token 并弹回面板。
+      if (tags.has(PROMPT_LIBRARY_INSERT_UPDATE_TAG)) {
+        return;
+      }
       if (
         shouldFreezeMentionRecalcWhileComposing(
           editor.isComposing(),

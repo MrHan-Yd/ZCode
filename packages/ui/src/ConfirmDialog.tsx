@@ -45,6 +45,7 @@ export function ConfirmDialogHost() {
     displayedRequest?.confirmLabel ?? intl.formatMessage({ id: "common.confirm" });
   const cancelLabel = displayedRequest?.cancelLabel ?? intl.formatMessage({ id: "common.cancel" });
   const compact = displayedRequest?.compact === true;
+  const focusCancel = displayedRequest?.defaultFocus === "cancel";
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
@@ -78,6 +79,11 @@ export function ConfirmDialogHost() {
         event.target.closest("button,input")
       )
         return;
+      // 破坏性操作显式要求焦点停在「取消」时，Enter 必须交给焦点按钮处理，
+      // 否则“默认焦点在取消”会被全局 Enter 兜底绕过。
+      if (displayedRequest?.defaultFocus === "cancel") {
+        return;
+      }
       // 二次确认场景下如果不接 Enter，键盘用户会只能切到按钮再触发，
       // 体验和桌面端的确认弹窗不一致。这里在弹窗打开时统一兜住 Enter，保持可预期的确认手势。
       event.preventDefault();
@@ -151,6 +157,7 @@ export function ConfirmDialogHost() {
               type="button"
               variant={compact ? "outline" : "secondary"}
               size={"lg"}
+              autoFocus={focusCancel}
               onClick={() => settleConfirmation(false)}
               className={cn(
                 "h-9 gap-3 px-4",
@@ -164,7 +171,7 @@ export function ConfirmDialogHost() {
             </Button>
             <Button
               type="button"
-              autoFocus
+              autoFocus={!focusCancel}
               // 普通确认沿用主按钮；仅显式声明 destructive 的不可恢复动作使用危险色。
               variant={displayedRequest?.confirmVariant ?? "default"}
               size={"lg"}

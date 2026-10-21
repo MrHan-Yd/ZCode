@@ -20,6 +20,7 @@ import {
   Keyboard,
   FileSearch,
   SlidersHorizontal,
+  LibraryBig,
 } from "lucide-react";
 import { isSettingsSectionEnabled, type SettingsSectionId } from "@/lib/settingsNavigation.js";
 import type { Theme } from "@/useTheme.js";
@@ -118,6 +119,14 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     id: "commands",
     icon: Terminal,
     titleId: "settings.commands.title",
+    groupId: "agentCapabilities",
+  },
+  {
+    // 提示词库紧跟「命令」：两者都是用户自建、可复用的输入侧资产；
+    // 命令是「执行动作」，提示词库是「插入文本」。
+    id: "promptLibrary",
+    icon: LibraryBig,
+    titleId: "settings.promptLibrary.title",
     groupId: "agentCapabilities",
   },
   {

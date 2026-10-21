@@ -318,6 +318,8 @@ export const TID_PROMPT_SUGGESTION_SECTION = "prompt-suggestion-section";
 export const TID_PROMPT_SUGGESTION_OPTION = "prompt-suggestion-option";
 /** 聊天输入框前缀提示状态行（动态后缀为分组 id） */
 export const TID_PROMPT_SUGGESTION_STATUS = "prompt-suggestion-status";
+/** 提示词库插入成功后的 aria-live 播报区域 */
+export const TID_PROMPT_LIBRARY_ANNOUNCEMENT = "prompt-library-announcement";
 
 // TaskList
 /** 任务列表容器 */
@@ -340,6 +342,51 @@ export const TID_SETTINGS_PAGE = "settings-page";
 export const TID_SETTINGS_BACK_BUTTON = "settings-back-button";
 /** 设置页左侧分区入口（动态后缀为 section id） */
 export const TID_SETTINGS_SECTION_NAV = "settings-section-nav";
+/** 提示词库设置分区容器 */
+export const TID_SETTINGS_PROMPT_LIBRARY = "settings-prompt-library";
+/** 提示词库列表 */
+export const TID_SETTINGS_PROMPT_LIBRARY_LIST = "settings-prompt-library-list";
+/** 提示词库搜索框 */
+export const TID_SETTINGS_PROMPT_LIBRARY_SEARCH = "settings-prompt-library-search";
+/** 提示词库搜索清除按钮 */
+export const TID_SETTINGS_PROMPT_LIBRARY_SEARCH_CLEAR = "settings-prompt-library-search-clear";
+/** 提示词库排序选择器 */
+export const TID_SETTINGS_PROMPT_LIBRARY_SORT = "settings-prompt-library-sort";
+/** 提示词库新建按钮 */
+export const TID_SETTINGS_PROMPT_LIBRARY_NEW = "settings-prompt-library-new";
+/** 提示词库列表行（动态后缀为提示词 id） */
+export const TID_SETTINGS_PROMPT_LIBRARY_ROW = "settings-prompt-library-row";
+/** 提示词库列表行置顶按钮（动态后缀为提示词 id） */
+export const TID_SETTINGS_PROMPT_LIBRARY_PIN = "settings-prompt-library-pin";
+/** 提示词库编辑表单 */
+export const TID_SETTINGS_PROMPT_LIBRARY_FORM = "settings-prompt-library-form";
+/** 提示词库表单名称输入框 */
+export const TID_SETTINGS_PROMPT_LIBRARY_FORM_NAME = "settings-prompt-library-form-name";
+/** 提示词库表单内容输入框 */
+export const TID_SETTINGS_PROMPT_LIBRARY_FORM_CONTENT = "settings-prompt-library-form-content";
+/** 提示词库表单标签输入框 */
+export const TID_SETTINGS_PROMPT_LIBRARY_FORM_TAG_INPUT = "settings-prompt-library-form-tag-input";
+/** 提示词库表单别名输入框 */
+export const TID_SETTINGS_PROMPT_LIBRARY_FORM_ALIAS = "settings-prompt-library-form-alias";
+/** 提示词库表单保存按钮 */
+export const TID_SETTINGS_PROMPT_LIBRARY_SAVE = "settings-prompt-library-save";
+/** 提示词库表单取消按钮 */
+export const TID_SETTINGS_PROMPT_LIBRARY_CANCEL = "settings-prompt-library-cancel";
+/** 提示词库表单删除按钮 */
+export const TID_SETTINGS_PROMPT_LIBRARY_DELETE = "settings-prompt-library-delete";
+/** 提示词库空状态 */
+export const TID_SETTINGS_PROMPT_LIBRARY_EMPTY = "settings-prompt-library-empty";
+/** 提示词库错误状态 */
+export const TID_SETTINGS_PROMPT_LIBRARY_ERROR = "settings-prompt-library-error";
+/** 提示词库上传到 GitHub */
+export const TID_SETTINGS_PROMPT_LIBRARY_CONFIG_UPLOAD = "settings-prompt-library-config-upload";
+/** 提示词库从 GitHub 下载 */
+export const TID_SETTINGS_PROMPT_LIBRARY_CONFIG_DOWNLOAD =
+  "settings-prompt-library-config-download";
+/** 提示词库从本地备份还原 */
+export const TID_SETTINGS_PROMPT_LIBRARY_CONFIG_RESTORE = "settings-prompt-library-config-restore";
+/** 提示词库同步状态行 */
+export const TID_SETTINGS_PROMPT_LIBRARY_SYNC_STATUS = "settings-prompt-library-sync-status";
 /** 常规设置中的增强 Find/Grep 开关 */
 export const TID_SETTINGS_NATIVE_SEARCH_SWITCH = "settings-native-search-switch";
 /** 常规设置中的数据存储路径只读输入框 */

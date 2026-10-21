@@ -48,6 +48,7 @@ import {
 import { SlashCommandPlugin } from "./SlashCommandPlugin.js";
 import type { AppSlashCommand } from "./slashCommandHelpers.js";
 import { MentionPlugin } from "./mentions/MentionPlugin.js";
+import { PromptLibraryPlugin } from "./mentions/PromptLibraryPlugin.js";
 import { useChatViewActiveTaskProvider } from "@/v4/activeTaskProvider.js";
 import {
   $createPromptMentionNode,
@@ -1520,6 +1521,9 @@ export function LexicalChatInput({
             onWhiteboardMentionSelected={onWhiteboardMentionSelected}
           />
         ) : null}
+        {/* 提示词库是用户级纯文本资产，不依赖 workspace mention 目录；
+            与 slash/mention 面板共用 disabled 语义即可。 */}
+        <PromptLibraryPlugin container={triggerPanelContainer} disabled={disabled} />
       </LexicalComposer>
     </div>
   );

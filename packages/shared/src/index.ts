@@ -260,6 +260,8 @@ export * from "./settings-source.js";
 export * from "./settings-errors.js";
 export * from "./app-runtime-preferences.js";
 export * from "./command-types.js";
+export * from "./prompt-library.js";
+export * from "./validationPromptLibrary.js";
 export * from "./plugin-marketplaces.js";
 export * from "./lineChangeStat.js";
 export * from "./process-names.js";

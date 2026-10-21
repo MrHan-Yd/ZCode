@@ -9,6 +9,7 @@ import type { ConfigSyncMetadataStore } from "./metadata.js";
 import { buildPlan, resolveApplySet } from "./plan.js";
 import { createRemoteResolver } from "./remoteResolver.js";
 import { scanSecrets } from "./secretScan.js";
+import { ConfigSyncLocalInvalidError } from "./types.js";
 import type {
   ConfigSyncBackupList,
   ConfigSyncDownloadPlan,
@@ -412,10 +413,9 @@ export function createConfigSync<TPlan extends ConfigSyncDownloadPlan = ConfigSy
           const detail = describeRequestError(error);
           const restored = await adapter.backup.restore(backupDir);
           log.warn(undefined, "config apply failed", { detail, restored });
-          return fail(
-            "unknown",
-            restored ? `${detail}（已回滚）` : `${detail}（备份在 ${backupDir}）`,
-          );
+          // 适配器发现本地合并结果违反自身约束时，UI 需要区分「本地数据无法合并」与普通失败。
+          const code = error instanceof ConfigSyncLocalInvalidError ? "local_invalid" : "unknown";
+          return fail(code, restored ? `${detail}（已回滚）` : `${detail}（备份在 ${backupDir}）`);
         }
 
         log.info(undefined, "config applied", {

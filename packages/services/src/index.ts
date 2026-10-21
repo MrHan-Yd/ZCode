@@ -318,6 +318,19 @@ export { countPlanEntries } from "./config-sync/plan.js";
 // Commands service — ICommandsService is both a type (interface) and value (descriptor)
 export { ICommandsService } from "./commands/commands.js";
 
+// Prompt library service — 根入口只导出 descriptor/类型；工厂从 node 入口导出。
+export { IPromptLibraryService } from "./prompt-library/promptLibrary.js";
+export type {
+  PromptLibraryFailureReason,
+  PromptLibraryWarning,
+  PromptLibraryListResult,
+  PromptLibraryGetResult,
+  PromptLibraryMutationResult,
+  PromptLibraryRemoveResult,
+  PromptLibraryResetResult,
+  PromptTemplateInput,
+} from "./prompt-library/promptLibrary.js";
+
 export { ISettingsSyncService } from "./settings-sync/settingsSync.js";
 
 export { IFeedbackService } from "./feedback/feedback.js";

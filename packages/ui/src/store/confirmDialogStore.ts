@@ -10,6 +10,8 @@ export interface ConfirmDialogRequest {
   confirmLabel?: string;
   cancelLabel?: string;
   confirmVariant?: "default" | "destructive";
+  /** 破坏性操作默认把焦点放在「取消」，避免 Enter 误确认。 */
+  defaultFocus?: "confirm" | "cancel";
   showCloseButton?: boolean;
   showKeyboardHints?: boolean;
   compact?: boolean;

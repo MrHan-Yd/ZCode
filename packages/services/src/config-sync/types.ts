@@ -42,6 +42,19 @@ export interface ConfigSyncError {
 export type ConfigSyncResult<T> = T | { readonly status: "error"; readonly error: ConfigSyncError };
 
 /**
+ * 功能适配器在写盘前发现「本地合并结果不合法」时抛出的类型化错误。
+ *
+ * 通用编排对所有 apply 异常默认映射为 `unknown`；只有这个错误会映射为 `local_invalid`，
+ * 让 UI 能区分「远端内容/网络问题」与「本地数据约束导致无法合并」。抛错前不应写盘。
+ */
+export class ConfigSyncLocalInvalidError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ConfigSyncLocalInvalidError";
+  }
+}
+
+/**
  * GitHub gist `files` 字段的线上形状，即 `POST /gists` 与 `PATCH /gists/{id}` 的请求体内容。
  *
  * 每个文件的值必须是带 `content` 字符串的对象（GitHub 的 schema 只允许这一个键）；`null` 表示删除该

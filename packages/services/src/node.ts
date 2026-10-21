@@ -217,6 +217,8 @@ export { createPluginsService } from "./plugins/pluginsService.js";
 export { createPluginManagementService } from "./plugins/pluginManagementService.js";
 export { createSubagentsService } from "./subagents/subagentsService.js";
 export { createCommandsService } from "./commands/commandsService.js";
+export { createPromptLibraryService } from "./prompt-library/promptLibraryService.js";
+export type { CreatePromptLibraryServiceOptions } from "./prompt-library/promptLibraryService.js";
 export { createHooksService } from "./hooks/hooksService.js";
 export { createMemoryService } from "./memory/memoryService.js";
 export { createSettingsSyncService } from "./settings-sync/settingsSyncService.js";
@@ -331,6 +333,7 @@ import { IPluginsService } from "./plugins/plugins.js";
 import { IPluginManagementService } from "./plugins/pluginManagement.js";
 import { ISubagentsService } from "./subagents/subagents.js";
 import { ICommandsService } from "./commands/commands.js";
+import { IPromptLibraryService } from "./prompt-library/promptLibrary.js";
 import { IHooksService } from "./hooks/hooks.js";
 import { IMemoryService } from "./memory/memory.js";
 import { IModelSmartConfigService } from "./model-provider/modelSmartConfig.js";
@@ -422,6 +425,7 @@ import { createPluginsService } from "./plugins/pluginsService.js";
 import { createPluginManagementService } from "./plugins/pluginManagementService.js";
 import { createSubagentsService } from "./subagents/subagentsService.js";
 import { createCommandsService } from "./commands/commandsService.js";
+import { createPromptLibraryService } from "./prompt-library/promptLibraryService.js";
 import { createHooksService } from "./hooks/hooksService.js";
 import { createMemoryService } from "./memory/memoryService.js";
 import { createModelSmartConfigService } from "./model-provider/modelSmartConfigService.js";
@@ -2630,6 +2634,15 @@ export function createLocalServices(options: {
     .register(IPluginManagementService, createPluginManagementService({ zcodeAgentService }))
     .register(ISubagentsService, subagentsService)
     .register(ICommandsService, createCommandsService({ isDesktopRuntime: true }))
+    // 提示词库是用户级全局数据，始终读写本机 Host 的 appConfigDir。
+    // 同步复用 GitHub 凭据与 Host 的代理感知传输，避免 Node 全局 fetch 绕过代理配置。
+    .register(
+      IPromptLibraryService,
+      createPromptLibraryService({
+        credentialService,
+        fetchImpl: hostApiNetworkTransport.fetch,
+      }),
+    )
     .register(
       IHooksService,
       createHooksService({

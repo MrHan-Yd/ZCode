@@ -1,4 +1,4 @@
-export type PromptInputTrigger = "/" | "@" | "$" | "#";
+export type PromptInputTrigger = "/" | "@" | "$" | "#" | ";";
 
 export interface ActivePromptInputTrigger {
   trigger: PromptInputTrigger;
@@ -28,8 +28,11 @@ export interface PromptInputSuggestionItem {
 
 type PromptInputReplacementCandidates = string | readonly string[];
 
-const ACTIVE_TRIGGER_RE = /(^|\s)([/@$#¥￥])([^\s/@$#¥￥]*)$/;
-// 中文输入通常不在句中插入空格；仅放宽 @，避免改变 slash、skill、session 面板的触发边界。
+// `;` 为提示词库；`；` 为中文输入法全角别名。两者都必须位于行首或空白之后，
+// 避免中文正文里的分号（`你好；世界`）和紧贴前一个 token 的代码分号（`foo;bar`）误触面板。
+const ACTIVE_TRIGGER_RE = /(^|\s)([/@$#¥￥;；])([^\s/@$#¥￥;；]*)$/;
+// 保持 @ 的 query 字符集不变：Unix 文件名可以包含 `;`，
+// 不能让 `@foo;bar` 因为新触发器而无法继续作为文件 mention 查询。
 const ACTIVE_MENTION_TRIGGER_RE =
   /(^|[\s\p{Script=Han}\u3000-\u303f\uff00-\uffef])(@)([^\s/@$#¥￥]*)$/u;
 // 放宽中文紧邻 @ 后，`联系邮箱@example.com` / `用户@例子.公司` 会被当成 mention。
@@ -37,13 +40,19 @@ const ACTIVE_MENTION_TRIGGER_RE =
 // 空格后的 `@foo.bar` 不是邮箱形态，保持触发。
 const DOMAIN_LIKE_QUERY_RE = /\S\.\S/;
 const HAN_PREFIX_RE = /\p{Script=Han}/u;
-const ACTIVE_TRIGGER_TAIL_RE = /^[^\s/@$#¥￥]*/;
+const ACTIVE_TRIGGER_TAIL_RE = /^[^\s/@$#¥￥;；]*/;
 
 function normalizePromptInputTriggerAlias(trigger: string): PromptInputTrigger {
   if (trigger === "¥" || trigger === "￥") {
     // 部分键盘/输入法输入 skill trigger 时会产生 `¥` 或全角 `￥`。
     // 这里只把触发语义归一为 `$`，让它唤起 skill 面板；不在输入层改写用户实际输入字符。
     return "$";
+  }
+
+  if (trigger === "；") {
+    // 中文输入法在分号键上输出全角 `；`。只归一触发语义，
+    // 面板关闭后文本仍保留用户实际输入的字符。
+    return ";";
   }
 
   return trigger as PromptInputTrigger;
@@ -152,7 +161,7 @@ export function getActivePromptInputTokenTailLength(
   let matchedTailLength = 0;
 
   for (const rawCandidate of candidates) {
-    const candidate = rawCandidate.trim().replace(/^[/@$#¥￥]+/, "");
+    const candidate = rawCandidate.trim().replace(/^[/@$#¥￥;；]+/, "");
     if (!candidate) {
       continue;
     }
