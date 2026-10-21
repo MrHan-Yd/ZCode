@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.18.8](https://github.com/MrHan-Yd/ZCode/compare/v3.18.7...v3.18.8) (2026-10-21)
+
+### Features
+
+* **prompt-library:** 新增用户级提示词库与分号触发补全 ([1c638ac](https://github.com/MrHan-Yd/ZCode/commit/1c638ac1dddecbf927637c4b37ed3c3e98921da4))
+  * 接入提示词库服务通道与共享类型，设置页支持管理提示词
+  * 输入框支持 `;` 触发补全，完善 IME 合成、提及与斜杠面板交互
+  * config-sync 新增 local_invalid 错误码，区分本地合并失败
+
+
+### Documentation
+
+* 补充 README 的 v3.18.8 更新说明 ([f434931](https://github.com/MrHan-Yd/ZCode/commit/f434931dba4f13dd7432fe9ca7e49f2abf4d2cef))
+
 ## [3.18.7](https://github.com/MrHan-Yd/ZCode/compare/v3.18.6...v3.18.7) (2026-10-21)
 
 ### Features
