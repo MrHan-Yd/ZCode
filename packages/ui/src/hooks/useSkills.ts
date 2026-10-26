@@ -88,7 +88,9 @@ export function useSkills(options: UseSkillsOptions): ConversationSkillCatalogSt
       workspacePath: options.workspacePath,
       ...(options.workspaceIdentity ? { workspaceIdentity: options.workspaceIdentity } : {}),
       ...(remoteSessionId ? { remoteSessionId } : {}),
-      ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+      // 面板打开时要求 runtime 重新发现目录；否则新增 Skill 在已开始的会话里永远不可见，
+      // 只能重启应用。draft 无 sessionId，workspace 分支每次调用本来就会现扫磁盘。
+      ...(options.sessionId ? { sessionId: options.sessionId, refresh: true } : {}),
     };
     services.zcodeAgentService
       .getSkillReferenceCatalog(params)

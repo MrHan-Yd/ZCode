@@ -763,6 +763,27 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
             }))
           : undefined,
       mcpPort,
+      // `/` 面板刷新 Subagent 目录时复用启动期同一套 loader：用户/项目 Markdown 与插件 profile
+      // 一起重新发现，避免 UI 列表和 Agent 工具描述各用一份快照。
+      subagentProfilePort: {
+        loadProfiles: async () => {
+          const nextZCodeProfiles = await loadZCodeAgentProfiles({
+            logger,
+            storageRoot,
+            workingDirectory,
+          });
+          const nextPluginProfiles = loadPluginAgentProfiles({
+            logger,
+            plugins: pluginOutcome.plugins,
+            reservedProfileNames: nextZCodeProfiles.profiles.map((profile) => profile.name),
+            modelSelectionOverrides: nextZCodeProfiles.pluginAgentModelSelectionOverrides,
+          }).profiles;
+          return {
+            profiles: [...nextZCodeProfiles.profiles, ...nextPluginProfiles],
+            builtInModelSelectionOverrides: nextZCodeProfiles.builtInModelSelectionOverrides,
+          };
+        },
+      },
       eventSink: options.eventSink,
       modelFactory,
       modelIoDir,
@@ -1276,6 +1297,11 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
         // 新 runtime 的快照，不能绕开 resume 后用旧工作目录独立扫描。
         await prepareUserExecutionBoundary({ traceContext });
         return await getRuntime().getSkillCatalog(traceContext);
+      },
+      refreshAgentCatalogs: async () => {
+        // 面板打开时重新发现 Skill / Subagent；不影响 MCP（MCP 仍是 runtime 启动期配置）。
+        await prepareUserExecutionBoundary({ traceContext });
+        return await getRuntime().refreshAgentCatalogs(traceContext);
       },
       resume: resumeFromStore,
       ...inputFacade,

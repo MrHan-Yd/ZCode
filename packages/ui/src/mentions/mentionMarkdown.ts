@@ -1,3 +1,5 @@
+import { MCP_REFERENCE_SCHEME, isMcpReferenceName } from "@zcode/shared";
+
 const LINK_MENTION_MARKDOWN_PATTERN =
   /\[((?:\\.|[^\\\]])*)\]\((?:<((?:\\.|[^>])*?)>|((?:\\.|[^)])*))\)/g;
 const INLINE_MENTION_TOKEN_PATTERN =
@@ -106,7 +108,8 @@ type MentionTextPart =
   | { type: "command"; label: string }
   | { type: "subagent"; label: string }
   | { type: "session"; label: string }
-  | { type: "plugin"; label: string; pluginId?: string };
+  | { type: "plugin"; label: string; pluginId?: string }
+  | { type: "mcp"; label: string; serverName?: string };
 
 const PLUGIN_STABLE_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*@[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -206,6 +209,16 @@ export function parseMentionMarkdown(content: string): MentionTextPart[] {
         type: "plugin",
         label: label.startsWith("@") ? label.slice(1) : label,
         ...(pluginId ? { pluginId } : {}),
+      });
+    } else if (destination.startsWith(MCP_REFERENCE_SCHEME)) {
+      // Bug 原因：发送后的气泡复用本解析器，但这里缺少 mcp:// 分支，
+      // MCP 引用会掉进 file 分支，被渲染成蓝色文件 chip，和输入框里的 server chip 不一致。
+      // 身份与 plugin:// 同契约，只取 destination；非法名字保留 MCP 图标的 display-only chip。
+      const serverName = destination.slice(MCP_REFERENCE_SCHEME.length);
+      parts.push({
+        type: "mcp",
+        label: label.startsWith("@") ? label.slice(1) : label,
+        ...(isMcpReferenceName(serverName) ? { serverName } : {}),
       });
     } else if (label.startsWith("$")) {
       parts.push({ type: "skill", label: label.slice(1) });

@@ -106,6 +106,8 @@ export interface ZCodeAgentPluginReferenceCatalogParams extends ZCodeAgentWorksp
 // resident Session runtime 快照；不参与 Settings 管理目录。
 export interface ZCodeAgentSkillReferenceCatalogParams extends ZCodeAgentWorkspaceTarget {
   sessionId?: string;
+  /** 面板打开时要求 runtime 重新发现 Skill/Subagent；只在 resident Session 上有效。 */
+  refresh?: boolean;
 }
 export interface ZCodeAgentResolveSuggestedPluginReferenceParams extends ZCodeAgentWorkspaceTarget {
   stableId: string;

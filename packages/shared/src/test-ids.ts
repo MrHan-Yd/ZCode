@@ -592,6 +592,8 @@ export const TID_WORKSPACE_TITLE = "workspace-title";
 export const TID_WORKSPACE_PATH = "workspace-path";
 /** 工作区 Header 更多菜单按钮 */
 export const TID_WORKSPACE_MORE_BUTTON = "workspace-more-button";
+/** 工作区 Header 更多菜单里的「重载会话」项 */
+export const TID_WORKSPACE_RELOAD_SESSION = "workspace-reload-session";
 /** 右上角问号帮助菜单触发按钮 */
 export const TID_WORKSPACE_HELP_MENU_TRIGGER = "workspace-help-menu-trigger";
 /** 问号帮助菜单里的「资源管理器」项（仅桌面端） */

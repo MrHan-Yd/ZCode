@@ -79,7 +79,8 @@ export async function getSkillCatalog(
 ): Promise<SkillLoadOutcome> {
   // Composer 曾独立扫描磁盘，所以运行中的 Session 会看到 AgentRuntime
   // 尚未加载的新 Skill。先经过 runtime 唯一的 context 初始化门，再返回防御性副本，
-  // 让 UI 与本 Session 实际可用的 Skill 保持同一快照；新 runtime 会自然重新发现。
+  // 让 UI 与本 Session 实际可用的 Skill 保持同一快照。面板打开时由
+  // refreshAgentCatalogs 显式重新发现；纯读取调用仍保持冻结，避免泄漏未生效的技能。
   await this.ensureContextInitialized(traceContext);
   const outcome = this.skillLoadOutcome ?? {
     skills: [],

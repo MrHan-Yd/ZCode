@@ -2472,6 +2472,8 @@ const zhCN: Record<string, string> = {
   "settings.syncConfig.githubExpiresIn": "设备码剩余有效时间 {seconds} 秒",
   "settings.mcpTitle": "MCP 服务器",
   "settings.mcp.description": "管理 ZCode Agent 使用的 MCP 服务器配置。",
+  "settings.mcp.runtimeApplyNote":
+    "MCP 是会话启动期配置：新增、开关或删除服务器会重建未发送的草稿；已开始的对话需要从标题栏 ··· 菜单选择“重载会话”（或重启应用）才会使用新配置。",
   "settings.mcp.create.open": "新建 MCP 服务器",
   "settings.mcp.import.open": "从外部 Agent 导入 MCP 服务器",
   "settings.mcp.import.action": "导入",

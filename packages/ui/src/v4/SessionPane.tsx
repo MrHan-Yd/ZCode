@@ -4405,7 +4405,8 @@ export function SessionPane({
       snapshot={snapshot}
       sessionId={sessionId}
       // 草稿 taskId 仍为 null，但 prewarm 已经拥有独立 AgentRuntime。
-      // 只给 Skill catalog 下发 effective id，避免 UI 扫到 prewarm runtime 尚未加载的新 Skill。
+      // 只给目录请求下发 effective id：面板打开时由该 runtime 带 refresh 重新发现，
+      // 不能让 UI 绕过 runtime 独立扫描出尚未生效的能力。
       skillCatalogSessionId={effectiveSessionId}
       draftMode={isDraft}
       draftConfig={draftConfig}

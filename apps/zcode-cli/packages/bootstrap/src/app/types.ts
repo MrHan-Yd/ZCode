@@ -391,8 +391,10 @@ export interface ZCodeApp {
    * `plugins/referenceCatalog` 带 sessionId 时以此为 session authority。
    */
   getPluginReferenceCatalog(): PluginReferenceCatalog;
-  /** 当前 Session 的 AgentRuntime Skill 发现快照；冷恢复重建 runtime 后重新发现。 */
+  /** 当前 Session 的 AgentRuntime Skill 发现快照；冷恢复重建 runtime 或面板刷新后更新。 */
   getSkillCatalog(): Promise<SkillLoadOutcome>;
+  /** Composer 面板打开时刷新 Skill / Subagent 目录；只在集合变化时更新 runtime 快照。 */
+  refreshAgentCatalogs(): Promise<{ skillsChanged: boolean; subagentsChanged: boolean }>;
   listMcpServers(): Promise<Record<string, McpServerStatus>>;
   connectMcpServer(name: string): Promise<McpServerStatus>;
   readBackgroundBashOutput(workId: string, sessionId?: string): Promise<BackgroundBashOutputResult>;

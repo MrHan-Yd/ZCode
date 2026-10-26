@@ -2637,6 +2637,8 @@ const enUS: Record<string, string> = {
   "settings.syncConfig.githubExpiresIn": "Device code valid for {seconds}s",
   "settings.mcpTitle": "MCP Servers",
   "settings.mcp.description": "Manage MCP server configurations used by ZCode Agent.",
+  "settings.mcp.runtimeApplyNote":
+    "MCP is a session-startup setting: adding, toggling, or deleting a server rebuilds unsent drafts; conversations already in progress pick up the change after choosing Reload session from the title bar ··· menu, or restarting the app.",
   "settings.mcp.create.open": "Add MCP server",
   "settings.mcp.import.open": "Import MCP servers from external agents",
   "settings.mcp.import.action": "Import",

@@ -173,6 +173,8 @@ export class AgentRuntime {
   private mcpInitialized = false;
   private mcpToolsRegistered = false;
   private subagentPort?: SubagentPort;
+  private subagentProfilePort?: AgentRuntimeDeps["subagentProfilePort"];
+  private refreshBuiltInTools?: () => void;
   private dynamicWorkflowRunPort?: DynamicWorkflowRunPort;
   private modelCatalogPort?: ModelCatalogPort;
   private runtimeTaskRegistry: RuntimeTaskRegistry;
@@ -289,6 +291,7 @@ export class AgentRuntime {
     this.imageProcessorPort = deps.imageProcessorPort;
     this.pdfDocumentPort = deps.pdfDocumentPort;
     this.subagentPort = deps.subagentPort ?? runtime.createDefaultSubagentPort(deps);
+    this.subagentProfilePort = deps.subagentProfilePort;
     this.dynamicWorkflowRunPort = deps.dynamicWorkflowRunPort;
     // GUI「配置」解析子代理模型用的目录（与工具上下文拿的是同一个端口）。
     this.modelCatalogPort = deps.modelCatalogPort;
@@ -296,6 +299,7 @@ export class AgentRuntime {
     this.workspaceRoot = this.workingDirectory;
     const tooling = initializeRuntimeTooling(runtime, deps, sessionId);
     this.hookRunner = tooling.hookRunner;
+    this.refreshBuiltInTools = tooling.refreshBuiltInTools;
     this.workspaceHookAdmission = deps.workspaceHookAdmission;
     this.executor = tooling.executor;
 
@@ -517,8 +521,15 @@ export interface AgentRuntime {
    */
   createChildClientPorts(context: ChildClientPortsContext): ClientFacingPorts;
   getContextBuilder(): ContextBuilder;
-  /** Composer 使用的 Session Skill 快照；同一 runtime 冻结，runtime 重建后重新发现。 */
+  /** Composer 使用的 Session Skill 快照；面板打开可经 refreshAgentCatalogs 重新发现。 */
   getSkillCatalog(traceContext: TraceContext): Promise<SkillLoadOutcome>;
+  /**
+   * 面板打开时重新发现 Skill / Subagent 目录；只有集合变化才更新快照。
+   * 下一次 model step 的 context 重建与工具缓存失效负责把变化带到模型。
+   */
+  refreshAgentCatalogs(
+    traceContext: TraceContext,
+  ): Promise<{ skillsChanged: boolean; subagentsChanged: boolean }>;
   resumeFromStore(options?: ResumeSessionOptions): Promise<ResumeSessionResult>;
   recordTargetChanged(input: TargetChangedPayload & { traceContext: TraceContext }): Promise<void>;
   recordUserInputAutoResolutionUpdate(

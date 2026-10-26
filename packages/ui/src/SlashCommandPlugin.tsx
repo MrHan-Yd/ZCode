@@ -81,6 +81,7 @@ export function SlashCommandPlugin({
     agents,
     loading: subagentsLoading,
     error: subagentsError,
+    refresh: refreshSubagents,
   } = useSubagents(workspacePath, provider, workspaceIdentity);
   const {
     skills,
@@ -169,6 +170,15 @@ export function SlashCommandPlugin({
     [activeTrigger],
   );
   const isOpen = !disabled && activeTrigger !== null;
+
+  useEffect(() => {
+    if (activeTrigger?.trigger !== "/") {
+      return;
+    }
+    // 目录缓存按 workspace 只初始化一次；设置页新增或用户手放 Markdown 后，
+    // 已打开的会话必须重新 list 才能看到新 Subagent。
+    void refreshSubagents();
+  }, [activeTrigger?.trigger, refreshSubagents]);
 
   useEffect(() => {
     activeSignatureRef.current = activeSignature;

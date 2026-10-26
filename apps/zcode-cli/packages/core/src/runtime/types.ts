@@ -23,6 +23,7 @@ import type {
 import type { ZCodeProviderAccountAccess } from "@zcode/shared";
 import type { EffectiveModelSelectionResult } from "@zcode/shared/model-selection";
 import type { RuntimeMessageEntry } from "../agent/message-history.js";
+import type { SubagentProfilePort } from "../subagent/profile-port.js";
 import type {
   CompactPhase,
   CompactReason,
@@ -337,6 +338,8 @@ export interface AgentRuntimeDeps {
   skillPort?: SkillPort;
   mcpPort?: McpPort;
   subagentPort?: SubagentPort;
+  /** 运行期重新发现 Subagent profile 的端口；缺席时 `/` 面板刷新只更新 UI 目录，不改 runtime 快照。 */
+  subagentProfilePort?: SubagentProfilePort;
   coordinatorResponsePort?: CoordinatorResponsePort;
   /** 工作流 actor 提交终态结果的端口；存在即作为 submit_result 工具的注册门。 */
   workflowSubmitPort?: WorkflowSubmitPort;

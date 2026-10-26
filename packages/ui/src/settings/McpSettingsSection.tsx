@@ -40,6 +40,7 @@ import {
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { logger } from "@/logger.js";
+import { invalidateDeferredDraftSessionForRuntimeChange } from "@/lib/zcodeDraftSkillInvalidation.js";
 import { McpServerForm } from "@/settings/McpServerForm.js";
 import { McpServerList, McpStatusDot } from "@/settings/McpServerList.js";
 import {
@@ -686,9 +687,8 @@ export function McpSettingsSection({
   const handleOpenRestore = useCallback(async () => {
     setConfigSyncPhase("previewing");
     try {
-      const backups = await baseServices.mcpSyncService.listConfigSyncBackups(
-        configSyncScopeParams,
-      );
+      const backups =
+        await baseServices.mcpSyncService.listConfigSyncBackups(configSyncScopeParams);
       if (backups.backups.length === 0) {
         toast(intl.formatMessage({ id: "settings.configSync.restoreEmpty" }));
         return;
@@ -700,6 +700,20 @@ export function McpSettingsSection({
       setConfigSyncPhase("idle");
     }
   }, [baseServices.mcpSyncService, configSyncScopeParams, intl]);
+
+  // MCP 只改配置文件，不会通知已创建的 session runtime；所有写路径统一失效未发送的 draft。
+  const invalidateDraftForMcpChange = useCallback(
+    async (reason: string) => {
+      await invalidateDeferredDraftSessionForRuntimeChange({
+        zcodeSessionService: services.zcodeSessionService,
+        workspacePath: workspacePath ?? undefined,
+        workspaceIdentity: workspaceIdentity ?? undefined,
+        reason,
+        logScope: "mcp",
+      });
+    },
+    [services.zcodeSessionService, workspaceIdentity, workspacePath],
+  );
 
   const handleRestoreConfig = useCallback(
     async (params: { backupDir: string }) => {
@@ -724,21 +738,27 @@ export function McpSettingsSection({
           loadMcpFromUserDirectory(baseServices.mcpSyncService, workspaceIdentity),
           loadConfigSyncStatus(),
         ]);
+        await invalidateDraftForMcpChange("settings-mcp-restore");
       } catch (error) {
         toast(error instanceof Error ? error.message : String(error));
       } finally {
         setConfigSyncPhase("idle");
       }
     },
-    [baseServices.mcpSyncService, configSyncScopeParams, intl, loadConfigSyncStatus, workspaceIdentity],
+    [
+      baseServices.mcpSyncService,
+      configSyncScopeParams,
+      intl,
+      invalidateDraftForMcpChange,
+      loadConfigSyncStatus,
+      workspaceIdentity,
+    ],
   );
 
   const handlePreviewConfig = useCallback(async () => {
     setConfigSyncPhase("previewing");
     try {
-      const result = await baseServices.mcpSyncService.previewConfigFromGist(
-        configSyncScopeParams,
-      );
+      const result = await baseServices.mcpSyncService.previewConfigFromGist(configSyncScopeParams);
       if (result.status === "error") {
         if (result.error.code !== "busy") toast(describeConfigSyncError(intl, result.error));
         return;
@@ -784,6 +804,7 @@ export function McpSettingsSection({
           loadMcpFromUserDirectory(baseServices.mcpSyncService, workspaceIdentity),
           loadConfigSyncStatus(),
         ]);
+        await invalidateDraftForMcpChange("settings-mcp-sync-download");
       } catch (error) {
         toast(error instanceof Error ? error.message : String(error));
       } finally {
@@ -795,6 +816,7 @@ export function McpSettingsSection({
       configSyncScopeParams,
       downloadPlan,
       intl,
+      invalidateDraftForMcpChange,
       loadConfigSyncStatus,
       workspaceIdentity,
     ],
@@ -1437,6 +1459,15 @@ export function McpSettingsSection({
 
   async function handleToggle(id: string, enabled: boolean) {
     await toggleServer(id, enabled);
+    // MCP 是 runtime 启动期配置；已预热的 draft session 仍持有旧 server 快照。
+    // 开关落盘后同步失效 draft runtime，下一次首发才会重新读取 MCP 配置。
+    await invalidateDeferredDraftSessionForRuntimeChange({
+      zcodeSessionService: services.zcodeSessionService,
+      workspacePath: activeWorkspacePath,
+      workspaceIdentity: activeWorkspaceIdentity,
+      reason: "settings-mcp-toggle",
+      logScope: "mcp",
+    });
 
     if (!enabled) {
       // 禁用后的 unknown 只是本地展示态；toggleServer 已经作废旧请求，
@@ -1487,6 +1518,15 @@ export function McpSettingsSection({
     } else {
       await addScopedMcpServer(DEFAULT_MCP_SOURCE, form.name, config, projectPath);
     }
+    // MCP 引用集合只在 session runtime 创建时读取；draft 预热会话早于本次保存建立时，
+    // 首发会继续使用旧集合。保存落盘后失效未发送的 draft，避免必须重启才能识别新 MCP。
+    await invalidateDeferredDraftSessionForRuntimeChange({
+      zcodeSessionService: services.zcodeSessionService,
+      workspacePath: activeWorkspacePath,
+      workspaceIdentity: activeWorkspaceIdentity,
+      reason: "settings-mcp-save",
+      logScope: "mcp",
+    });
 
     setShowForm(false);
     setEditingServer(null);
@@ -1510,6 +1550,14 @@ export function McpSettingsSection({
     }
 
     await deleteScopedMcpServer(server.source, server.name, server.projectPath);
+    // 删除同样改变 runtime 可见的 server 集合；未发送的 draft 不能继续持有旧连接。
+    await invalidateDeferredDraftSessionForRuntimeChange({
+      zcodeSessionService: services.zcodeSessionService,
+      workspacePath: activeWorkspacePath,
+      workspaceIdentity: activeWorkspaceIdentity,
+      reason: "settings-mcp-delete",
+      logScope: "mcp",
+    });
     setEditingServer(null);
     setShowForm(false);
     setEditorMode("form");
@@ -1665,6 +1713,15 @@ export function McpSettingsSection({
         </div>
       ) : null}
 
+      {activeWorkspacePath ? (
+        <p
+          className="px-1 text-ui-sm leading-normal text-foreground-subtle"
+          data-mcp-runtime-apply-note="true"
+        >
+          {intl.formatMessage({ id: "settings.mcp.runtimeApplyNote" })}
+        </p>
+      ) : null}
+
       {!mcpProjectionReady ? (
         <PluginLoadingState label={intl.formatMessage({ id: "common.loading" })} />
       ) : hasEmptySearchResult ? (
@@ -1808,6 +1865,7 @@ export function McpSettingsSection({
         onOpenChange={setImportDialogOpen}
         onImported={async () => {
           await loadMcpFromUserDirectory(services.mcpSyncService, activeWorkspaceIdentity);
+          await invalidateDraftForMcpChange("settings-mcp-import");
         }}
       />
       <RemoteSyncDialogs
@@ -1832,6 +1890,7 @@ export function McpSettingsSection({
           if (loaded) {
             await requestMcpServerStatusList();
           }
+          await invalidateDraftForMcpChange("settings-mcp-remote-sync");
         }}
       />
       {/* 下载必须先预览再确认：这里按需挂载，勾选状态随关闭一起丢弃。 */}

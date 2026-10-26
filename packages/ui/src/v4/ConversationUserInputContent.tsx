@@ -5,6 +5,7 @@ import {
   GoalIcon,
   MessagesSquare,
   ScrollText,
+  Server,
   SquareSlash,
   WandSparkles,
 } from "lucide-react";
@@ -119,6 +120,20 @@ function V4UserInputMention({
     return (
       <span className={mentionClassName("plugins")} data-plugin-mention-id={part.pluginId}>
         <PluginUserMessageIcon src={pluginIcon} />
+        {part.label}
+      </span>
+    );
+  }
+
+  if (part.type === "mcp") {
+    // 输入框的 MCP mention 用 lucide `server` 图标与 mcp 配色；气泡必须保持同一语义，
+    // 否则发送后会落进 file 分支显示成蓝色文件 chip。
+    return (
+      <span
+        className={mentionClassName("mcp")}
+        {...(part.serverName ? { "data-mcp-mention-name": part.serverName } : {})}
+      >
+        <Server aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.5} />
         {part.label}
       </span>
     );

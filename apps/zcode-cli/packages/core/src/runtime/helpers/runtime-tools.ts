@@ -35,19 +35,28 @@ export function initializeRuntimeTooling(
   runtime: AgentRuntimeInternal,
   deps: AgentRuntimeDeps,
   sessionId: SessionId,
-): { executor: ToolExecutor; hookRunner?: HookRunner } {
-  registerRuntimeBuiltInTools(runtime, deps);
+): { executor: ToolExecutor; hookRunner?: HookRunner; refreshBuiltInTools: () => void } {
+  // 同一个 deps 闭包既做首次装配，也做 profile 变化后的重注册：
+  // Agent/Task 的 provider description 在注册时烘焙，不能只改 config 数组。
+  const refreshBuiltInTools = () => registerRuntimeBuiltInTools(runtime, deps, { silent: true });
+  refreshBuiltInTools();
   const hookRunner = createRuntimeHookRunner(runtime, deps, sessionId);
   return {
     executor: deps.toolExecutor ?? createRuntimeToolExecutor(runtime, deps, hookRunner),
     hookRunner,
+    refreshBuiltInTools,
   };
 }
 
-function registerRuntimeBuiltInTools(runtime: AgentRuntimeInternal, deps: AgentRuntimeDeps): void {
+function registerRuntimeBuiltInTools(
+  runtime: AgentRuntimeInternal,
+  deps: AgentRuntimeDeps,
+  options: { silent?: boolean } = {},
+): void {
   const nodeReplEnabled = runtime.config.runtimeFeatures?.nodeRepl === true;
   const browserUseEnabled = resolveRuntimeBrowserUseEnabled(runtime, deps);
   registerBuiltInTools(runtime.registry, {
+    silentDuplicateWarnings: options.silent === true,
     bashTimeoutPolicy: runtime.config.bashTimeoutPolicy,
     includeSkill: Boolean(runtime.skillPort),
     includeAgent: Boolean(runtime.subagentPort),

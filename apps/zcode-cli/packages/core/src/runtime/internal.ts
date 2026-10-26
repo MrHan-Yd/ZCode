@@ -49,6 +49,7 @@ import type {
   RuntimeTurnFileChangeMap,
 } from "./types.js";
 import type { RuntimeCommandQueue } from "./command-queue.js";
+import type { SubagentProfilePort } from "../subagent/profile-port.js";
 import type { RuntimeTaskRegistry } from "../runtime-task/registry.js";
 import type { AgentRuntimeCoreMethods } from "./internal-methods.js";
 import type { AgentRuntimeTurnMethods } from "./internal-turn-methods.js";
@@ -101,6 +102,9 @@ export interface AgentRuntimeInternal
   mcpInitialized: boolean;
   mcpToolsRegistered: boolean;
   subagentPort?: SubagentPort;
+  subagentProfilePort?: SubagentProfilePort;
+  /** 重新注册内置工具（Agent/Task 描述随 profile 变化）；由构造期绑定 deps 的闭包提供。 */
+  refreshBuiltInTools?: () => void;
   dynamicWorkflowRunPort?: DynamicWorkflowRunPort;
   modelCatalogPort?: ModelCatalogPort;
   runtimeTaskRegistry: RuntimeTaskRegistry;

@@ -82,7 +82,7 @@ interface McpStoreState {
   saveConfig: () => void;
   addMcpServer: (name: string, config: McpServerConfig) => void;
   updateMcpServer: (name: string, config: McpServerConfig) => void;
-  deleteMcpServer: (name: string) => void;
+  deleteMcpServer: (name: string) => Promise<void>;
   addScopedMcpServer: (
     source: McpSource,
     name: string,
@@ -95,10 +95,10 @@ interface McpStoreState {
     config: McpServerConfig,
     projectPath?: string,
   ) => Promise<void>;
-  deleteScopedMcpServer: (source: McpSource, name: string, projectPath?: string) => void;
+  deleteScopedMcpServer: (source: McpSource, name: string, projectPath?: string) => Promise<void>;
   addZCodeAgentMcpServer: (name: string, config: McpServerConfig, projectPath?: string) => void;
   updateZCodeAgentMcpServer: (name: string, config: McpServerConfig, projectPath?: string) => void;
-  deleteZCodeAgentMcpServer: (name: string, projectPath?: string) => void;
+  deleteZCodeAgentMcpServer: (name: string, projectPath?: string) => Promise<void>;
   toggleServer: (id: string, enabled: boolean) => Promise<void>;
   updateServerStatus: (
     id: string,
@@ -402,10 +402,12 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
       });
       updateNativeServer(targetSource, name, config, projectPath);
     },
-    deleteScopedMcpServer: (source, name, projectPath) => {
+    deleteScopedMcpServer: async (source, name, projectPath) => {
       invalidateStatusListRequests();
       const targetSource: CliMcpSource = source === "mcp" ? "zcodeagentmcp" : source;
-      persistScopedChange(targetSource, {
+      // 删除也必须先落盘再改本地列表：调用方随后会失效 draft runtime，
+      // 新预热会话如果在写入完成前读配置，会继续看到已删除的 server。
+      await persistScopedChange(targetSource, {
         action: "delete",
         source: targetSource,
         name,

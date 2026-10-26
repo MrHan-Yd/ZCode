@@ -253,6 +253,9 @@ export interface AgentRuntimeCoreMethods {
   getContextBuilder(): ContextBuilder;
   ensureContextInitialized(traceContext: TraceContext, model?: Model): Promise<void>;
   getSkillCatalog(traceContext: TraceContext): Promise<SkillLoadOutcome>;
+  refreshAgentCatalogs(
+    traceContext: TraceContext,
+  ): Promise<{ skillsChanged: boolean; subagentsChanged: boolean }>;
   createContextBuilderFromSnapshot(
     snapshot: ContextSourceSnapshot,
     memoryRoot?: string,

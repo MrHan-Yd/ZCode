@@ -2669,6 +2669,9 @@ export const zcodeSkillsReferenceCatalogParamsSchema = z
     // 带 sessionId 时必须命中该进程内的 resident Session；未知 Session fail closed，
     // 禁止回退到 workspace 当前目录而把新 Skill 泄漏进旧对话。
     sessionId: nonEmptyString.optional(),
+    // 面板打开时重新发现本 Session 的 Skill/Subagent 目录；集合有变化才更新 runtime 快照。
+    // 不带 refresh 的轮询保持只读，不触发磁盘扫描或工具重注册。
+    refresh: z.boolean().optional(),
   })
   .strict();
 export type ZCodeSkillsReferenceCatalogParams = z.infer<

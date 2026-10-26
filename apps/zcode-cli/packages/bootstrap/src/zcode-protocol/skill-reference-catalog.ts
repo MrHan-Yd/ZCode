@@ -20,6 +20,11 @@ export async function getSkillReferenceCatalog(
   const params = parseParams(zcodeSkillsReferenceCatalogParamsSchema, rawParams);
   if (params.sessionId) {
     const record = requireSession(context, params.sessionId);
+    // 面板打开时显式要求最新目录：先让 runtime 重新发现 Skill/Subagent，
+    // 再返回同一份快照。未带 refresh 的调用保持纯读取，不扫描磁盘。
+    if (params.refresh === true) {
+      await record.app.refreshAgentCatalogs();
+    }
     const outcome = await record.app.getSkillCatalog();
     return toResult("session", outcome);
   }

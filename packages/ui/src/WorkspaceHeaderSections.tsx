@@ -4,6 +4,7 @@ import { WorkspaceLastActivity } from "@/WorkspaceHeaderSections/WorkspaceLastAc
 import {
   TID_WORKSPACE_MORE_BUTTON,
   TID_WORKSPACE_PATH,
+  TID_WORKSPACE_RELOAD_SESSION,
   TID_WORKSPACE_TITLE,
   type RemoteTarget,
   type ZCodeTaskMeta,
@@ -12,7 +13,7 @@ import { useMemo, useRef, useState } from "react";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { cn } from "@/components/lib/utils.js";
 import { Button } from "@/components/ui/button.js";
-import { Cloud, Ellipsis, Folder, GitBranch, LoaderIcon } from "lucide-react";
+import { Cloud, Ellipsis, Folder, GitBranch, LoaderIcon, RefreshCw } from "lucide-react";
 import { useConfirmDialog } from "@/hooks/useConfirmDialog.js";
 import { useGlobalTaskList } from "@/hooks/useGlobalTaskList.js";
 import { useBaseWorkspaceServices, useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
@@ -93,6 +94,8 @@ export function WorkspaceHeaderTitleSection({
   nativeSessionLogPath: _nativeSessionLogPath,
   nativeSessionLogExists: _nativeSessionLogExists,
   nativeSessionLogLoading: _nativeSessionLogLoading,
+  onReloadSession,
+  reloadSessionDisabled,
   reloadSessionPending,
   workspaceHeaderState,
   onRefreshGit: _onRefreshGit,
@@ -518,6 +521,24 @@ export function WorkspaceHeaderTitleSection({
                   <DropdownMenuSeparator />
                 </>
               ) : null}
+              <DropdownMenuItem
+                data-testid={TID_WORKSPACE_RELOAD_SESSION}
+                disabled={reloadSessionDisabled || reloadSessionPending}
+                onSelect={() => {
+                  void onReloadSession?.({
+                    provider: activeTaskProvider,
+                    resumeTaskId: activeSessionId ?? undefined,
+                  });
+                }}
+              >
+                {reloadSessionPending ? (
+                  <LoaderIcon className="size-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="size-3.5" />
+                )}
+                {intl.formatMessage({ id: "appHeader.reloadSession" })}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <TaskActionMenuContent
                 intl={intl}
                 isPinned={isPinned}

@@ -3953,6 +3953,9 @@ export function createZCodeAgentService(
         {
           workspace: buildWorkspaceRef(params),
           ...(params.sessionId ? { sessionId: params.sessionId } : {}),
+          // 不能只信 UI 传进来的字段：这里是白名单重组的协议入参，
+          // 漏传 refresh 会让面板打开变成纯读取，新增 Skill/Subagent 永远看不到。
+          ...(params.refresh === true ? { refresh: true } : {}),
         },
         zcodeSkillsReferenceCatalogResultSchema,
       );
