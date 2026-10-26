@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.18.9](https://github.com/MrHan-Yd/ZCode/compare/v3.18.8...v3.18.9) (2026-10-26)
+
+### Features
+
+* **zcode-cli:** 增加会话尾窗预览并优化冷恢复性能 ([f596710](https://github.com/MrHan-Yd/ZCode/commit/f596710fda94ab4754a73f1f9fdfabc38dc99083))
+
 ## [3.18.8](https://github.com/MrHan-Yd/ZCode/compare/v3.18.7...v3.18.8) (2026-10-21)
 
 ### Features
