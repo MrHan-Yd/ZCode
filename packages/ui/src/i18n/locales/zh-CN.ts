@@ -4427,6 +4427,8 @@ const zhCN: Record<string, string> = {
   // 首帧加载占位：冷恢复期间消息区不再是空白，给出「正在载入」与上一轮回复预览。
   "chat.loading.preparing": "正在载入会话内容",
   "chat.loading.lastReply": "上一轮回复",
+  "chat.tailPreview.restoring": "正在恢复完整会话…",
+  "chat.tailPreview.toolCalls": "{count} 个工具调用",
   "chat.emptyResult.title": "没有可展示内容",
   "chat.emptyResult.description": "这个任务没有生成聊天内容，可能是在模型返回正文前被停止了。",
   "chat.placeholder.newTask": "向 ZCode 提问，使用 @ 添加上下文，使用 / 选择命令或能力",

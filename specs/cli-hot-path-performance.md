@@ -83,6 +83,85 @@ Glob 10 组 pattern 与 JS 回退 Grep 8 组请求的完整结果（剥离 `dura
   种子；而 `seedSubagents` 是整体替换 manifest，迟到到 live 之后反而会丢掉刚 spawn 的子会话。
   并发方案在不改协议语义的前提下拿到了同样的「不额外串行」效果。
 
+### 4. artifact 目录索引（`apps/zcode-cli/packages/adapters/src/storage/index.ts`）
+
+`NodeToolArtifactStore` 的 `readArtifactFile` / `statToolResultArtifact` 每定位一个 artifact 都会对会话目录做一次
+`readdir`，再线性 `find` 文件名。冷恢复的 `buildColdFileChangeSummaries` 要读 907 个 checkpoint 的 artifact，
+等于对一个 929 条目的目录做了 907 次枚举。实测（本机热缓存）：907 次 `readdirSync` 单独耗时 **1021 ms**；
+同一批 907 次读取改成「一次建索引 + 直接读文件」后，含 17.4 MB 内容只要 **172 ms**。这两项是 IO 微基准，
+整段还包含固定的解析/diff 成本，端到端收益见下方实测。
+
+- **实现**：每个会话目录首次访问时枚举一次，缓存文件名数组与 `artifactId → fileName` 映射；同一进程内
+  写入 artifact 时同步追加到缓存。缓存是进程内易失状态，不落盘、不参与任何持久化协议。
+- **跨进程新增**：索引 miss 时重新枚举一次（另一个 CLI 进程可能刚写入该目录）。
+- **跨进程删除/替换**：`readFile` / `stat` 报 `ENOENT` 时清掉该会话索引、重新枚举并重试一次；仍找不到
+  才抛原来的 `Tool artifact not found`。
+- **有界**：最多缓存 64 个会话目录（LRU），超出淘汰最久未用的目录。淘汰只影响性能，下一次读取自动重建。
+- **不变量**：解析出的文件名、路径、contentType 与内容逐字节不变；URI 语义与错误消息不变；不同进程之间
+  的可见性由 miss/ENOENT 刷新保证，不引入新的缓存一致性强约束。
+- **实测**（本机热缓存，2496 消息 / 907 checkpoint 会话）：
+  - 907 次 `readdirSync` 单独计时 1021 ms；同一批 907 次「索引查找 + 读文件」172 ms。
+  - 冷恢复整段 `buildColdFileChangeSummaries`：改动前 943 ms → 改动后 **651–842 ms**（两次运行）。
+    拆开看，索引化后预热 907 个 artifact 的 IO 为 360 ms，剩余 **475 ms 是 checkpoint 解析与逐文件
+    diff**（`diff@9`），这部分不在本次改动范围内。
+  - 结论：目录索引消除的是「读取数 × 目录大小」的放大项，热缓存下端到端收益约 15–30%；冷盘上
+    907 次目录枚举的真实成本取决于目录元数据的冷 IO，未在本机量化。
+
+### 5. 冷恢复只为尾窗轮重建 file-change 摘要（`v4-bridge.ts` + `cold-file-change-summaries.ts`）
+
+首帧只发 `snapshotTailWindowRows`（60）行，但冷恢复过去为**全部** `source.messages` 重建摘要：
+907 个 checkpoint → 907 个 artifact 读取 + 逐文件 diff，实测 943 ms，而该会话最后 200 条消息里
+**0 个 checkpoint**。
+
+- **实现**：`selectColdFileChangeMessageIds` 取最后 200 条消息的 messageId 作为候选；
+  `buildColdFileChangeSummaries` 只处理命中候选的 checkpoint。
+- **缺口不丢**：`workspaceCheckpointMessageIds` 列出所有会产摘要的 checkpoint 目标轮，未进入
+  候选集合的全部写入 `fileChangeSummaryUnavailableMessageIds`，由既有
+  `seedFileChangeSummaryUnavailable` → 客户端 `conversation/fileChanges` 按需回填。
+- **不变量**：`files === 0` 与「摘要未计算」仍然严格区分；首帧内出现的轮若落在候选窗口内仍会
+  预计算；漏算的尾窗轮由 UI 滚到时回填，不显示错误的 0。
+- **窗口依据**：200 条消息在本仓库长会话样本里约 380 行（≈1.9 行/消息），远超 60 行；更保守的
+  做法（按投影行反推尾窗轮）需要先完成投影，与 merge 的输入顺序冲突，暂不采用。
+- **实测**（本机，2496 消息 / 907 checkpoint 会话）：候选 200 条消息命中 **0** 个 checkpoint 轮；
+  47 个 checkpoint 目标轮全部进入缺口清单；`buildColdFileChangeSummaries` **943 ms → 3 ms**，
+  artifact 读取 **0 次**。
+- **代价**：首帧之后滚到更早的带文件变更轮时，各触发一次既有 `conversation/fileChanges` 按需请求；
+  这些轮本来就不在首帧里。
+
+### 6. 子 agent manifest 只读最后一条 assistant（`server-operations.ts` + session store）
+
+`listSessionSubagents` 过去为每个子会话读取全量 `messages()`：本机样本 37 个子会话、48.7 MB
+parts、470 ms。`projectSessionSubagents` 的 `lastChildOutcome` 只使用最后一条 assistant 消息。
+
+- **实现**：`SessionStorePort.lastAssistantMessage?` 可选能力；SQLite 实现按
+  `(session_id, sequence)` 倒序取一条并复用 `messageWithParts` 读 parts。
+- **回退**：旧宿主没有该方法时仍走 `messages()`，不能把「缺能力」当成「没有消息」。
+- **不变量**：`lastChildOutcome` 的输入语义不变——它本来就只取最后一条 assistant；按同一排序口径
+  （非空 sequence 优先，缺失时 time_created）选中的消息与全量读取后的 `.at(-1)` 相同。
+- **实测**：子会话读取 470 ms → 122 ms，冷 IO 从 48.7 MB 降到约 0.8 MB；整段
+  `listSessionSubagents`（37 个子会话）**401 ms → 114 ms**。
+
+### 7. CLI 子进程启用 Node 编译缓存
+
+16.8 MB 单文件 bundle 每次 spawn 都要重新编译；CPU profile 中 `wrapSafe`/模块求值占启动的约 450 ms。
+
+- **实现**：spawn env 增加 `NODE_COMPILE_CACHE={dataBaseDir}/.zcode/cli/node-compile-cache`。
+  目录由 Node 创建并按源码哈希淘汰；`spawnEnv` / 部署 command env 仍可覆盖。
+- **不变量**：只影响启动耗时，不改变 CLI 行为；旧 Node（<22.1）忽略该变量。
+- **实测**：`node zcode.cjs --version` 1.45 s → 1.10 s（三次稳态）；首次运行仍需填充缓存。
+
+### 8. 冷开分段计时（可观测性）
+
+现有 `durationMs` 只有总数，无法判断 8 秒花在读盘、app 创建还是 runtime resume。
+
+- **`zcode_protocol.session.resume_completed`**（info）新增：`waitMs`、`sessionLookupMs`、
+  `messagesReadMs`、`materializeMs`、`runtimeResumeMs`、`partCount`。
+- **`zcode_protocol.v4.cold_hydration_timing`**（info，每次冷物化一条）新增：`messageCount`、
+  `materializeMs`、`fileChangesMs`、`contextUsageMs`、`subagentsMs`、`mergeMs`、`totalMs`、
+  `fileChangeCandidateCount`、`fileChangeSummaryCount`。
+- **gateway debug**：`rehydrateMs` 与投影行数（生产不落盘，dev 用）。
+- **不变量**：不修改 `.strict()` 的 `openTiming` 协议字段；日志只读观测，不参与任何状态判断。
+
 ## 回退的改动（实测前提不成立）
 
 ### `estimateTokens` 改为码元计数 —— 真实负载下更慢，已回退

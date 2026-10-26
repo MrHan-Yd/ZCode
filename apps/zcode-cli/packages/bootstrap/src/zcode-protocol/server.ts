@@ -39,6 +39,7 @@ import {
   listSessionSubagents,
   readEvents,
   readMessages,
+  readConversationTailPreview,
   readSession,
   resumeSession,
   sendPrompt,
@@ -518,6 +519,9 @@ export class ZCodeProtocolAgentServer {
         return await this.requireV4Gateway().backgroundBashOutput(request.params);
       case V4_METHODS.conversationFileChanges:
         return await this.requireV4Gateway().fileChanges(request.params);
+      case V4_METHODS.conversationTailPreview:
+        // 只读 session store，不依赖 gateway / publisher / runtime：冷订阅还在恢复时也能用。
+        return await readConversationTailPreview(this.context, request.params);
       case V4_METHODS.conversationFileRewindPreview:
         return await this.requireV4Gateway().fileRewindPreview(request.params);
       // workflow run 事件日志分页（只读、无状态、超时重发安全；新方法天然偏斜安全）。

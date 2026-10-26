@@ -28,6 +28,8 @@ import {
   type V4ConversationFileRewindPreviewResult,
   type V4ConversationPlansParams,
   type V4ConversationPlansResult,
+  type V4ConversationTailPreviewParams,
+  type V4ConversationTailPreviewResult,
   type V4ConversationRowsRangeParams,
   type V4ConversationRowsRangeResult,
   type V4ConversationSubscribeResult,
@@ -71,6 +73,7 @@ type ConversationV4AgentService = Pick<
   | "conversationWorkflowRunNodeResultV4"
   | "conversationFileChangesV4"
   | "conversationFileRewindPreviewV4"
+  | "conversationTailPreviewV4"
   | "attachmentBeginV4"
   | "attachmentChunkV4"
   | "attachmentCommitV4"
@@ -400,6 +403,16 @@ export function createAgentConversationTransport(
         target: params.target,
         baseRevision: params.baseRevision,
         baseLogEpoch: params.baseLogEpoch,
+      });
+    },
+    async tailPreview(
+      params: V4ConversationTailPreviewParams,
+    ): Promise<V4ConversationTailPreviewResult | null> {
+      await ensureHandshake();
+      return agentService.conversationTailPreviewV4({
+        ...workspace,
+        sessionId: params.sessionId,
+        ...(params.limit ? { limit: params.limit } : {}),
       });
     },
     async fileRewindPreview(

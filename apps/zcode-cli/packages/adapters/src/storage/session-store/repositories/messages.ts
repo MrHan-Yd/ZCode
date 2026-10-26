@@ -256,6 +256,85 @@ export async function messages(
   }));
 }
 
+/**
+ * 最后 `limit` 条消息（含 parts，升序）。
+ *
+ * 冷开首帧的只读预览只读这一段，避免为了先看到最后几屏而读完整 transcript。
+ * 顺序是 `messages()` 的尾部截取：先按全序倒序取 N 条，再反转恢复升序。
+ */
+export async function tailMessages(
+  db: DatabaseSync,
+  input: { sessionID: SessionId; limit: number },
+): Promise<MessageWithParts[]> {
+  if (input.limit <= 0) return [];
+  const messageRows = db
+    .prepare(
+      `
+      select * from message
+      where session_id = ?
+      order by sequence is null desc, sequence desc, time_created desc, rowid desc
+      limit ?
+      `,
+    )
+    .all(input.sessionID, input.limit) as unknown as MessageRow[];
+  if (messageRows.length === 0) return [];
+
+  const messageIds = messageRows.map((row) => row.id);
+  const placeholders = messageIds.map(() => "?").join(", ");
+  const partRows = db
+    .prepare(
+      `
+      select * from part
+      where message_id in (${placeholders})
+      order by message_id, sequence is null, sequence, time_created, id
+      `,
+    )
+    .all(...messageIds) as unknown as PartRow[];
+
+  const partsByMessage = new Map<string, MessagePart[]>();
+  for (const row of partRows) {
+    const part = decodePartRow(row);
+    const list = partsByMessage.get(row.message_id) ?? [];
+    list.push(part);
+    partsByMessage.set(row.message_id, list);
+  }
+
+  return messageRows.reverse().map((row) => ({
+    info: decodeMessageRow(row),
+    parts: partsByMessage.get(row.id) ?? [],
+  }));
+}
+
+/**
+ * 最后一条 assistant 消息（含 parts）。
+ *
+ * 子 agent manifest 只用最后一条 assistant 推导终态/摘要，而 `messages()` 要读该
+ * 子会话的全部 part。子会话多、单会话工具输出大时，全量读取是冷恢复的主要 IO；
+ * 这里按 `(session_id, sequence)` 索引倒序只取一条。排序是 `messages()` 的严格逆序：
+ * 那里排最后的 assistant 就是这里选中的（NULL sequence 在 `messages()` 升序里排最后，
+ * 因此倒序必须排最前）。
+ */
+export async function lastAssistantMessage(
+  db: DatabaseSync,
+  input: { sessionID: SessionId },
+): Promise<MessageWithParts | null> {
+  const row = db
+    .prepare(
+      `
+      select id from message
+      where session_id = ? and json_extract(data, '$.role') = 'assistant'
+      order by sequence is null desc, sequence desc, time_created desc, rowid desc
+      limit 1
+      `,
+    )
+    .get(input.sessionID) as { id: string } | undefined;
+  if (!row) return null;
+  return messageWithParts(db, {
+    sessionID: input.sessionID,
+    messageID: row.id as MessageId,
+  });
+}
+
 export async function messageWithParts(
   db: DatabaseSync,
   input: { sessionID: SessionId; messageID: MessageId },

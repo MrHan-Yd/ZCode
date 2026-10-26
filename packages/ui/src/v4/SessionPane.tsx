@@ -124,6 +124,8 @@ import { shouldIgnoreEscapeForStopGeneration } from "@/v4/composer/escapeStop.js
 import { ConversationDraftEmptyState } from "@/v4/ConversationDraftEmptyState.js";
 import { ConversationHeader, type PaneWorkspaceBadge } from "@/v4/ConversationHeader.js";
 import { ConversationLoadingState } from "@/v4/ConversationLoadingState.js";
+import { ConversationTailPreview } from "@/v4/ConversationTailPreview.js";
+import { useSessionTailPreview } from "@/v4/useSessionTailPreview.js";
 import { resolveConversationEmptySlot } from "@/v4/conversationEmptySlot.js";
 import { useSessionIndexSummary } from "@/v4/useSessionIndexSummary.js";
 import { ConversationQueuePanel } from "@/v4/ConversationQueuePanel.js";
@@ -553,6 +555,7 @@ export function SessionPane({
     onRuntimeLifecycle,
     fileChanges,
     fileRewindPreview,
+    tailPreview,
   } = useV4Conversation();
   const platform = useOptionalPlatform();
   const { conversationShareService, modelSelectionService, zcodeSessionService, zcodeTaskService } =
@@ -3698,6 +3701,13 @@ export function SessionPane({
     { workspacePath, workspaceIdentity, remoteSessionId },
     connecting ? sessionId : null,
   );
+  // 冷开首帧的只读尾部预览：只读最后 N 条消息，与权威冷恢复并行。
+  // snapshot 到达后 connecting=false，预览卸载，正式时间线接管；预览从不进入投影。
+  const tailPreviewResult = useSessionTailPreview({
+    enabled: connecting,
+    request: tailPreview,
+    sessionId,
+  });
   const queueEditActiveForCurrentComposer =
     queueEditOperation?.sessionId === sessionId && queueEditOperation.workspaceKey === workspaceKey;
   const errored = sessionId !== null && state.status === "error";
@@ -4803,10 +4813,18 @@ export function SessionPane({
                 ) : conversationEmptySlot === "loading" ? (
                   // 冷恢复等待期复用时间线既有的空内容槽位：这里的 DOM 位于 bottomDock
                   // 之上，因此只替换内容、不动时间线实例，composer 与其草稿不会被重挂。
-                  <ConversationLoadingState
-                    preview={sessionIndexSummary?.lastAssistantPreview}
-                    summaryPanelLayout={statusPanelLayout}
-                  />
+                  // 尾部预览只读、非权威；snapshot 到达后 connecting=false，正式时间线接管。
+                  tailPreviewResult && tailPreviewResult.messages.length > 0 ? (
+                    <ConversationTailPreview
+                      preview={tailPreviewResult}
+                      summaryPanelLayout={statusPanelLayout}
+                    />
+                  ) : (
+                    <ConversationLoadingState
+                      preview={sessionIndexSummary?.lastAssistantPreview}
+                      summaryPanelLayout={statusPanelLayout}
+                    />
+                  )
                 ) : null
               }
               centerEmptyStateWithDock={isDraft}

@@ -79,7 +79,7 @@ function SessionStatsPanel({
   intl: IntlInstance;
   locale: Locale;
   summary: SessionPerformanceSummary | null;
-  /** 两个口径的输出速度：平均来自持久层累计，当前来自运行中的流式估算。 */
+  /** 两个口径的输出速度：平均来自持久层累计，当前来自当前轮的实时估算。 */
   speeds: SessionStatsSpeeds;
 }) {
   const emptyValue = intl.formatMessage({ id: "chat.sessionStats.emptyValue" });
@@ -119,7 +119,7 @@ function SessionStatsPanel({
 
 /**
  * 工具条上的会话统计入口：常驻显示输出速度，悬停/聚焦展开「会话统计」面板。
- * 入口数字优先取运行中的实时估算，拿不到时回落到持久层的累计平均；面板则把两个口径
+ * 入口数字优先取当前轮的实时估算，拿不到时回落到持久层的累计平均；面板则把两个口径
  * 并列列出（平均/当前），因此运行中两处数值不一致是预期表现，不是算错。
  * 两个都拿不到就不渲染入口。数据与口径见 specs/session-performance-stats.md。
  */

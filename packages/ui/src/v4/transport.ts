@@ -18,6 +18,8 @@ import type {
   V4ConversationFileRewindPreviewResult,
   V4ConversationPlansParams,
   V4ConversationPlansResult,
+  V4ConversationTailPreviewParams,
+  V4ConversationTailPreviewResult,
   V4ConversationRowsRangeParams,
   V4ConversationRowsRangeResult,
   V4ConversationWorkflowRunArtifactDataParams,
@@ -98,6 +100,13 @@ export interface ConversationTransport {
   ): Promise<V4ConversationWorkflowRunNodeResultResult>;
   /** v4/conversation/fileChanges：按 turn row 展开文件摘要详情与只读 diff。 */
   fileChanges(params: V4ConversationFileChangesParams): Promise<V4ConversationFileChangesResult>;
+  /**
+   * v4/conversation/tailPreview：冷开 connecting 期间的只读尾部预览。
+   * 旧 CLI 不支持时返回 null，调用方回退骨架。
+   */
+  tailPreview(
+    params: V4ConversationTailPreviewParams,
+  ): Promise<V4ConversationTailPreviewResult | null>;
   /** v4/conversation/fileRewindPreview：按 turn row 预览 workspace-only 文件撤销。 */
   fileRewindPreview(
     params: V4ConversationFileRewindPreviewParams,

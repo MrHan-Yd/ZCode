@@ -2,8 +2,10 @@ import {
   RewindScope,
   SessionEventType,
   parseCheckpointCreatedPayload,
+  parseRewindTriggeredPayload,
   parseWorkspaceCheckpointArtifact,
   type DiffHunk,
+  type MessageWithParts,
   type SessionEvent,
   type TurnFileChangeSummary,
   type TurnId,
@@ -63,6 +65,31 @@ function workspaceCheckpoints(events: readonly SessionEvent[]): WorkspaceCheckpo
       turnId: event.turnId ? String(event.turnId) : null,
     }))
     .filter(({ checkpoint }) => isWorkspaceCheckpoint(checkpoint));
+}
+
+/**
+ * 首帧只发尾窗 `snapshotTailWindowRows`（60）行；冷恢复只需要为可能出现在首帧的轮
+ * 重建文件摘要。200 条消息在正常会话里远超 60 行（本仓库长会话样本约 1.9 行/消息）。
+ * 漏算的尾部轮不会被静默丢弃：调用方把它们写进 `fileChangeSummaryUnavailableMessageIds`，
+ * 客户端滚到时再按需回填。
+ */
+const COLD_FILE_CHANGE_TAIL_MESSAGE_LIMIT = 200;
+
+export function selectColdFileChangeMessageIds(
+  messages: readonly MessageWithParts[],
+  tailMessageCount = COLD_FILE_CHANGE_TAIL_MESSAGE_LIMIT,
+): string[] {
+  if (tailMessageCount <= 0) return [];
+  return messages.slice(-tailMessageCount).map((message) => String(message.info.id));
+}
+
+/** 会产生 file-change 摘要的 checkpoint 目标 messageId（去重，保持出现顺序）。 */
+export function workspaceCheckpointMessageIds(events: readonly SessionEvent[]): string[] {
+  const messageIds = new Set<string>();
+  for (const entry of workspaceCheckpoints(events)) {
+    messageIds.add(String(entry.checkpoint.targetMessageId ?? entry.checkpoint.messageId));
+  }
+  return [...messageIds];
 }
 
 function selectWorkspaceCheckpointsForFileSummary(
@@ -233,15 +260,56 @@ export async function readConversationFileChangesFromEvents(input: {
     input.createConsolidatedPatch,
     input.onConsolidatedPatchUnavailable,
   );
-  if (result.items.length > 0) return result;
-  return (
-    readModelCompleteFileChangesFallback(input.events, input.targetTurnId) ?? {
-      files: 0,
-      additions: 0,
-      deletions: 0,
-      items: [],
+  const summary =
+    result.items.length > 0
+      ? result
+      : (readModelCompleteFileChangesFallback(input.events, input.targetTurnId) ?? {
+          files: 0,
+          additions: 0,
+          deletions: 0,
+          items: [],
+        });
+  // 尾窗裁剪后，更早的轮在 hydrate 阶段没有 fileChanges，投影因此无法消费持久
+  // RewindTriggered（它要求 turnHeader 已有 fileChanges 才改成 reverted）。按需读取
+  // 必须把撤销状态一并返回；否则补种会把已撤销轮重新写成 active，重新打开撤销入口。
+  return isFileSummaryReverted(input.events, input.messageIds, input.targetTurnId)
+    ? { ...summary, state: "reverted" }
+    : summary;
+}
+
+/**
+ * 该轮是否执行过「按文件撤销」。
+ *
+ * 与 `ProductProjection` 消费 RewindTriggered 的口径一致：scope=workspace 且
+ * reason=file_summary_rewind。匹配优先用 targetMessageId（checkpoint/轮身份都用 user
+ * messageId）；model-only 轮可能没有可见 user 行，再用 runtime turnId 兜底。
+ */
+function isFileSummaryReverted(
+  events: readonly SessionEvent[],
+  messageIds: readonly string[],
+  targetTurnId?: TurnId | null,
+): boolean {
+  const messageIdSet = new Set(messageIds.map(String));
+  for (const event of events) {
+    if (event.type !== SessionEventType.RewindTriggered) continue;
+    let payload: ReturnType<typeof parseRewindTriggeredPayload>;
+    try {
+      payload = parseRewindTriggeredPayload(event.payload);
+    } catch {
+      // 单条非法 rewind 不能让整个按需读取失败；投影侧同样按无效事件跳过。
+      continue;
     }
-  );
+    if (payload.scope !== RewindScope.Workspace || payload.reason !== "file_summary_rewind") {
+      continue;
+    }
+    if (payload.targetMessageId && messageIdSet.has(String(payload.targetMessageId))) {
+      return true;
+    }
+    if (targetTurnId && event.turnId && String(event.turnId) === String(targetTurnId)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export async function buildColdFileChangeSummaries(input: {

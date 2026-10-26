@@ -91,6 +91,7 @@ import type {
   V4ConversationAttachmentStatResult,
   V4ConnectionFlowState,
   V4ConversationFileChangesResult,
+  V4ConversationTailPreviewResult,
   V4ConversationFileRewindPreviewResult,
   V4ConversationPlansResult,
   V4ConversationWorkflowRunEventsResult,
@@ -454,6 +455,10 @@ export interface ZCodeAgentConversationFileChangesParams extends ZCodeAgentSessi
   baseLogEpoch: string;
 }
 
+export interface ZCodeAgentConversationTailPreviewParams extends ZCodeAgentSessionTarget {
+  limit?: number;
+}
+
 export interface ZCodeAgentConversationFileRewindPreviewParams extends ZCodeAgentSessionTarget {
   target: ConversationRowTarget;
   baseRevision: number;
@@ -800,6 +805,13 @@ export interface IZCodeAgentService {
   conversationFileChangesV4(
     params: ZCodeAgentConversationFileChangesParams,
   ): Promise<V4ConversationFileChangesResult>;
+  /**
+   * 冷开首帧的只读尾部预览。旧 CLI 不支持时返回 null（调用方回退骨架）。
+   * 它不恢复 runtime、不进入投影，也不是第二份会话状态。
+   */
+  conversationTailPreviewV4(
+    params: ZCodeAgentConversationTailPreviewParams,
+  ): Promise<V4ConversationTailPreviewResult | null>;
   conversationFileRewindPreviewV4(
     params: ZCodeAgentConversationFileRewindPreviewParams,
   ): Promise<V4ConversationFileRewindPreviewResult>;

@@ -13,7 +13,7 @@ export function formatSessionSpeedValue(speed: number, intl: IntlInstance): stri
  * 会话统计里「输出速度」的显示投影：集中决定每个显示面读哪个口径。
  *
  * 同一份数据在两个面上口径不同：面板的「平均输出速度」是整会话累计（持久层权威值），
- * 入口与面板的「当前输出速度」是运行中的流式估算。两者分子与时间窗都不同，同时可见时
+ * 入口与面板的「当前输出速度」是当前轮的实时估算。两者分子与时间窗都不同，同时可见时
  * 数值不一致是预期表现——所以这里只做口径标注，不做任何"对齐成同一个数"的换算。
  */
 export interface SessionStatsSpeeds {

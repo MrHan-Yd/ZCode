@@ -210,6 +210,7 @@ import type {
   ZCodeAgentConversationCommandParams,
   ZCodeAgentCommandsQueryParams,
   ZCodeAgentConversationFileChangesParams,
+  ZCodeAgentConversationTailPreviewParams,
   ZCodeAgentConversationFileRewindPreviewParams,
   ZCodeAgentConversationRowsRangeParams,
   ZCodeAgentConversationPlansParams,
@@ -260,6 +261,7 @@ import {
   v4ConversationAttachmentStatResultSchema,
   v4ConnectionFlowResultSchema,
   v4ConversationFileChangesResultSchema,
+  v4ConversationTailPreviewResultSchema,
   v4ConversationFileRewindPreviewResultSchema,
   v4ConversationRowsRangeResultSchema,
   v4ConversationPlansResultSchema,
@@ -5479,6 +5481,24 @@ export function createZCodeAgentService(
         },
         v4ConversationFileChangesResultSchema,
       );
+    },
+
+    async conversationTailPreviewV4(params: ZCodeAgentConversationTailPreviewParams) {
+      const client = await getReadOnlyClient(params);
+      try {
+        return await client.request(
+          V4_METHODS.conversationTailPreview,
+          {
+            sessionId: params.sessionId,
+            ...(params.limit ? { limit: params.limit } : {}),
+          },
+          v4ConversationTailPreviewResultSchema,
+        );
+      } catch (error) {
+        // 预览是可选增强：旧 CLI 不认识该方法时必须静默回退骨架，不能把它当冷开失败。
+        if (isProtocolMethodNotFoundError(error)) return null;
+        throw error;
+      }
     },
 
     async conversationFileRewindPreviewV4(params: ZCodeAgentConversationFileRewindPreviewParams) {

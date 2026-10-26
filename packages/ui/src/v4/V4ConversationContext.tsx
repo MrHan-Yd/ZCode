@@ -15,6 +15,8 @@ import type {
   V4ConversationFileChangesResult,
   V4ConversationFileRewindPreviewParams,
   V4ConversationFileRewindPreviewResult,
+  V4ConversationTailPreviewParams,
+  V4ConversationTailPreviewResult,
   V4ConversationWorkflowRunArtifactDataParams,
   V4ConversationWorkflowRunArtifactDataResult,
   V4ConversationWorkflowRunArtifactReadParams,
@@ -46,6 +48,10 @@ export interface V4ConversationContextValue {
   layer: SessionDataLayer;
   sendCommand(envelope: CommandEnvelope): Promise<CommandAck>;
   fileChanges(params: V4ConversationFileChangesParams): Promise<V4ConversationFileChangesResult>;
+  /** 冷开 connecting 期间的只读尾部预览；旧 CLI 返回 null。 */
+  tailPreview(
+    params: V4ConversationTailPreviewParams,
+  ): Promise<V4ConversationTailPreviewResult | null>;
   fileRewindPreview(
     params: V4ConversationFileRewindPreviewParams,
   ): Promise<V4ConversationFileRewindPreviewResult>;
@@ -134,6 +140,7 @@ function ReadyV4ConversationProvider({
       layer,
       sendCommand: (envelope: CommandEnvelope) => transport.sendCommand(envelope),
       fileChanges: (params: V4ConversationFileChangesParams) => transport.fileChanges(params),
+      tailPreview: (params: V4ConversationTailPreviewParams) => transport.tailPreview(params),
       fileRewindPreview: (params: V4ConversationFileRewindPreviewParams) =>
         transport.fileRewindPreview(params),
       workflowRunEvents: (params: V4ConversationWorkflowRunEventsParams) =>
@@ -298,6 +305,8 @@ function ReadyV4PaneConversationProvider({
         sendCommand: (envelope: CommandEnvelope) => lease.transport.sendCommand(envelope),
         fileChanges: (params: V4ConversationFileChangesParams) =>
           lease.transport.fileChanges(params),
+        tailPreview: (params: V4ConversationTailPreviewParams) =>
+          lease.transport.tailPreview(params),
         fileRewindPreview: (params: V4ConversationFileRewindPreviewParams) =>
           lease.transport.fileRewindPreview(params),
         workflowRunEvents: (params: V4ConversationWorkflowRunEventsParams) =>

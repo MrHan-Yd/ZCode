@@ -33,6 +33,8 @@ import { V4CapabilityUnsupportedError } from "../zcode-protocol-v4/commands/hand
 import {
   buildColdFileChangeSummaries,
   readConversationFileChangesFromEvents,
+  selectColdFileChangeMessageIds,
+  workspaceCheckpointMessageIds,
 } from "../zcode-protocol-v4/cold-file-change-summaries.js";
 import {
   loadPersistedConversationMaterialization,
@@ -586,14 +588,17 @@ export function createConversationV4Gateway(
     step: string,
     fields: Record<string, unknown>,
     run: () => Promise<T>,
+    timings?: Record<string, number>,
   ): Promise<T> => {
     const startedAt = performance.now();
     try {
       return await run();
     } finally {
+      const durationMs = Math.round(performance.now() - startedAt);
+      if (timings) timings[step] = durationMs;
       log?.debug("v4 hydrate step duration", {
         ...fields,
-        durationMs: Math.round(performance.now() - startedAt),
+        durationMs,
         step,
       });
     }
@@ -1794,6 +1799,8 @@ export function createConversationV4Gateway(
     // 是已完成正文权威，session_entry 只补 legacy goal，内存事件只补
     // 未持久 in-flight 和 queue/permission/control 等 ephemeral 状态。
     loadPersistedEvents: async (sessionId, persistedMessages) => {
+      // 冷开分段计时：生产只保留这一条 info 汇总，debug 通道仍保留三段细计时。
+      const loadStartedAt = performance.now();
       // dwf workflow actor / subagent 这类 detached live child 没有自己的
       // bootstrap record（事件经 ingestDetachedLiveSession 走父 record 的 sink 路由）。
       // context.sessions.get 取不到 record 时不能直接返回 synthesized:false——
@@ -1837,6 +1844,7 @@ export function createConversationV4Gateway(
       const replayed = await replayDynamicWorkflowRunEvents(context, sessionId, record, liveEvents);
       const events = replayed.length === 0 ? liveEvents : [...replayed, ...liveEvents];
       const store = context.deps.sessionStore;
+      const materializeStartedAt = performance.now();
       const source = await loadPersistedConversationMaterialization({
         memoryEvents: events,
         persistedMessages,
@@ -1864,6 +1872,7 @@ export function createConversationV4Gateway(
             }
           : {}),
       });
+      const materializeMs = performance.now() - materializeStartedAt;
       // 三段冷恢复查询彼此没有依赖，并发启动：file change 摘要要读 artifact 并做逐文件
       // 差分，usage 种子要对全部 messages 做一次 token 估算，子会话种子要查 session store。
       // 首帧必须等整个 loadPersistedEvents 返回，串行执行会把后两段完整堆在前一段之后；
@@ -1873,55 +1882,77 @@ export function createConversationV4Gateway(
       // 投影在 files === 0 时刻意不挂 fileChanges，客户端因此无法自行区分「没改文件」与
       // 「摘要缺失」；把失败集合显式下发给客户端，它才能只对这些轮按需回填而不是普发 RPC。
       const fileChangeSummaryUnavailableMessageIds = new Set<string>();
+      // 首帧只发尾窗 60 行。只给尾窗候选轮重建摘要：907 个 checkpoint 全量解析 + 逐文件
+      // diff 是冷恢复最大的固定成本，而更早轮的首帧根本看不到。未计算的 checkpoint 轮
+      // 进缺口集合，客户端滚到该轮时走既有 conversation/fileChanges 按需回填。
+      const fileChangeCandidateMessageIds = selectColdFileChangeMessageIds(source.messages);
+      const fileChangeCandidateMessageIdSet = new Set(fileChangeCandidateMessageIds);
+      for (const messageId of workspaceCheckpointMessageIds(source.memoryEvents)) {
+        if (!fileChangeCandidateMessageIdSet.has(messageId)) {
+          fileChangeSummaryUnavailableMessageIds.add(messageId);
+        }
+      }
       // 冷恢复 transcript 不保存模型能力，旧 hydration 自行填 20 万；
       // provider registry 已在 resume 前同步完成，应按恢复/退避后的当前模型精确取值。
       const contextWindow = resolveSessionModelContextWindow(context, record);
       const messageCount = source.messages.length;
+      const seedTimings: Record<string, number> = {};
       const [fileChangeSummariesByMessageId, contextUsage, subagents] = await Promise.all([
         // live ModelComplete.fileChanges 只存在于内存事件；cold merge 以持久
         // transcript 为正文权威时会压掉该事件，而 transcript 本身没有文件摘要字段。
         // workspace checkpoint + artifact 才是跨进程持久事实，这里按 user messageId
         // 重建摘要，再交给 transcript hydration 合成同构 ModelComplete。
-        timedStep("file-changes", { messageCount, sessionId }, () =>
-          buildColdFileChangeSummaries({
-            events: source.memoryEvents,
-            messageIds: source.messages.map((message) => String(message.info.id)),
-            readArtifact: async (snapshotRef) =>
-              (await record.app.readToolResultArtifact(snapshotRef)).content,
-            onArtifactError: (messageId, error) => {
-              fileChangeSummaryUnavailableMessageIds.add(messageId);
-              context.logger?.warn("v4 cold file change artifact read failed", {
-                error: error instanceof Error ? error.message : String(error),
-                event: "zcode_protocol.v4.hydrate_file_changes_failed",
-                messageId,
-                module: "bootstrap.zcode_protocol",
-                sessionId,
-              });
-            },
-            // 大文件整段重写会让合并差分触及 5s timeout 并返回 undefined。此时退回逐次写入
-            // 的行数（不是 0/0），但要在日志里留痕，否则「行数口径变了」永远不可观测。
-            onConsolidatedPatchUnavailable: (messageId, path) =>
-              context.logger?.warn("v4 cold file change diff unavailable, fell back", {
-                event: "zcode_protocol.v4.hydrate_file_changes_diff_unavailable",
-                messageId,
-                module: "bootstrap.zcode_protocol",
-                path,
-                sessionId,
-              }),
-          }),
+        timedStep(
+          "file-changes",
+          { candidateMessageCount: fileChangeCandidateMessageIds.length, messageCount, sessionId },
+          () =>
+            buildColdFileChangeSummaries({
+              events: source.memoryEvents,
+              messageIds: fileChangeCandidateMessageIds,
+              readArtifact: async (snapshotRef) =>
+                (await record.app.readToolResultArtifact(snapshotRef)).content,
+              onArtifactError: (messageId, error) => {
+                fileChangeSummaryUnavailableMessageIds.add(messageId);
+                context.logger?.warn("v4 cold file change artifact read failed", {
+                  error: error instanceof Error ? error.message : String(error),
+                  event: "zcode_protocol.v4.hydrate_file_changes_failed",
+                  messageId,
+                  module: "bootstrap.zcode_protocol",
+                  sessionId,
+                });
+              },
+              // 大文件整段重写会让合并差分触及 5s timeout 并返回 undefined。此时退回逐次写入
+              // 的行数（不是 0/0），但要在日志里留痕，否则「行数口径变了」永远不可观测。
+              onConsolidatedPatchUnavailable: (messageId, path) =>
+                context.logger?.warn("v4 cold file change diff unavailable, fell back", {
+                  event: "zcode_protocol.v4.hydrate_file_changes_diff_unavailable",
+                  messageId,
+                  module: "bootstrap.zcode_protocol",
+                  path,
+                  sessionId,
+                }),
+            }),
+          seedTimings,
         ),
-        timedStep("context-usage", { messageCount, sessionId }, () =>
-          readSessionContextUsage(context, sessionId, source.messages),
+        timedStep(
+          "context-usage",
+          { messageCount, sessionId },
+          () => readSessionContextUsage(context, sessionId, source.messages),
+          seedTimings,
         ),
         // transcript 可恢复 Agent row，却不能证明 child session 已经落库。
         // 这里在 gateway 的 raw-event buffer 补回前生成校验种子，既排除旧幽灵引用，
         // 又避免异步查询覆盖 seed 之后新到达的 live spawn/stop。并发不改变这一点：
         // await 仍在 gateway 重放 buffer 之前完成。
-        timedStep("subagents", { sessionId }, () =>
-          listSessionSubagents(context, { sessionId, endedLimit: 1 }, persistedMessages),
+        timedStep(
+          "subagents",
+          { sessionId },
+          () => listSessionSubagents(context, { sessionId, endedLimit: 1 }, persistedMessages),
+          seedTimings,
         ),
       ]);
       const usageSeed = sessionUsageSeedFromRuntimeContextUsage(contextUsage, contextWindow);
+      const mergeStartedAt = performance.now();
       const merged = mergeColdConversationEvents({
         contextWindow,
         fileChangeSummariesByMessageId,
@@ -1932,6 +1963,21 @@ export function createConversationV4Gateway(
         ...(Object.prototype.hasOwnProperty.call(source, "target")
           ? { target: source.target }
           : {}),
+      });
+      const mergeMs = performance.now() - mergeStartedAt;
+      context.logger?.info("v4 cold hydration timing", {
+        event: "zcode_protocol.v4.cold_hydration_timing",
+        fileChangeCandidateCount: fileChangeCandidateMessageIds.length,
+        fileChangeSummaryCount: fileChangeSummariesByMessageId.size,
+        fileChangesMs: seedTimings["file-changes"],
+        messageCount,
+        mergeMs: Math.round(mergeMs),
+        module: "bootstrap.zcode_protocol",
+        materializeMs: Math.round(materializeMs),
+        sessionId,
+        subagentsMs: seedTimings["subagents"],
+        contextUsageMs: seedTimings["context-usage"],
+        totalMs: Math.round(performance.now() - loadStartedAt),
       });
       for (const diagnostic of merged.diagnostics) {
         const fields = {

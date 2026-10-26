@@ -3066,6 +3066,7 @@ export class ConversationV4Gateway {
         `conversation projection rehydrated while waiting for event commit: ${sessionId}`,
       ),
     );
+    const rehydrateStartedAt = performance.now();
     publisher.rehydrate(loaded.events, {
       // 恢复时 transcript/event store 可能仍含运行期已拒绝的超大正文。不能让同一事实
       // 在 CLI 重启后再次把 subscribe 卡死；跳过该不可传输 projection event，继续归约
@@ -3076,6 +3077,7 @@ export class ConversationV4Gateway {
           sessionId,
         }),
     });
+    const rehydrateMs = Math.round(performance.now() - rehydrateStartedAt);
     if (loaded.sharedContextImport) {
       publisher.seedSharedContextImport(loaded.sharedContextImport);
     }
@@ -3083,6 +3085,11 @@ export class ConversationV4Gateway {
     this.seedFileChangeSummaryUnavailable(publisher, loaded);
     // 同次恢复的种子先应用，再补 live buffer；较新的使用量和选模事件始终获胜。
     if (loaded.usageSeed) publisher.seedUsage(loaded.usageSeed);
+    this.host.onDebug?.(
+      `v4 hydrate rehydrated session=${sessionId} rehydrateMs=${rehydrateMs} ` +
+        `rows=${publisher.getSnapshot().rows.window.length} ` +
+        `totalMs=${Math.max(0, Math.round(performance.now() - hydrationStartedAt))}`,
+    );
     const sourceEventSeq = Math.max(
       0,
       loaded.sourceEventSeq ??

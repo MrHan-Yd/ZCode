@@ -4736,6 +4736,8 @@ const enUS: Record<string, string> = {
   // First-frame loading placeholder: the timeline is no longer blank during cold resume.
   "chat.loading.preparing": "Loading conversation",
   "chat.loading.lastReply": "Previous reply",
+  "chat.tailPreview.restoring": "Restoring full conversation…",
+  "chat.tailPreview.toolCalls": "{count} tool calls",
   "chat.emptyResult.title": "No visible output",
   "chat.emptyResult.description":
     "This task finished without any chat content. It may have been stopped before the model produced a response.",

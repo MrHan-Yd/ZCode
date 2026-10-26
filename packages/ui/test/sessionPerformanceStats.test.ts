@@ -4,16 +4,19 @@ import {
   countWideChars,
   estimateOutputTokensFromCharCounts,
 } from "../../shared/src/session-performance.js";
-import { resolveLiveOutputSpeed } from "../src/v4/composer/liveOutputSpeed.js";
+import {
+  appendOutputSpeedSample,
+  resolveLiveOutputSpeed,
+} from "../src/v4/composer/liveOutputSpeed.js";
 import {
   canRenderSessionStatsEntry,
   resolveSessionStatsSpeeds,
 } from "../src/v4/composer/sessionStatsSpeeds.js";
-import { countStreamingOutputTokens } from "../src/v4/composer/streamingOutputTokens.js";
+import { countTurnOutputTokens } from "../src/v4/composer/streamingOutputTokens.js";
 import enUS from "../src/i18n/locales/en-US.js";
 import zhCN from "../src/i18n/locales/zh-CN.js";
 
-type StatsSnapshot = Parameters<typeof countStreamingOutputTokens>[0];
+type StatsSnapshot = Parameters<typeof countTurnOutputTokens>[0];
 
 /** 与生产用法同一对入参：字符总数 + 其中的 CJK 字符数。 */
 function estimateTokens(text: string): number {
@@ -37,24 +40,46 @@ test("流式 token 估算按 CJK 双倍权重折算，与 CLI 侧 estimateTokens
   assert.equal(estimateTokens("a".repeat(30)), 10);
 });
 
-test("实时 token 读数只统计流式态的输出行", () => {
-  // 完成的正文、非输出行（工具调用）都不算输出；正文与思考都算。
-  const tokens = countStreamingOutputTokens(
+test("实时 token 读数按当前轮累计：正文、思考与工具入参都算输出", () => {
+  // 旧口径只数 state="streaming" 的行，换段（思考→正文→工具入参）读数会瞬间掉回 0；
+  // 现在同一轮内已完成的行继续计入，跨轮（末行 turnId 变化）才归零。
+  const tokens = countTurnOutputTokens(
     snapshotWithRows([
-      { kind: "assistantText", state: "complete", text: "x".repeat(300) },
-      { kind: "toolCall", state: "running", text: "x".repeat(300) },
-      { kind: "assistantText", state: "streaming", text: "x".repeat(30) },
-      { kind: "reasoning", state: "streaming", text: "x".repeat(30) },
+      { kind: "assistantText", state: "complete", turnId: "turn-1", text: "x".repeat(300) },
+      { kind: "assistantText", state: "complete", turnId: "turn-2", text: "x".repeat(30) },
+      { kind: "reasoning", state: "complete", turnId: "turn-2", text: "中".repeat(30) },
+      { kind: "toolCall", status: "running", turnId: "turn-2", inputText: "y".repeat(30) },
+      { kind: "toolCall", status: "inputStreaming", turnId: "turn-2", inputText: "z".repeat(30) },
+      { kind: "toolCall", status: "success", turnId: "turn-2", inputText: "w".repeat(30) },
+      { kind: "timelineMarker", turnId: "turn-2", marker: { type: "x" } },
     ]),
   );
-  assert.equal(tokens, 20);
-  assert.equal(countStreamingOutputTokens(null), 0);
+  // 30 个汉字权重 60 + 120 个 ASCII，合计 180 ÷ 3 = 60。
+  assert.equal(tokens, 60);
+  assert.equal(countTurnOutputTokens(null), 0);
+});
+
+test("当前轮还没有输出时读数为 0，上一轮的输出不会串到新一轮", () => {
   assert.equal(
-    countStreamingOutputTokens(
-      snapshotWithRows([{ kind: "toolCall", state: "running", text: "ab" }]),
+    countTurnOutputTokens(
+      snapshotWithRows([
+        { kind: "assistantText", state: "complete", turnId: "turn-1", text: "x".repeat(300) },
+        { kind: "userInput", turnId: "turn-2", text: "继续" },
+      ]),
     ),
     0,
   );
+  // 空窗口同样没有可读的当前轮。
+  assert.equal(countTurnOutputTokens(snapshotWithRows([])), 0);
+});
+
+test("只有工具调用、没有正文的轮也能读出工具入参的产出", () => {
+  const tokens = countTurnOutputTokens(
+    snapshotWithRows([
+      { kind: "toolCall", status: "inputStreaming", turnId: "turn-1", inputText: "a".repeat(120) },
+    ]),
+  );
+  assert.equal(tokens, 40);
 });
 
 test("观测窗口不足或读数没涨时不给实时速度", () => {
@@ -68,7 +93,7 @@ test("观测窗口不足或读数没涨时不给实时速度", () => {
     ]),
     null,
   );
-  // 读数没有增长（工具调用期间没有输出）：沿用上一个显示值。
+  // 读数没有增长（工具执行/等待首 token，没有新输出）：不给当前速度，面板显示 --。
   assert.equal(
     resolveLiveOutputSpeed([
       { at: 0, tokens: 100 },
@@ -95,6 +120,30 @@ test("实时速度取窗口两端读数差除以跨度", () => {
     ]),
     200,
   );
+});
+
+test("采样窗：读数没涨保留现有窗口，读数为 0 或回落时重开", () => {
+  const first = appendOutputSpeedSample([], { at: 1_000, tokens: 100 });
+  assert.deepEqual(first, [{ at: 1_000, tokens: 100 }]);
+  // 同一 tick 只留一个样本。
+  assert.deepEqual(appendOutputSpeedSample(first, { at: 1_000, tokens: 120 }), [
+    { at: 1_000, tokens: 120 },
+  ]);
+  // 读数不涨只是暂停输出：窗口继续滚动，速度由 resolveLiveOutputSpeed 判空。
+  assert.deepEqual(appendOutputSpeedSample(first, { at: 2_000, tokens: 100 }), [
+    { at: 1_000, tokens: 100 },
+    { at: 2_000, tokens: 100 },
+  ]);
+  // 超出 3 秒窗口的旧样本被挤掉。
+  assert.deepEqual(appendOutputSpeedSample(first, { at: 4_100, tokens: 200 }), [
+    { at: 4_100, tokens: 200 },
+  ]);
+  // 读数为 0（这一轮还没吐字/刚结束）：清空，入口回落到平均。
+  assert.deepEqual(appendOutputSpeedSample(first, { at: 2_000, tokens: 0 }), []);
+  // 读数回落（换轮或重连后基线归零）：旧样本不可比，整窗丢弃重开。
+  assert.deepEqual(appendOutputSpeedSample(first, { at: 2_000, tokens: 40 }), [
+    { at: 2_000, tokens: 40 },
+  ]);
 });
 
 test("面板把平均速度与当前速度分成两个口径，入口取当前值优先", () => {

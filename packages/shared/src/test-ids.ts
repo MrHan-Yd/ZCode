@@ -245,6 +245,8 @@ export const TID_CHAT_ERROR_DETAILS_BUTTON = "chat-error-details-button";
 export const TID_CHAT_ERROR_HOOK_ICON = "chat-error-hook-icon";
 /** 聊天空状态容器 */
 export const TID_CHAT_EMPTY = "chat-empty";
+/** 冷开 connecting 期间的只读尾部预览 */
+export const TID_SESSION_TAIL_PREVIEW = "session-tail-preview";
 /** 聊天输入框 */
 export const TID_CHAT_INPUT = "chat-input";
 /** 聊天附件按钮 */

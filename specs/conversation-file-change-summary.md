@@ -68,13 +68,28 @@ UI 只能对**每一个**没有 fileChanges 的轮发一次 RPC——那是个�
 列表）。与 `sharedContextImport` 同类：静态只读派生元数据，**不进 delta/revision**，hydrate 时幂等
 补种，因此它随首帧快照到达，不需要 delta 投递。
 
+**冷恢复的尾窗裁剪**：首帧只发尾窗 `snapshotTailWindowRows`（60）行，因此 `v4-bridge` 只对最后
+`COLD_FILE_CHANGE_TAIL_MESSAGE_LIMIT`（200）条消息对应的轮调用 `buildColdFileChangeSummaries`；
+其余 checkpoint 轮不读 artifact，直接写入同一份缺口清单（`workspaceCheckpointMessageIds` 求差集）。
+它们与「artifact 读失败」共用完全相同的按需回填路径。因此预计算只是性能选择，不是正确性前提：
+任何未预算的轮都必须出现在缺口清单里，客户端滚到时再取。
+
+**按需读取必须带回撤销状态**：投影消费 `RewindTriggered` 的前提是 turnHeader 已经有
+`fileChanges`（`product-projection.ts` 的 `file_summary_rewind` 分支）。被尾窗裁剪的轮在 hydrate
+阶段没有摘要，因此无法在投影里变成 `reverted`。按需读取（`readConversationFileChangesFromEvents`）
+必须从持久事件推导并返回 `state: "reverted"`，否则补种缺省 `active`，已撤销轮会重新出现撤销入口，
+再次撤销可能覆盖用户在撤销后手改的文件。匹配优先用 `targetMessageId` 对 `messageIds`（正常轮的
+product turnId 就是 user messageId），model-only 轮再用 runtime turnId 兜底；只处理
+`scope=workspace && reason=file_summary_rewind`，与投影口径一致。
+
 **注意区分两件事**：缺口清单本身依旧**不进 delta/revision**（静态只读索引）；按需读取补种出的
 `fileChanges` 则是**真实投影变更，进 delta 投递**（见下节）。两者语义不同，不得混为一谈。
 
 **链路**：
 
 ```text
-bridge: onArtifactError(messageId) ──► fileChangeSummaryUnavailableMessageIds
+bridge: onArtifactError(messageId) ─────────────┐
+        tail-window 之外的 checkpoint 轮 ───────┴─► fileChangeSummaryUnavailableMessageIds
    └─ loadPersistedEvents 返回值 ──► gateway.seedFileChangeSummaryUnavailable
         └─ publisher.seedFileChangeSummaryUnavailable ──► projection 解析 messageId → turnId
              └─ snapshot.fileChangeSummaryUnavailableTurnIds ──► 首帧快照 ──► UI

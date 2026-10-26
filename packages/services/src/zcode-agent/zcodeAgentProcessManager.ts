@@ -28,6 +28,7 @@ import {
 } from "../runtime-tools/providerRuntimeResolver.js";
 import { isEffectiveDevelopmentNodeEnv } from "#src/runtime-tools/nodeEnv.js";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
+import { getCliNodeCompileCacheDir } from "#src/paths.js";
 import { ZCodeProtocolClient } from "./zcodeProtocolClient.js";
 import { ZCodeStdioTransport } from "./zcodeStdioTransport.js";
 import { readZCodeStdioTapDevState } from "./zcodeStdioTapDevConfig.js";
@@ -1045,6 +1046,9 @@ export class ZCodeAgentProcessManager {
       env: {
         ...sanitizeZCodeRuntimeEnv(process.env),
         [ZCODE_RUNTIME_ENV_KEY]: runtimeEnv,
+        // 单文件 bundle 约 16.8 MB，每次 spawn 都要重新编译；实测复用 V8 编译缓存
+        // 可把冷进程启动从 ~1.45 s 降到 ~1.10 s。放在 CLI 数据根下，按源码哈希失效。
+        NODE_COMPILE_CACHE: getCliNodeCompileCacheDir(),
         ...spawnEnv,
         ...effectiveCommand.env,
         // 身份/隔离语义使用 workspaceIdentity；cwd 继续使用 workspacePath。

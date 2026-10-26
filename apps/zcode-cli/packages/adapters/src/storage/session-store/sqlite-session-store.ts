@@ -689,6 +689,19 @@ export class SqliteSessionStore
     return messageRepository.messages(this.db, input);
   }
 
+  async tailMessages(input: {
+    sessionID: SessionId;
+    limit: number;
+  }): Promise<MessageWithParts[]> {
+    return messageRepository.tailMessages(this.db, input);
+  }
+
+  async lastAssistantMessage(
+    input: { sessionID: SessionId },
+  ): Promise<MessageWithParts | null> {
+    return messageRepository.lastAssistantMessage(this.db, input);
+  }
+
   async saveSessionEntry(input: SessionEntryInfo): Promise<void> {
     this.throwBeforeWrite();
     return sessionEntryRepository.saveSessionEntry(this.db, input);

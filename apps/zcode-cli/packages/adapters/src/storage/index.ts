@@ -38,21 +38,41 @@ export interface NodeToolArtifactStoreOptions {
   videoCacheRootDir: string;
 }
 
+/**
+ * 会话 artifact 目录索引的 LRU 上限。只影响性能：未命中的目录下次读取会重新枚举。
+ * 单个会话的索引是几百到几千个文件名，64 个目录的量级在 MB 以内。
+ */
+const ARTIFACT_DIRECTORY_INDEX_CACHE_LIMIT = 64;
+
+interface ArtifactDirectoryIndex {
+  byArtifactId: Map<string, string>;
+  names: string[];
+}
+
 export class NodeToolArtifactStore implements ToolArtifactStorePort {
   private readonly imageCacheRootDir: string;
   private readonly pdfCacheRootDir: string;
   private readonly rootDir: string;
   private readonly videoCacheRootDir: string;
+  private readonly listDirectory: (path: string) => Promise<string[]>;
+  // 冷恢复会对同一个会话目录按 artifact 逐个定位；每次 readdir 的代价远高于一次 Map 查找。
+  // 缓存按会话目录保存，写入时增量更新，跨进程变化由 miss / ENOENT 刷新兜底。
+  private readonly artifactDirectoryIndexes = new Map<string, ArtifactDirectoryIndex>();
+  private readonly artifactDirectoryIndexFlights = new Map<string, Promise<ArtifactDirectoryIndex>>();
   private readonly mediaAttachmentPathFlights = new Map<
     string,
     Promise<MediaAttachmentPathResult>
   >();
 
-  constructor(options: NodeToolArtifactStoreOptions) {
+  constructor(
+    options: NodeToolArtifactStoreOptions,
+    testHooks?: { listDirectory?: (path: string) => Promise<string[]> },
+  ) {
     this.imageCacheRootDir = options.imageCacheRootDir;
     this.rootDir = options.rootDir;
     this.pdfCacheRootDir = options.pdfCacheRootDir ?? join(dirname(options.rootDir), "pdf-cache");
     this.videoCacheRootDir = options.videoCacheRootDir;
+    this.listDirectory = testHooks?.listDirectory ?? ((path) => readdir(path));
   }
 
   async writeToolResultArtifact(
@@ -76,6 +96,7 @@ export class NodeToolArtifactStore implements ToolArtifactStorePort {
     await mkdir(sessionDir, { recursive: true });
     maybeThrowStorageFsFault({ operation: "writeFile", path });
     await writeFile(path, request.content, "utf8");
+    this.rememberArtifactFileName(sessionDir, artifactId, fileName);
 
     return {
       id: artifactId,
@@ -110,6 +131,7 @@ export class NodeToolArtifactStore implements ToolArtifactStorePort {
     await mkdir(sessionDir, { recursive: true });
     maybeThrowStorageFsFault({ operation: "writeFile", path });
     await writeFile(path, content);
+    this.rememberArtifactFileName(sessionDir, artifactId, fileName);
 
     return {
       id: artifactId,
@@ -120,7 +142,6 @@ export class NodeToolArtifactStore implements ToolArtifactStorePort {
       createdAt: new Date(),
     };
   }
-
   async readToolResultArtifact(
     request: ToolArtifactReadRequest,
     options?: { signal?: AbortSignal },
@@ -167,13 +188,15 @@ export class NodeToolArtifactStore implements ToolArtifactStorePort {
   ): Promise<{ path: string; contentType: string; bytes: Buffer }> {
     const { artifactId, sessionId } = parseArtifactUri(uri);
     const sessionDir = join(this.rootDir, sanitizePathSegment(sessionId));
-    const entries = await readdir(sessionDir);
-    const fileName = entries.find((entry) => entry.includes(artifactId));
-    if (!fileName) {
-      throw new Error(`Tool artifact not found: ${uri}`);
+    let fileName = await this.resolveArtifactFileName(sessionDir, artifactId, uri);
+    try {
+      return await this.readResolvedArtifact(sessionDir, fileName);
+    } catch (error) {
+      if (!isFileMissingError(error)) throw error;
+      // 缓存的文件名可能已被另一个进程删除或替换；刷新一次目录再重试。
+      fileName = await this.refreshArtifactFileName(sessionDir, artifactId, uri);
+      return await this.readResolvedArtifact(sessionDir, fileName);
     }
-    const path = join(sessionDir, fileName);
-    return { path, contentType: contentTypeForFileName(fileName), bytes: await readFile(path) };
   }
 
   async statToolResultArtifact(
@@ -187,18 +210,124 @@ export class NodeToolArtifactStore implements ToolArtifactStorePort {
     }
     const { artifactId, sessionId } = parseArtifactUri(request.uri);
     const sessionDir = join(this.rootDir, sanitizePathSegment(sessionId));
-    const entries = await readdir(sessionDir);
-    const fileName = entries.find((entry) => entry.includes(artifactId));
-    if (!fileName) throw new Error(`Tool artifact not found: ${request.uri}`);
+    let fileName = await this.resolveArtifactFileName(sessionDir, artifactId, request.uri);
+    try {
+      return await this.statResolvedArtifact(request.uri, sessionDir, fileName);
+    } catch (error) {
+      if (!isFileMissingError(error)) throw error;
+      fileName = await this.refreshArtifactFileName(sessionDir, artifactId, request.uri);
+      return await this.statResolvedArtifact(request.uri, sessionDir, fileName);
+    }
+  }
+
+  private async readResolvedArtifact(
+    sessionDir: string,
+    fileName: string,
+  ): Promise<{ path: string; contentType: string; bytes: Buffer }> {
+    const path = join(sessionDir, fileName);
+    return { path, contentType: contentTypeForFileName(fileName), bytes: await readFile(path) };
+  }
+
+  private async statResolvedArtifact(
+    uri: string,
+    sessionDir: string,
+    fileName: string,
+  ): Promise<ToolArtifactStatResult> {
     const path = join(sessionDir, fileName);
     const artifactStat = await stat(path);
     return {
-      uri: request.uri,
+      uri,
       bytes: artifactStat.size,
       contentType: contentTypeForFileName(fileName),
       path,
       mtimeMs: artifactStat.mtimeMs,
     };
+  }
+
+  /**
+   * 目录索引只在缓存 miss 时枚举一次。目录可能被其他 CLI 进程追加，
+   * 因此 miss 后必须重新枚举一次再判定 not found。
+   */
+  private async resolveArtifactFileName(
+    sessionDir: string,
+    artifactId: string,
+    uri: string,
+  ): Promise<string> {
+    const index = await this.getArtifactDirectoryIndex(sessionDir);
+    const fileName = findArtifactFileName(index, artifactId);
+    if (fileName) return fileName;
+    return await this.refreshArtifactFileName(sessionDir, artifactId, uri);
+  }
+
+  private async refreshArtifactFileName(
+    sessionDir: string,
+    artifactId: string,
+    uri: string,
+  ): Promise<string> {
+    const index = await this.refreshArtifactDirectoryIndex(sessionDir);
+    const fileName = findArtifactFileName(index, artifactId);
+    if (!fileName) throw new Error(`Tool artifact not found: ${uri}`);
+    return fileName;
+  }
+
+  private async getArtifactDirectoryIndex(sessionDir: string): Promise<ArtifactDirectoryIndex> {
+    const cached = this.artifactDirectoryIndexes.get(sessionDir);
+    if (cached) {
+      // 命中即刷新 LRU 位置；delete + set 不改变缓存内容。
+      this.artifactDirectoryIndexes.delete(sessionDir);
+      this.artifactDirectoryIndexes.set(sessionDir, cached);
+      return cached;
+    }
+    const inFlight = this.artifactDirectoryIndexFlights.get(sessionDir);
+    if (inFlight) return inFlight;
+
+    let flight!: Promise<ArtifactDirectoryIndex>;
+    flight = this.listDirectory(sessionDir)
+      .then((names) => buildArtifactDirectoryIndex(names))
+      .then((index) => {
+        this.storeArtifactDirectoryIndex(sessionDir, index);
+        return index;
+      })
+      .finally(() => {
+        if (this.artifactDirectoryIndexFlights.get(sessionDir) === flight) {
+          this.artifactDirectoryIndexFlights.delete(sessionDir);
+        }
+      });
+    this.artifactDirectoryIndexFlights.set(sessionDir, flight);
+    return flight;
+  }
+
+  private async refreshArtifactDirectoryIndex(
+    sessionDir: string,
+  ): Promise<ArtifactDirectoryIndex> {
+    // 先等掉在飞的旧枚举（它会写回缓存），再重新枚举覆盖；避免旧结果在新结果之后写回。
+    const inFlight = this.artifactDirectoryIndexFlights.get(sessionDir);
+    if (inFlight) await inFlight.catch(() => undefined);
+    const index = buildArtifactDirectoryIndex(await this.listDirectory(sessionDir));
+    this.storeArtifactDirectoryIndex(sessionDir, index);
+    return index;
+  }
+
+  private storeArtifactDirectoryIndex(sessionDir: string, index: ArtifactDirectoryIndex): void {
+    this.artifactDirectoryIndexes.delete(sessionDir);
+    this.artifactDirectoryIndexes.set(sessionDir, index);
+    while (this.artifactDirectoryIndexes.size > ARTIFACT_DIRECTORY_INDEX_CACHE_LIMIT) {
+      const oldest = this.artifactDirectoryIndexes.keys().next().value;
+      if (oldest === undefined) break;
+      this.artifactDirectoryIndexes.delete(oldest);
+    }
+  }
+
+  private rememberArtifactFileName(
+    sessionDir: string,
+    artifactId: string,
+    fileName: string,
+  ): void {
+    const index = this.artifactDirectoryIndexes.get(sessionDir);
+    // 索引还没建立时不用主动预热：下一次读取会枚举到刚写入的文件。
+    if (!index) return;
+    index.names.push(fileName);
+    index.byArtifactId.set(artifactId, fileName);
   }
 
   primeImageAttachmentPath(
@@ -299,6 +428,35 @@ export function createNodeToolArtifactStore(
   options: NodeToolArtifactStoreOptions,
 ): ToolArtifactStorePort {
   return new NodeToolArtifactStore(options);
+}
+
+function buildArtifactDirectoryIndex(names: readonly string[]): ArtifactDirectoryIndex {
+  const byArtifactId = new Map<string, string>();
+  for (const name of names) {
+    // 写入名是 `${toolCallId}-${artifactId}${extension}`，artifactId 固定以
+    // `tool-result-` 开头；用 lastIndexOf 避免 toolCallId 里出现同名字面量。
+    const marker = name.lastIndexOf("tool-result-");
+    if (marker < 0) continue;
+    const artifactId = name.slice(marker).replace(/\.[^.]*$/, "");
+    if (!byArtifactId.has(artifactId)) byArtifactId.set(artifactId, name);
+  }
+  return { byArtifactId, names: [...names] };
+}
+
+function findArtifactFileName(
+  index: ArtifactDirectoryIndex,
+  artifactId: string,
+): string | undefined {
+  // 索引覆盖当前命名；旧命名或异常文件名回退到原来的 includes 语义。
+  return index.byArtifactId.get(artifactId) ?? index.names.find((name) => name.includes(artifactId));
+}
+
+function isFileMissingError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as NodeJS.ErrnoException).code === "ENOENT"
+  );
 }
 
 function sanitizePathSegment(value: string): string {

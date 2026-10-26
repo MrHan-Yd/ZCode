@@ -342,6 +342,9 @@ export const V4_METHODS = {
   // 当前有效分支的终态 ExitPlanMode 目录；只读、无状态、超时重发安全。
   conversationPlans: "v4/conversation/plans",
   conversationFileChanges: "v4/conversation/fileChanges",
+  // 冷开首帧的只读尾部预览：无状态、无 revision、超时重发安全。
+  // 只读 session store 的最后 N 条消息，不恢复 runtime，也不进入投影。
+  conversationTailPreview: "v4/conversation/tailPreview",
   backgroundBashOutput: "v4/conversation/backgroundBashOutput",
   conversationFileRewindPreview: "v4/conversation/fileRewindPreview",
   // workflow run 的事件日志分页（详情页审计面）：只读、无状态、超时重发安全。
@@ -590,6 +593,50 @@ export const v4ConversationFileChangesResultSchema = z
   })
   .strict();
 export type V4ConversationFileChangesResult = z.infer<typeof v4ConversationFileChangesResultSchema>;
+
+/**
+ * 冷开只读尾部预览。
+ *
+ * 与 `fileChanges` 同族：只读、无状态、超时重发安全。区别是它不依赖 projection
+ * （不需要 runtime / rowId / revision），只按 session store 的消息顺序取尾部。
+ * 这是“看”与“恢复成可继续对话”解耦的第一步：预览绝不进入投影或命令链路。
+ */
+export const v4ConversationTailPreviewParamsSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    /** 默认 40；上限 80，避免预览退化成第二份全量读取。 */
+    limit: z.number().int().min(1).max(80).optional(),
+  })
+  .strict();
+export type V4ConversationTailPreviewParams = z.infer<
+  typeof v4ConversationTailPreviewParamsSchema
+>;
+
+export const v4ConversationTailPreviewMessageSchema = z
+  .object({
+    id: z.string().min(1),
+    role: z.enum(["user", "assistant"]),
+    createdAt: z.number().int().nonnegative(),
+    /** 已截断的正文；工具输出/推理不进入预览。 */
+    text: z.string(),
+    toolCallCount: z.number().int().nonnegative(),
+  })
+  .strict();
+export type V4ConversationTailPreviewMessage = z.infer<
+  typeof v4ConversationTailPreviewMessageSchema
+>;
+
+export const v4ConversationTailPreviewResultSchema = z
+  .object({
+    sessionId: z.string().min(1),
+    /** 会话消息数 > limit。 */
+    hasMore: z.boolean(),
+    messages: z.array(v4ConversationTailPreviewMessageSchema),
+  })
+  .strict();
+export type V4ConversationTailPreviewResult = z.infer<
+  typeof v4ConversationTailPreviewResultSchema
+>;
 
 // ── workflow run 事件日志──
 // 形态与 rows/range、plans 同族：只读、无状态、超时重发安全。cursor = journal sequence

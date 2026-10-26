@@ -195,6 +195,12 @@ export class ReplaceableConversationTransport implements ConversationTransport {
     return this.current.fileChanges(params);
   }
 
+  tailPreview(
+    params: Parameters<ConversationTransport["tailPreview"]>[0],
+  ): ReturnType<ConversationTransport["tailPreview"]> {
+    return this.current.tailPreview(params);
+  }
+
   fileRewindPreview(
     params: Parameters<ConversationTransport["fileRewindPreview"]>[0],
   ): ReturnType<ConversationTransport["fileRewindPreview"]> {

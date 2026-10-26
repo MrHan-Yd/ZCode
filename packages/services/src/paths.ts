@@ -44,6 +44,17 @@ export function getZCodeDataRootDir(): string {
   return join(getDataBaseDir(), ".zcode");
 }
 
+/**
+ * {dataBaseDir}/.zcode/cli/node-compile-cache
+ *
+ * CLI 子进程的 V8 编译缓存目录。单文件 bundle 约 16.8 MB，每次 spawn 都要重新编译；
+ * `NODE_COMPILE_CACHE` 让 Node 按源码哈希复用编译产物（实测冷进程启动省约 350 ms）。
+ * 目录由 Node 自行创建与淘汰，这里只负责给一个跟随数据根、可写的位置。
+ */
+export function getCliNodeCompileCacheDir(): string {
+  return join(getZCodeDataRootDir(), "cli", "node-compile-cache");
+}
+
 /** 非项目对话共享的真实工作目录；默认 ~/.zcode/workspace/default。 */
 export function getConversationWorkspaceDir(): string {
   return join(getZCodeDataRootDir(), "workspace", "default");

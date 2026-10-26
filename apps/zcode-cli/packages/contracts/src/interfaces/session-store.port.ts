@@ -1172,6 +1172,22 @@ export interface SessionStorePort {
     messageID: MessageId;
   }): Promise<MessageWithParts | null>;
   messages(input: { sessionID: SessionId }): Promise<MessageWithParts[]>;
+  /**
+   * 最后一条 assistant 消息（含 parts）。
+   *
+   * 子 agent manifest 只从最后一条 assistant 推导终态/摘要；子会话 parts 可能几十 MB，
+   * 有该方法时不必为一次 manifest 读取全量 transcript。可选方法：旧宿主不实现时
+   * 调用方必须回退到 `messages()`，不能把“缺方法”当成“没有消息”。
+   */
+  lastAssistantMessage?(input: { sessionID: SessionId }): Promise<MessageWithParts | null>;
+  /**
+   * 最后 `limit` 条消息（含 parts，按原时间顺序升序返回）。
+   *
+   * 冷开首帧的只读尾部预览只读这一段，用来绕开全量 transcript 读取。可选方法：
+   * 旧宿主不实现时调用方回退到 `messages()` 后切片（只影响性能，不改变结果顺序）。
+   * 有 revert/branch cut 的会话不应使用它判断活跃分支——调用方必须先看 session.revert。
+   */
+  tailMessages?(input: { sessionID: SessionId; limit: number }): Promise<MessageWithParts[]>;
   saveSessionEntry?(input: SessionEntryInfo): Promise<void>;
   sessionEntries?(input: {
     sessionID: SessionId;

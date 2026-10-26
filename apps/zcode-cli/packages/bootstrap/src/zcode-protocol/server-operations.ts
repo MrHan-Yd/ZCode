@@ -84,6 +84,11 @@ import {
   type ZCodeStateUpdatedNotification,
 } from "@zcode/shared";
 import {
+  v4ConversationTailPreviewParamsSchema,
+  type V4ConversationTailPreviewMessage,
+  type V4ConversationTailPreviewResult,
+} from "@zcode/shared/zcode-protocol-v4";
+import {
   buildSessionSnapshot,
   buildWorkspaceRef,
   formatProtocolModelSelection,
@@ -1413,6 +1418,15 @@ export async function activateSessionForResume(
   options: { reusePersistedMessages?: boolean } = {},
 ): Promise<ActivatedSessionForResume> {
   const resumeStartedAt = Date.now();
+  // 冷开最贵的是「读全量 transcript」和 runtime resume；两者都发生在 app 实例创建前后，
+  // 现有 durationMs 只有总数。这里分段计时，生产日志才能判断优化是否命中（info 会落盘）。
+  const timing = {
+    materializeMs: 0,
+    messagesReadMs: 0,
+    runtimeResumeMs: 0,
+    sessionLookupMs: 0,
+    waitMs: 0,
+  };
   const activeBeforeWait = context.sessions.has(params.sessionId);
   context.logger?.debug("ZCode Protocol session resume started", {
     activeBeforeWait,
@@ -1423,11 +1437,14 @@ export async function activateSessionForResume(
   });
   // 再激活闸门：该 session 正在容量去激活（app.close 收尾未完成）时先等待，
   // 防止新旧 app 对同一 session 资源交错读写。无 in-flight 时立即返回。
+  const waitStartedAt = performance.now();
   await context.sessionResidentPool?.waitForDeactivation(params.sessionId);
+  timing.waitMs = performance.now() - waitStartedAt;
   const existing = context.sessions.get(params.sessionId);
   if (existing) {
     return { record: existing };
   }
+  const sessionLookupStartedAt = performance.now();
   let session = await getPersistedSession(context, params.sessionId);
   if (!session) {
     // 诊断：冷恢复只有在持久化记录也不存在时才会走到这里；单凭错误文本无法和
@@ -1447,6 +1464,7 @@ export async function activateSessionForResume(
     );
   }
   session = await repairLegacyRemoteSessionWorkspaceForResume(context, session);
+  timing.sessionLookupMs = performance.now() - sessionLookupStartedAt;
   const workspace =
     params.workspace ??
     buildWorkspaceRef({
@@ -1456,11 +1474,14 @@ export async function activateSessionForResume(
       workspaceIdentity: session.workspaceID,
       workspacePath: session.path ?? session.directory,
     });
+  const messagesReadStartedAt = performance.now();
   let persistedMessages = await readPersistedSessionMessages(context, params.sessionId);
+  timing.messagesReadMs += performance.now() - messagesReadStartedAt;
   const mode = derivePersistedSessionMode(persistedMessages);
   // shell 设置变更只对新 session 生效；冷恢复必须使用创建时落库的
   // Bash shell 快照。runtime.resumeFromStore 会读取快照；这里只负责不把
   // resume 请求里携带的当前 settings 重新注入老 session。
+  const materializeStartedAt = performance.now();
   const record = await materializeSessionRecord(
     context,
     {
@@ -1482,6 +1503,7 @@ export async function activateSessionForResume(
     { kind: "host" },
     session.traceID ? { traceId: session.traceID } : undefined,
   );
+  timing.materializeMs = performance.now() - materializeStartedAt;
   // createRecord 把 createdAt/updatedAt 写死为 Date.now()——resume 老会话
   // 会让 sessions-index 把它当"刚创建"的会话（配合 hydration 前的空标题，侧栏
   // 表现为原会话消失、冒出"新任务刚刚"）。恢复路径回填 store 的真实时间。
@@ -1489,6 +1511,7 @@ export async function activateSessionForResume(
   if (session.time?.updated) record.updatedAt = session.time.updated;
   context.assertServing?.();
   context.sessions.set(params.sessionId, record);
+  const runtimeResumeStartedAt = performance.now();
   const resumeResult = await runSessionModelConfigMutation(record.app, async () => {
     const result = options.reusePersistedMessages
       ? await record.app.resume({ persistedMessages })
@@ -1497,16 +1520,25 @@ export async function activateSessionForResume(
     record.restoredModelSelection = result.modelSelection;
     return result;
   });
+  timing.runtimeResumeMs = performance.now() - runtimeResumeStartedAt;
   if (options.reusePersistedMessages && resumeResult.persistedMessagesReloadRequired) {
+    const reloadStartedAt = performance.now();
     persistedMessages = await readPersistedSessionMessages(context, params.sessionId);
+    timing.messagesReadMs += performance.now() - reloadStartedAt;
   }
   context.logger?.info("ZCode Protocol session resume completed", {
     activeSessionCount: context.sessions.size,
     durationMs: Math.max(0, Date.now() - resumeStartedAt),
     event: "zcode_protocol.session.resume_completed",
+    materializeMs: Math.round(timing.materializeMs),
+    messagesReadMs: Math.round(timing.messagesReadMs),
     module: "bootstrap.zcode_protocol",
+    partCount: persistedMessages.reduce((total, message) => total + message.parts.length, 0),
     persistedMessageCount: persistedMessages.length,
+    runtimeResumeMs: Math.round(timing.runtimeResumeMs),
     sessionId: params.sessionId,
+    sessionLookupMs: Math.round(timing.sessionLookupMs),
+    waitMs: Math.round(timing.waitMs),
     traceId: record.traceContext.traceId,
   });
   return {
@@ -1670,6 +1702,87 @@ export async function listSessions(context: ZCodeProtocolAgentServerContext, raw
   return { sessions };
 }
 
+const TAIL_PREVIEW_DEFAULT_LIMIT = 40;
+const TAIL_PREVIEW_MAX_TEXT_CHARS = 2_000;
+
+/**
+ * 冷开首帧的只读尾部预览。
+ *
+ * 只读 session store 的最后 N 条消息，不恢复 runtime、不物化投影、不产生 revision。
+ * 预览不是第二份会话状态：UI 只把它当作 connecting 期间的显示投影，权威 snapshot
+ * 到达后整体卸载。有 revert/branch cut 时活跃分支可能不是 transcript 尾部，v1 直接
+ * 返回空列表让 UI 回退骨架，避免展示已丢弃分支。
+ */
+export async function readConversationTailPreview(
+  context: ZCodeProtocolAgentServerContext,
+  rawParams: unknown,
+): Promise<V4ConversationTailPreviewResult> {
+  const params = parseParams(v4ConversationTailPreviewParamsSchema, rawParams ?? {});
+  const store = context.deps.sessionStore;
+  if (!store) {
+    throw new ProtocolRequestError(
+      zcodeProtocolErrorCodes.sessionUnavailable,
+      `Session not found: ${params.sessionId}`,
+    );
+  }
+  const session = await store.getSession(params.sessionId as SessionId);
+  if (!session) {
+    throw new ProtocolRequestError(
+      zcodeProtocolErrorCodes.sessionUnavailable,
+      `Session not found: ${params.sessionId}`,
+    );
+  }
+  if (session.revert) {
+    return { sessionId: params.sessionId, hasMore: false, messages: [] };
+  }
+
+  const limit = params.limit ?? TAIL_PREVIEW_DEFAULT_LIMIT;
+  const loaded = store.tailMessages
+    ? await store.tailMessages({
+        sessionID: params.sessionId as SessionId,
+        limit: limit + 1,
+      })
+    : (await store.messages({ sessionID: params.sessionId as SessionId })).slice(-(limit + 1));
+  const hasMore = loaded.length > limit;
+  const tail = hasMore ? loaded.slice(-limit) : loaded;
+  const messages: V4ConversationTailPreviewMessage[] = [];
+  for (const message of tail) {
+    const role = message.info.role;
+    if (role !== "user" && role !== "assistant") continue;
+    // 合成 reminder / 共享上下文交接不属于用户正文；正式时间线会单独渲染它们。
+    if (
+      role === "user" &&
+      (message.info.synthetic === true || message.info.source === "shared_context")
+    ) {
+      continue;
+    }
+    let text = "";
+    let toolCallCount = 0;
+    for (const part of message.parts) {
+      if (part.type === "tool") {
+        toolCallCount += 1;
+        continue;
+      }
+      if (part.type !== "text" || part.ignored === true || part.synthetic === true) continue;
+      const trimmed = part.text.trim();
+      if (!trimmed) continue;
+      text = text ? `${text}\n\n${trimmed}` : trimmed;
+    }
+    if (!text && toolCallCount === 0) continue;
+    messages.push({
+      id: String(message.info.id),
+      role,
+      createdAt: message.info.time.created,
+      text:
+        text.length > TAIL_PREVIEW_MAX_TEXT_CHARS
+          ? `${text.slice(0, TAIL_PREVIEW_MAX_TEXT_CHARS)}…`
+          : text,
+      toolCallCount,
+    });
+  }
+  return { sessionId: params.sessionId, hasMore, messages };
+}
+
 export async function listSessionSubagents(
   context: ZCodeProtocolAgentServerContext,
   rawParams: unknown,
@@ -1713,9 +1826,28 @@ export async function listSessionSubagents(
     childSessionIds.map(async (childSessionId) => {
       const childSession = await store.getSession(childSessionId as SessionId);
       if (!childSession || childSession.taskType !== "subagent_child") return null;
-      const childMessages = await store.messages({
-        sessionID: childSession.id,
-      });
+      // manifest 只需要最后一条 assistant：旧实现为 37 个子会话各读一遍全量 messages，
+      // 实测 48.7 MB parts / 470 ms。有 lastAssistantMessage 能力时不读全量；
+      // 旧宿主缺该方法、或该方法失败时回退全量，不能把“缺能力”当成“没有消息”。
+      const readLastAssistant = store.lastAssistantMessage;
+      const childMessages =
+        typeof readLastAssistant === "function"
+          ? await readLastAssistant
+              .call(store, { sessionID: childSession.id })
+              .then((message) => (message ? [message] : []))
+              .catch((error) => {
+                context.logger?.warn("ZCode Protocol subagent last message read failed", {
+                  childSessionId,
+                  error: error instanceof Error ? error.message : String(error),
+                  event: "zcode_protocol.v4.subagent_last_message_failed",
+                  module: "bootstrap.zcode_protocol",
+                  sessionId: params.sessionId,
+                });
+                return store.messages({ sessionID: childSession.id });
+              })
+          : await store.messages({
+              sessionID: childSession.id,
+            });
       const liveChild = context.sessions.get(childSessionId);
       const childProjection = liveChild
         ? await liveChild.app.runtime.getProjection().catch(() => undefined)
