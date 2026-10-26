@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.19.0](https://github.com/MrHan-Yd/ZCode/compare/v3.18.9...v3.19.0) (2026-10-26)
+
+### Features
+
+* **runtime:** 面板打开时刷新 Skill 与 Subagent 目录 ([4094165](https://github.com/MrHan-Yd/ZCode/commit/4094165b1965f3e430a9f5d30646f1c6d8a5fdba))
+
 ## [3.18.9](https://github.com/MrHan-Yd/ZCode/compare/v3.18.8...v3.18.9) (2026-10-26)
 
 ### Features
