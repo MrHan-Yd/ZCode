@@ -17,7 +17,7 @@ import { createSkillSyncArchive, extractSkillSyncArchive } from "./skillSyncArch
 import { normalizeSkillSyncRelativePath, resolveSkillSyncPathWithin } from "./skillSyncPath.js";
 import { createSkillSyncSizeLimitError } from "./skillSyncErrors.js";
 import { normalizeSkillNameKey, parseSkillSyncMetadata } from "./skillSyncMetadata.js";
-import type { ICredentialService } from "../credential/credential.js";
+import type { CredentialServiceAccess } from "../credential/credential.js";
 import type { ConfigSyncOperations } from "../config-sync/orchestrator.js";
 import {
   MAX_SKILL_SCAN_DEPTH,
@@ -32,7 +32,7 @@ const DEFAULT_MAX_ARCHIVE_BYTES = 20 * 1024 * 1024;
 export interface CreateSkillSyncServiceOptions {
   maxArchiveBytes?: number;
   /** GitHub 登录凭据；缺省时 Gist 同步一律返回 `not_authenticated`。 */
-  credentialService?: Pick<ICredentialService, "load">;
+  credentialService?: CredentialServiceAccess;
   /** 代理感知的 fetch；host 必须注入 `hostApiNetworkTransport.fetch`。 */
   fetchImpl?: typeof fetch;
   /** 同步元数据与备份目录；缺省用设置里的数据存储路径。 */

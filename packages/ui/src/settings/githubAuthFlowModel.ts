@@ -31,6 +31,11 @@ export type GithubAuthPhase =
   | "denied"
   /** 设备码过期。 */
   | "expired"
+  /**
+   * 授权已失效：refresh token 也无法使用，host 返回 `{ connected: false, reason: "reauth_required" }`。
+   * 与 `idle` 区分开的唯一目的是提示用户「授权已过期，请重新登录」，而不是把过期当成从未登录。
+   */
+  | "reauth_required"
   /** 其它错误（含发起失败与轮询异常）。 */
   | "error";
 
@@ -117,6 +122,11 @@ export function githubAuthFlowReducer(
   switch (action.type) {
     case "accountLoaded":
       if (!action.account.connected) {
+        // reason 只在「授权已失效」时有展示意义：refresh token 也没了，必须重新授权。
+        // 其余未连接情形（含未带 reason 的旧形态）仍回落到普通未登录态。
+        if (action.account.reason === "reauth_required") {
+          return { ...INITIAL_GITHUB_AUTH_FLOW_STATE, phase: "reauth_required" };
+        }
         return INITIAL_GITHUB_AUTH_FLOW_STATE;
       }
       return { ...INITIAL_GITHUB_AUTH_FLOW_STATE, phase: "connected", account: action.account };

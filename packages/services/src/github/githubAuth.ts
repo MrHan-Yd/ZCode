@@ -2,12 +2,22 @@ import { ServiceChannels } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
 
 /**
- * access token 在凭据库中的唯一 key。
+ * 旧版 access token 在凭据库中的 key。
  *
- * 写入方只有 `GithubAuthService`；需要调用 GitHub API 的其它服务（如子智能体配置同步）只读同一个 key，
- * 不另建凭据项、不缓存明文。
+ * 现在只作为**只读迁移来源**：旧版本只写过它；新代码不再向它写入，登录/刷新成功写入
+ * `github:oauth:token_set` 后会删除它。需要调用 GitHub API 的服务统一经
+ * `GithubTokenProvider.getAccessToken()` 取 token，不直接读这个 key。
  */
 export const GITHUB_ACCESS_TOKEN_CREDENTIAL_KEY = "github:oauth:access_token";
+
+/**
+ * GitHub OAuth App 的公开 client id。
+ *
+ * Device Flow 与 refresh token 流程都不需要 client secret（RFC 8628 / GitHub 文档：
+ * refresh 的 `client_secret` 仅对非设备码流程签发、且过期的 token 必需），因此内嵌进源码是安全的。
+ * 授权服务与 token provider 共用同一常量，避免两处硬编码漂移。
+ */
+export const GITHUB_OAUTH_CLIENT_ID = "Ov23lib5yQwc5KZxAgz7";
 
 /** GitHub 账号展示信息；来自 `GET https://api.github.com/user`，不持久化。 */
 export interface GithubAuthAccount {
@@ -62,6 +72,12 @@ export interface GithubAuthAccountState {
   readonly login?: string;
   readonly name?: string;
   readonly avatarUrl?: string;
+  /**
+   * `connected` = 本机存在 GitHub 凭据（不代表 token 此刻一定可用）。
+   * - `"unverified"`：凭据在，但当前无法向 GitHub 验证（网络失败 / 刷新暂时失败）。
+   * - `"reauth_required"`（此时 connected=false）：refresh token 也已失效，必须重新授权。
+   */
+  readonly reason?: "reauth_required" | "unverified";
 }
 
 /**

@@ -237,6 +237,9 @@ async function writeSyncMetadata(home: string, record: Record<string, unknown>):
 function createCredentials(token: string | null) {
   return {
     load: async (key: string) => (key === GITHUB_ACCESS_TOKEN_CREDENTIAL_KEY ? token : null),
+    // config-sync 的凭据端口已放宽为 load/save/delete；本测试只关心旧 key 读取。
+    save: async () => {},
+    delete: async () => {},
   };
 }
 

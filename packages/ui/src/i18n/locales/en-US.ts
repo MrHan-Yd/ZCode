@@ -2628,6 +2628,8 @@ const enUS: Record<string, string> = {
   "settings.syncConfig.githubSignInFailed": "GitHub authorization failed: {error}",
   "settings.syncConfig.githubDenied": "Authorization was denied. You can sign in again.",
   "settings.syncConfig.githubExpired": "The device code expired. Please sign in again.",
+  "settings.syncConfig.githubReauthRequired":
+    "Your GitHub authorization has expired. Please sign in again.",
   "settings.syncConfig.githubDeviceFlowDisabled":
     "This GitHub OAuth App has Device Flow disabled. Enable Device Flow in the OAuth App settings and try again.",
   "settings.syncConfig.githubNotConfigured":

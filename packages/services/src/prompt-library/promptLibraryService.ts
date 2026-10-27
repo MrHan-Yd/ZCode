@@ -16,7 +16,7 @@ import {
   type PromptTemplateInput,
 } from "@zcode/shared";
 import { atomicWritePrivateTextFile, backupCorruptFile, withFileLock } from "@zcode/shared/node";
-import type { ICredentialService } from "../credential/credential.js";
+import type { CredentialServiceAccess } from "../credential/credential.js";
 import { createServiceLogger } from "../logger/serviceLogger.js";
 import { getAppConfigDir } from "../paths.js";
 import {
@@ -45,7 +45,7 @@ export interface CreatePromptLibraryServiceOptions {
   now?: () => number;
   idFactory?: () => string;
   /** GitHub 同步凭据；缺省时 upload/preview/apply 返回 not_authenticated。 */
-  credentialService?: Pick<ICredentialService, "load">;
+  credentialService?: CredentialServiceAccess;
   /** 必须由 Host 注入代理感知传输（与 MCP / Skills 一致）。 */
   fetchImpl?: typeof fetch;
 }

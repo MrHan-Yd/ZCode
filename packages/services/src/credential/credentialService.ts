@@ -84,9 +84,25 @@ interface CredentialServiceDependencies {
   onDidMutate?: (event: { operation: "save" | "delete"; key: string }) => void;
 }
 
+/**
+ * Host 内部凭据服务：在 RPC 契约之外额外提供 `deleteIf`。
+ *
+ * **不要**把它加进 `ICredentialService`：那会让 renderer 通过 RPC 获得条件删除能力。
+ */
+export interface ICredentialServiceHost extends ICredentialService {
+  /**
+   * compare-and-delete：在同一个 credentials 文件锁内读取 → 解密 → 执行 predicate →
+   * 为真才删除并原子写回，返回是否真的删除。
+   *
+   * 存在的理由是并发安全：锁外「读旧值 → 别的 provider / Host 写入新值 → 直接 delete」
+   * 会误删刚轮换出的新凭据（丢更新）。key 不存在时返回 false。
+   */
+  deleteIf(key: string, predicate: (plaintext: string) => boolean): Promise<boolean>;
+}
+
 export function createCredentialService(
   dependencies: CredentialServiceDependencies = {},
-): ICredentialService {
+): ICredentialServiceHost {
   const cipherProvider = dependencies.cipherProvider ?? createCredentialCipherProvider();
 
   return {
@@ -126,5 +142,46 @@ export function createCredentialService(
       });
       dependencies.onDidMutate?.({ operation: "delete", key: validatedKey });
     },
+
+    async deleteIf(key: string, predicate: (plaintext: string) => boolean): Promise<boolean> {
+      const validatedKey = credentialKeySchema.parse(key);
+      const credentialsFile = getCredentialsFile();
+      let deleted = false;
+      // 读取、解密、断言与写回必须同处一把文件锁内：跨进程 / 多 Host 共享同一文件，
+      // 锁外断言后直接 delete 会把别人刚写入的新值删掉。
+      await withFileLock(credentialsFile, async () => {
+        const creds = await readAll(credentialsFile);
+        const rawValue = creds[validatedKey];
+        if (rawValue === undefined) {
+          return;
+        }
+        const plaintext = cipherProvider.decrypt(rawValue);
+        if (!predicate(plaintext)) {
+          return;
+        }
+        delete creds[validatedKey];
+        await writeAll(credentialsFile, creds);
+        deleted = true;
+      });
+      if (deleted) {
+        dependencies.onDidMutate?.({ operation: "delete", key: validatedKey });
+      }
+      return deleted;
+    },
+  };
+}
+
+/**
+ * 收窄到 RPC 契约后再注册进 `ServiceCollection`。
+ *
+ * `ServiceCollection.exposeOnChannelServer` 用 `ProxyChannel.fromService` 包装实例，
+ * 而它把对象上的**任意函数属性**都当成可调用方法。若直接注册带 `deleteIf` 的 host 对象，
+ * 等于把条件删除能力暴露给 renderer。这里只透出 `ICredentialService` 的三个方法。
+ */
+export function toRpcCredentialService(service: ICredentialServiceHost): ICredentialService {
+  return {
+    load: (key) => service.load(key),
+    save: (key, value) => service.save(key, value),
+    delete: (key) => service.delete(key),
   };
 }

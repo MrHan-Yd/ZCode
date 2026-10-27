@@ -1,6 +1,6 @@
 import { mkdir, rm } from "node:fs/promises";
 import { atomicWriteText } from "#src/fs/atomicFileUtils.js";
-import type { ICredentialService } from "../credential/credential.js";
+import type { CredentialServiceAccess } from "../credential/credential.js";
 import { createConfigSyncBackup } from "../config-sync/backup.js";
 import {
   createConfigSync,
@@ -44,7 +44,7 @@ export interface CreateSubagentConfigSyncOptions {
    * （工作区 agent 恒为启用）。省略即用户级。
    */
   readonly workspacePath?: string;
-  readonly credentialService?: Pick<ICredentialService, "load">;
+  readonly credentialService?: CredentialServiceAccess;
   readonly fetchImpl?: typeof fetch;
   /** 读 `agents-state.json` 的精选子集；由 `SubagentsService` 提供（含迁移与归一化）。 */
   readonly readCuratedState: () => Promise<SubagentConfigCuratedState>;

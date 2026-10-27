@@ -17,7 +17,7 @@ import {
   type ProviderConfigRuntimeOptions,
 } from "./providerConfigRuntime.js";
 import { createProviderConfigSync } from "./providerConfigSync.js";
-import type { ICredentialService } from "../credential/credential.js";
+import type { CredentialServiceAccess } from "../credential/credential.js";
 import { getAppConfigDir } from "../paths.js";
 import {
   createModelSelectionService,
@@ -32,7 +32,7 @@ export interface ProviderRuntimeOptions extends ProviderConfigRuntimeOptions {
   readonly accountSource?: RefreshableProviderSource<AccountProviderConfigSnapshot>;
   readonly testConnectivity?: ProviderSettingsConnectivityTester;
   /** 模型设置同步复用的 GitHub 登录凭据；缺省时同步方法一律返回「未登录」。 */
-  readonly credentialService?: Pick<ICredentialService, "load">;
+  readonly credentialService?: CredentialServiceAccess;
   /** 必须共用 host 的代理感知传输（`hostApiNetworkTransport.fetch`）。 */
   readonly fetchImpl?: typeof fetch;
   /** 同步元数据与备份目录；缺省为设置里的数据存储路径（`{dataBaseDir}/.zcode/v2`）。 */
@@ -46,7 +46,7 @@ export interface ProviderRuntimeDependencies {
   readonly testConnectivity?: ProviderSettingsConnectivityTester;
   readonly modelSelectionConfiguredDefaultSource?: ModelSelectionConfiguredDefaultSource;
   readonly disposeModelSelectionConfiguredDefaultSource?: () => void;
-  readonly credentialService?: Pick<ICredentialService, "load">;
+  readonly credentialService?: CredentialServiceAccess;
   readonly fetchImpl?: typeof fetch;
   readonly dataDir?: () => Promise<string>;
 }

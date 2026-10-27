@@ -166,7 +166,8 @@ function parseGist(raw: unknown): RemoteGist | null {
 async function mapGithubError(response: Response): Promise<ConfigSyncError> {
   const status = response.status;
   if (status === 401) {
-    // 不删凭据：token 失效的清理入口只有 GithubAuthService（signOut / getAccount 的 401 分支）。
+    // 不删凭据：清理入口只有 GithubAuthService 的 signOut 与 GithubTokenProvider 的
+    // compare-and-delete（bad_refresh_token 分支）；gist 401 仍按 unauthorized 返回。
     return { code: "unauthorized", message: "HTTP 401" };
   }
   if (status === 404) {

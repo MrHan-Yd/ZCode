@@ -1,0 +1,13 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "noEmit": true, "lib": ["es2025"], "types": ["node"] },
+  // 全量 test/ 有 48 个既有类型错误（与本改动无关）。本次只把 GitHub/凭据相关测试纳入检查，
+  // 避免把无关欠账一次性塞进 CI；其余测试的类型错误另行清理。
+  "include": [
+    "src",
+    "test/githubTokenProvider.test.ts",
+    "test/githubAuth.test.ts",
+    "test/configSyncTokenAccess.test.ts",
+    "test/credentialDeleteIf.test.ts"
+  ]
+}

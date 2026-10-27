@@ -82,7 +82,7 @@ export {
   createSettingService,
   createSettingServiceWithMigrations,
 } from "./setting/settingService.js";
-export { createCredentialService } from "./credential/credentialService.js";
+export { createCredentialService, toRpcCredentialService } from "./credential/credentialService.js";
 export { createBroadcastService } from "./broadcast/broadcastService.js";
 export { createZCodeAgentService } from "./zcode-agent/zcodeAgentService.js";
 export { createZCodeTaskServiceAdapter } from "./zcode-agent/zcodeTaskServiceAdapter.js";
@@ -355,7 +355,7 @@ import { createSettingServiceWithMigrations } from "./setting/settingService.js"
 import { createOnboardingRecordService } from "./onboarding/onboardingRecordService.js";
 import { createLegacyTeamOrganizationResolver } from "./model-provider/legacyTeamOrganizationResolver.js";
 import { createObservableSettingService } from "./setting/observableSettingService.js";
-import { createCredentialService } from "./credential/credentialService.js";
+import { createCredentialService, toRpcCredentialService } from "./credential/credentialService.js";
 import { createBroadcastService } from "./broadcast/broadcastService.js";
 import { createZCodeAgentService } from "./zcode-agent/zcodeAgentService.js";
 import type { ZCodeAgentCommandResolver } from "./zcode-agent/zcodeAgentProcessManager.js";
@@ -1442,6 +1442,10 @@ export function createLocalServices(options: {
         caCertPath: settings.httpProxyCaCertPath,
       };
     });
+  // GitHub token provider 不做跨实例单例：授权服务与每个 config-sync 实例各自
+  // createGithubTokenProvider({credentialService, fetchImpl})，直接使用注入的代理感知传输。
+  // 单飞只保证同一实例内；跨实例 / 跨进程竞争由 bad_refresh_token 重读 +
+  // compare-and-delete 兜底，不会误删对方刚写入的新凭据。
   const zcodeJwtLogoutHandlerRef: {
     current: ((input: string | URL, headers: Headers) => void) | null;
   } = { current: null };
@@ -2487,7 +2491,9 @@ export function createLocalServices(options: {
     .register(ITerminalService, createTerminalService({ settingService }))
     .register(ISettingService, settingService)
     .register(IOnboardingRecordService, onboardingRecordService)
-    .register(ICredentialService, credentialService)
+    // 只把 RPC 契约的三个方法暴露出去：ProxyChannel 会把对象上的任意函数属性都变成
+    // 可调用方法，直接注册带 deleteIf 的 host 对象等于把条件删除开放给 renderer。
+    .register(ICredentialService, toRpcCredentialService(credentialService))
     .register(IBroadcastService, broadcastService)
     .register(IZCodeTaskService, zcodeTaskService)
     .register(IZCodeAgentService, zcodeAgentService)

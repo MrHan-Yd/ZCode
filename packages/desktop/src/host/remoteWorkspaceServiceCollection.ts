@@ -42,6 +42,7 @@ import {
   ConversationShareService,
   createSettingService,
   createCredentialService,
+  toRpcCredentialService,
   createBroadcastService,
   createNodeApiClient,
   createHostApiNetworkTransport,
@@ -318,7 +319,9 @@ export function createRemoteWorkspaceServiceCollection(params: {
     .register(ISystemService, params.connectionServices.systemService)
     .register(ITerminalService, params.connectionServices.terminalService)
     .register(ISettingService, localSettingService)
-    .register(ICredentialService, localCredentialService)
+    // 与本地 Host 一致：只暴露 RPC 契约方法，避免 ProxyChannel 把 host 内部的
+    // deleteIf（compare-and-delete）也变成远控可调用方法。
+    .register(ICredentialService, toRpcCredentialService(localCredentialService))
     .register(IBroadcastService, localBroadcastService)
     .register(IZCodeTaskService, remoteZCodeTaskService)
     .register(IZCodeAgentService, params.connectionServices.zcodeAgentService)

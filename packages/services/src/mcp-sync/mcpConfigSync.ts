@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { ICredentialService } from "../credential/credential.js";
+import type { CredentialServiceAccess } from "../credential/credential.js";
 import { getAppConfigDir } from "../paths.js";
 import { createConfigSyncBackup } from "../config-sync/backup.js";
 import { createConfigSyncMetadataStore } from "../config-sync/metadata.js";
@@ -47,7 +47,7 @@ export interface CreateMcpConfigSyncOptions {
   readonly workspacePath?: string;
   /** 同步元数据与备份的目录；缺省用设置里的数据存储路径（`{dataBaseDir}/.zcode/v2`）。 */
   readonly dataDir?: () => Promise<string>;
-  readonly credentialService?: Pick<ICredentialService, "load">;
+  readonly credentialService?: CredentialServiceAccess;
   readonly fetchImpl?: typeof fetch;
   readonly enqueueWrite: <T>(run: () => Promise<T>) => Promise<T>;
   readonly now?: () => number;

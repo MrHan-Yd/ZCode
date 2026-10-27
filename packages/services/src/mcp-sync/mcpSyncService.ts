@@ -18,7 +18,7 @@ import type {
   SettingsDirectoryLocation,
   SettingsDirectorySource,
 } from "@zcode/shared";
-import type { ICredentialService } from "../credential/credential.js";
+import type { CredentialServiceAccess } from "../credential/credential.js";
 import { createMcpConfigSync, type McpConfigSyncServerRecord } from "./mcpConfigSync.js";
 import type { McpServerConfigObject } from "./mcpConfigSyncModel.js";
 import type { IMcpSyncService } from "./mcpSync.js";
@@ -78,7 +78,7 @@ interface McpSyncServiceDependencies {
    * 凭据读取端口（GitHub access token），供 MCP 配置同步使用；
    * 缺省时同步方法一律返回 `not_authenticated`。
    */
-  credentialService?: Pick<ICredentialService, "load">;
+  credentialService?: CredentialServiceAccess;
   /** 代理感知的 fetch；host 必须注入 `hostApiNetworkTransport.fetch`。 */
   fetchImpl?: typeof fetch;
   /** 本机数据目录（元数据与备份）；缺省用 `~/.zcode/v2`。 */

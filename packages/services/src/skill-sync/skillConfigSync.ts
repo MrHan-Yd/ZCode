@@ -1,6 +1,6 @@
 import { mkdir, readFile, readdir, rm, rmdir, writeFile } from "node:fs/promises";
 import { basename, dirname, join, relative } from "node:path";
-import type { ICredentialService } from "../credential/credential.js";
+import type { CredentialServiceAccess } from "../credential/credential.js";
 import { SKILL_FILE_NAME, shouldWalkSkillDirectoryEntry } from "@zcode/shared";
 import { getAppConfigDir } from "../paths.js";
 import { createConfigSyncBackup } from "../config-sync/backup.js";
@@ -66,7 +66,7 @@ export interface CreateSkillConfigSyncOptions {
   /** 给出即工作区级；只用于推导 gist description / 元数据分片 / 备份子目录。 */
   readonly workspacePath?: string;
   readonly dataDir?: () => Promise<string>;
-  readonly credentialService?: Pick<ICredentialService, "load">;
+  readonly credentialService?: CredentialServiceAccess;
   readonly fetchImpl?: typeof fetch;
   readonly enqueueWrite: <T>(run: () => Promise<T>) => Promise<T>;
   readonly now?: () => number;

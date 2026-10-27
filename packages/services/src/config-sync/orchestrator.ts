@@ -1,7 +1,6 @@
 import { describeRequestError } from "#src/http/describeRequestError.js";
 import { createServiceLogger } from "#src/logger/serviceLogger.js";
-import type { ICredentialService } from "../credential/credential.js";
-import { GITHUB_ACCESS_TOKEN_CREDENTIAL_KEY } from "../github/githubAuth.js";
+import type { CredentialServiceAccess } from "../credential/credential.js";
 import { isKnownBackupDir, type ConfigSyncBackup } from "./backup.js";
 import { createGistClient, gistHtmlUrl } from "./gistClient.js";
 import { buildRemoteFiles, computeFingerprint, findOversizedItem } from "./manifest.js";
@@ -9,6 +8,7 @@ import type { ConfigSyncMetadataStore } from "./metadata.js";
 import { buildPlan, resolveApplySet } from "./plan.js";
 import { createRemoteResolver } from "./remoteResolver.js";
 import { scanSecrets } from "./secretScan.js";
+import { createConfigSyncTokenAccess } from "./tokenAccess.js";
 import { ConfigSyncLocalInvalidError } from "./types.js";
 import type {
   ConfigSyncBackupList,
@@ -95,8 +95,8 @@ export interface CreateConfigSyncOptions<
   TPlan extends ConfigSyncDownloadPlan = ConfigSyncDownloadPlan,
 > {
   readonly adapter: ConfigSyncAdapter<TPlan>;
-  /** 凭据读取端口；缺省时同步方法一律返回 `not_authenticated`。 */
-  readonly credentialService?: Pick<ICredentialService, "load">;
+  /** 凭据端口；缺省时同步方法一律返回 `not_authenticated`。 */
+  readonly credentialService?: CredentialServiceAccess;
   /** 必须注入 host 的代理感知传输（`hostApiNetworkTransport.fetch`）；缺省用全局 fetch。 */
   readonly fetchImpl?: typeof fetch;
   /** 与其它写路径串行的执行器，由所属服务提供。 */
@@ -141,26 +141,25 @@ export function createConfigSync<TPlan extends ConfigSyncDownloadPlan = ConfigSy
     }
   };
 
-  const loadToken = async (): Promise<string | null> => {
-    if (!options.credentialService) return null;
-    const token =
-      (await options.credentialService.load(GITHUB_ACCESS_TOKEN_CREDENTIAL_KEY))?.trim() ?? "";
-    return token.length > 0 ? token : null;
-  };
+  const tokens = createConfigSyncTokenAccess({
+    credentialService: options.credentialService,
+    fetchImpl: options.fetchImpl,
+  });
 
   const fingerprintOf = (snapshot: ConfigSyncSnapshot): string =>
     computeFingerprint(snapshot.items, snapshot.extras);
 
   const getStatus = async (): Promise<ConfigSyncStatus> => {
-    const [metadata, token, snapshot, backups] = await Promise.all([
+    const [metadata, session, snapshot, backups] = await Promise.all([
       adapter.metadata.read(),
-      loadToken(),
+      // 只读本地凭据判断连接态：不刷新、不出网。
+      tokens.readSession(),
       adapter.collectSnapshot(),
       adapter.backup.list(),
     ]);
     const localFingerprint = fingerprintOf(snapshot);
     return {
-      connected: token !== null,
+      connected: session !== null,
       ...(adapter.scopeLabel ? { scopeLabel: adapter.scopeLabel } : {}),
       ...(metadata.gistId ? { gistIdShort: metadata.gistId.slice(0, 8) } : {}),
       ...(metadata.gistId ? { gistUrl: gistHtmlUrl(metadata.gistId) } : {}),
@@ -228,8 +227,9 @@ export function createConfigSync<TPlan extends ConfigSyncDownloadPlan = ConfigSy
     confirmSecretUpload?: boolean;
   }): Promise<ConfigSyncResult<ConfigSyncUploadResult>> =>
     withSingleFlight("upload", async () => {
-      const token = await loadToken();
-      if (!token) return fail("not_authenticated", "未登录");
+      const auth = await tokens.resolveAccessToken();
+      if (!auth.ok) return { status: "error", error: auth.error };
+      const token = auth.token;
 
       const snapshot = await adapter.collectSnapshot();
       const unparsable = snapshot.items.find(
@@ -312,8 +312,9 @@ export function createConfigSync<TPlan extends ConfigSyncDownloadPlan = ConfigSy
 
   const preview = async (): Promise<ConfigSyncResult<TPlan>> =>
     withSingleFlight("preview", async () => {
-      const token = await loadToken();
-      if (!token) return fail("not_authenticated", "未登录");
+      const auth = await tokens.resolveAccessToken();
+      if (!auth.ok) return { status: "error", error: auth.error };
+      const token = auth.token;
       const source = await remote.resolveDownloadSource(token);
       if ("error" in source) return { status: "error", error: source.error };
       const [snapshot, metadata] = await Promise.all([
@@ -344,8 +345,9 @@ export function createConfigSync<TPlan extends ConfigSyncDownloadPlan = ConfigSy
       return fail("unknown", "镜像下载会删除本地独有的条目，需要显式确认");
     }
     return withSingleFlight("apply", async () => {
-      const token = await loadToken();
-      if (!token) return fail("not_authenticated", "未登录");
+      const auth = await tokens.resolveAccessToken();
+      if (!auth.ok) return { status: "error", error: auth.error };
+      const token = auth.token;
       const source = await remote.resolveDownloadSource(token);
       if ("error" in source) return { status: "error", error: source.error };
       const { manifest, items: remoteItems, extras: remoteExtras } = source.parsed;

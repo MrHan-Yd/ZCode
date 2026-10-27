@@ -34,7 +34,10 @@ function begin(overrides: Partial<{ intervalSeconds: number; expiresAt: number }
 }
 
 function pending(state: GithubAuthFlowState, interval: number | undefined) {
-  return githubAuthFlowReducer(state, { type: "pollResult", result: { status: "pending", interval } });
+  return githubAuthFlowReducer(state, {
+    type: "pollResult",
+    result: { status: "pending", interval },
+  });
 }
 
 test("未登录 → 授权中 → 已登录：状态迁移与轮询开关同步", () => {
@@ -86,7 +89,10 @@ test("间隔收敛：0/负数向上取到 1 秒，缺失/NaN/Infinity 回落到�
   assert.equal(normalizePollIntervalSeconds(4.9), 4);
   assert.equal(normalizePollIntervalSeconds(undefined), DEFAULT_POLL_INTERVAL_SECONDS);
   assert.equal(normalizePollIntervalSeconds(Number.NaN), DEFAULT_POLL_INTERVAL_SECONDS);
-  assert.equal(normalizePollIntervalSeconds(Number.POSITIVE_INFINITY), DEFAULT_POLL_INTERVAL_SECONDS);
+  assert.equal(
+    normalizePollIntervalSeconds(Number.POSITIVE_INFINITY),
+    DEFAULT_POLL_INTERVAL_SECONDS,
+  );
   assert.equal(resolvePollIntervalSeconds(7, undefined), 7);
   assert.equal(resolvePollIntervalSeconds(7, 12), 12);
 });
@@ -194,6 +200,85 @@ test("退出登录：已连接 → 未登录", () => {
     githubAuthFlowReducer(connected, { type: "signedOut" }),
     INITIAL_GITHUB_AUTH_FLOW_STATE,
   );
+});
+
+test("reauth_required：授权过期进入可提示的终止态，不回落 idle", () => {
+  // Refresh token 已失效（spec 冻结语义）：host 返回 { connected: false, reason: "reauth_required" }。
+  // UI 必须区分「授权已过期」与「从未登录」，否则用户只会看到普通的登录入口。
+  const connected = githubAuthFlowReducer(INITIAL_GITHUB_AUTH_FLOW_STATE, {
+    type: "accountLoaded",
+    account: { connected: true, login: "octocat" },
+  });
+  const reauthRequired = githubAuthFlowReducer(connected, {
+    type: "accountLoaded",
+    account: { connected: false, reason: "reauth_required" },
+  });
+
+  assert.equal(reauthRequired.phase, "reauth_required");
+  assert.equal(reauthRequired.account, undefined);
+  // 不是授权中，不需要继续轮询；组件仍然展示登录入口。
+  assert.equal(shouldPollGithubAuth(reauthRequired), false);
+  assert.equal(buildGithubAuthPollRequest(reauthRequired), null);
+  assert.equal(githubAuthAccountLabel(reauthRequired.account), null);
+});
+
+test("未连接且没有 reason：仍然是普通未登录态", () => {
+  // 旧形态 / 已退出登录：只有 connected:false，没有 reason，不能被当成授权过期。
+  const state = githubAuthFlowReducer(INITIAL_GITHUB_AUTH_FLOW_STATE, {
+    type: "accountLoaded",
+    account: { connected: false },
+  });
+  assert.equal(state.phase, "idle");
+  assert.deepEqual(state, INITIAL_GITHUB_AUTH_FLOW_STATE);
+
+  // connected:false 上携带 unverified 也不应进入授权过期分支（语义上 unverified 只属于 connected 态）。
+  const unverified = githubAuthFlowReducer(INITIAL_GITHUB_AUTH_FLOW_STATE, {
+    type: "accountLoaded",
+    account: { connected: false, reason: "unverified" },
+  });
+  assert.equal(unverified.phase, "idle");
+});
+
+test("unverified：保留 connected 与 reason，但无 login 时不伪造账号名", () => {
+  // 凭据在、/user 暂不可达：host 返回 { connected: true, reason: "unverified" }，可能没有 login。
+  // UI 必须仍进入 connected 分支，只显示「已连接」，不能把无 login 当成未连接。
+  const state = githubAuthFlowReducer(INITIAL_GITHUB_AUTH_FLOW_STATE, {
+    type: "accountLoaded",
+    account: { connected: true, reason: "unverified" },
+  });
+
+  assert.equal(state.phase, "connected");
+  assert.equal(state.account?.connected, true);
+  assert.equal(state.account?.reason, "unverified");
+  assert.equal(state.account?.login, undefined);
+  assert.equal(githubAuthAccountLabel(state.account), null);
+
+  // 若 host 在 unverified 时仍带回了 login，则照常展示账号名，不因 reason 被吞掉。
+  const withLogin = githubAuthFlowReducer(INITIAL_GITHUB_AUTH_FLOW_STATE, {
+    type: "accountLoaded",
+    account: { connected: true, reason: "unverified", login: "octocat", name: " Mona " },
+  });
+  assert.equal(withLogin.phase, "connected");
+  assert.equal(githubAuthAccountLabel(withLogin.account), "Mona");
+  assert.equal(
+    githubAuthAccountLabel({ connected: true, reason: "unverified", login: "octocat" }),
+    "octocat",
+  );
+});
+
+test("reason 是可选字段：未携带 reason 的旧形态与携带 reason 的 connected:true 等价", () => {
+  const legacy = githubAuthFlowReducer(INITIAL_GITHUB_AUTH_FLOW_STATE, {
+    type: "accountLoaded",
+    account: { connected: true, login: "octocat" },
+  });
+  const withReason = githubAuthFlowReducer(INITIAL_GITHUB_AUTH_FLOW_STATE, {
+    type: "accountLoaded",
+    account: { connected: true, login: "octocat", reason: "unverified" },
+  });
+
+  assert.equal(legacy.phase, withReason.phase);
+  assert.equal(legacy.account?.login, withReason.account?.login);
+  assert.equal(githubAuthAccountLabel(legacy.account), githubAuthAccountLabel(withReason.account));
 });
 
 test("剩余有效期：按秒向上取整，过期不返回负数，无 expiresAt 时不倒计时", () => {

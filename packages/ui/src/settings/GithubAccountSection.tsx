@@ -393,6 +393,8 @@ function terminalPhaseMessage(
       return formatMessage("settings.syncConfig.githubDenied");
     case "expired":
       return formatMessage("settings.syncConfig.githubExpired");
+    case "reauth_required":
+      return formatMessage("settings.syncConfig.githubReauthRequired");
     case "error":
       return formatMessage("settings.syncConfig.githubSignInFailed", { error: message ?? "" });
     default:
@@ -402,5 +404,11 @@ function terminalPhaseMessage(
 
 /** 可重试的终止态才显示登录按钮；未配置与 Device Flow 未开启重试也没用。 */
 function shouldOfferRetry(phase: GithubAuthPhase): boolean {
-  return phase === "idle" || phase === "denied" || phase === "expired" || phase === "error";
+  return (
+    phase === "idle" ||
+    phase === "denied" ||
+    phase === "expired" ||
+    phase === "reauth_required" ||
+    phase === "error"
+  );
 }

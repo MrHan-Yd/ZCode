@@ -2464,6 +2464,7 @@ const zhCN: Record<string, string> = {
   "settings.syncConfig.githubSignInFailed": "GitHub 授权失败：{error}",
   "settings.syncConfig.githubDenied": "授权被拒绝。可以重新登录再试一次。",
   "settings.syncConfig.githubExpired": "设备码已过期，请重新登录。",
+  "settings.syncConfig.githubReauthRequired": "GitHub 授权已过期，请重新登录。",
   "settings.syncConfig.githubDeviceFlowDisabled":
     "当前 GitHub OAuth App 未启用 Device Flow。请到该 OAuth App 设置里勾选 Enable Device Flow 后重试。",
   "settings.syncConfig.githubNotConfigured": "当前环境未配置 GitHub OAuth App，无法登录 GitHub。",

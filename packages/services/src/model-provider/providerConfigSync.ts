@@ -6,7 +6,7 @@ import {
   type ProviderConfigLayerUpdate,
 } from "@zcode/provider";
 import { PERSONAL_PROVIDER_CONFIG_FILE_NAME, decodeProviderConfigFile } from "@zcode/provider-node";
-import type { ICredentialService } from "../credential/credential.js";
+import type { CredentialServiceAccess } from "../credential/credential.js";
 import { createConfigSyncBackup } from "../config-sync/backup.js";
 import { createConfigSyncMetadataStore } from "../config-sync/metadata.js";
 import {
@@ -49,7 +49,7 @@ export interface CreateProviderConfigSyncOptions {
   readonly userConfigPath: () => Promise<string>;
   /** 同步元数据与备份的目录；缺省用设置里的数据存储路径（`{dataBaseDir}/.zcode/v2`）。 */
   readonly dataDir?: () => Promise<string>;
-  readonly credentialService?: Pick<ICredentialService, "load">;
+  readonly credentialService?: CredentialServiceAccess;
   readonly fetchImpl?: typeof fetch;
   readonly enqueueWrite: <T>(run: () => Promise<T>) => Promise<T>;
   readonly now?: () => number;

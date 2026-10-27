@@ -41,7 +41,7 @@ import {
   type SubagentStorageOptions,
 } from "./subagentStorage.js";
 import type { ISubagentsService } from "./subagents.js";
-import type { ICredentialService } from "../credential/credential.js";
+import type { CredentialServiceAccess } from "../credential/credential.js";
 import { atomicWriteText } from "#src/fs/atomicFileUtils.js";
 import {
   migrateUserSubagentMarkdown,
@@ -81,7 +81,7 @@ interface InstalledPluginRecord {
 interface SubagentsServiceOptions extends SubagentStorageOptions {
   isDesktopRuntime?: boolean;
   /** 凭据读取端口（GitHub access token）；缺省时同步方法一律返回 `not_authenticated`。 */
-  credentialService?: Pick<ICredentialService, "load">;
+  credentialService?: CredentialServiceAccess;
   /** 代理感知的 fetch；host 必须注入 `hostApiNetworkTransport.fetch`，缺省用全局 fetch。 */
   fetchImpl?: typeof fetch;
 }

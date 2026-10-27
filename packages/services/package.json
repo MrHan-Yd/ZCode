@@ -14,7 +14,8 @@
   },
   "scripts": {
     "lint": "oxlint",
-    "lint:fix": "oxlint --fix"
+    "lint:fix": "oxlint --fix",
+    "typecheck:test": "tsc -p tsconfig.test.json"
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "1.64.0",

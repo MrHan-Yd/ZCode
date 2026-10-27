@@ -7,7 +7,7 @@ import {
   type PromptLibraryFileV1,
   type PromptTemplate,
 } from "@zcode/shared";
-import type { ICredentialService } from "../credential/credential.js";
+import type { CredentialServiceAccess } from "../credential/credential.js";
 import { createConfigSyncBackup } from "../config-sync/backup.js";
 import { createConfigSyncMetadataStore } from "../config-sync/metadata.js";
 import { createConfigSync, type ConfigSyncOperations } from "../config-sync/orchestrator.js";
@@ -49,7 +49,7 @@ export interface PromptLibrarySyncAccess {
 
 export interface CreatePromptLibraryConfigSyncOptions {
   readonly access: PromptLibrarySyncAccess;
-  readonly credentialService?: Pick<ICredentialService, "load">;
+  readonly credentialService?: CredentialServiceAccess;
   readonly fetchImpl?: typeof fetch;
   /** 与普通写路径串行的执行器；缺省直接执行，真正的互斥仍由 PromptLibrary 文件锁保证。 */
   readonly enqueueWrite?: <T>(run: () => Promise<T>) => Promise<T>;
