@@ -21,6 +21,14 @@ import { createMemoryService } from "../src/memory/memoryService.js";
 import { parseLegacyTaskSessionFile } from "../src/session/legacyTaskSessionFile.js";
 import { createProviderConfigRuntime } from "../src/model-provider/providerConfigRuntime.js";
 
+/**
+ * 实现对象在运行时带 disposeAll，但 factory 的导出返回类型 IZCodeTaskService 没暴露它。
+ * 测试清理阶段按实现签名收窄，避免用 `as any` 糊过去。
+ */
+type DisposableTaskService = ReturnType<typeof createZCodeTaskServiceAdapter> & {
+  disposeAll(): void;
+};
+
 const meta = {
   taskId: "wrapper-example",
   traceId: "trace-example",
@@ -135,7 +143,7 @@ test("missing sessions report the owner error even when a valid ACP snapshot exi
     }
     assert.equal(await readFile(path, "utf8"), content);
   } finally {
-    service.disposeAll();
+    (service as DisposableTaskService).disposeAll();
     setDataBaseDir(null);
     await rm(dir, { recursive: true, force: true });
   }
@@ -219,7 +227,7 @@ test("current session recovery preserves Desktop and replayable projections", as
     assert.equal(resumed.length, 3);
     assert.equal(indexed.length, 3);
   } finally {
-    service.disposeAll();
+    (service as DisposableTaskService).disposeAll();
   }
 });
 

@@ -195,6 +195,7 @@ test("上传 / 未变化 / 新机器下载：文本与二进制都逐字节往�
     assert.equal(result.remoteRevision, 1);
 
     const gist = [...github.gists.values()][0];
+    assert.ok(gist, "上传后应存在 gist");
     assert.equal(gist.description, GIST_DESCRIPTION);
     assert.ok(gist.files.has("manifest.json"));
     assert.equal(gist.files.get("skill.alpha%2fSKILL.md"), ALPHA_SKILL);

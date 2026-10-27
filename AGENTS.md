@@ -46,6 +46,14 @@
 - 使用异步文件和网络 IO；跨包导入使用公开入口，遵守现有路径别名。
 - 禁止 UI 直接调用 Repo、Service 引用 Runtime 具体实现、跨域导入实现细节及循环依赖。
 
+## 临时文件与产物
+
+- 一次性测试脚本（`.mjs` / `.ps1` / `.sh` / `.bat`）、临时 tsconfig、复现用配置文件必须放在系统临时目录；任务结束前删除，不得留在仓库工作区。
+- 测试与诊断截图不得提交或留在仓库。需要长期保留的界面图只能作为产品资产放在 `packages/ui/src/assets/**` 或 `packages/desktop/build/**`，并在提交说明中写明用途。
+- 一次性验证代码不要留在 `src/` 或 `test/`：要么转成正式测试并纳入 `pnpm typecheck` 的类型检查，要么删除。
+- 测试创建的临时目录必须用 `finally` 清理；`*.tsbuildinfo`、日志、`.zip` / `.tar.gz` 等构建或下载产物不得提交（仅仓库既有 fixture 例外）。
+- 收尾前运行 `git status --porcelain -uall`，确认没有未跟踪的脚本、截图、日志或临时配置；同时检查 `git status --ignored --porcelain` 中是否有本次新建的临时产物。
+
 ## UI 与平台边界
 
 - 遵守 `DESIGN.md`，复用已有组件，兼顾桌面与手机 Web 的布局、交互、主题和国际化。

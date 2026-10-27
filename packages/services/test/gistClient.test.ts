@@ -15,7 +15,8 @@ interface CapturedRequest {
 
 function stubFetch(response: Response): { fetchImpl: typeof fetch; requests: CapturedRequest[] } {
   const requests: CapturedRequest[] = [];
-  const fetchImpl = (async (input: RequestInfo | URL, init?: RequestInit) => {
+  // 用 fetch 自身的入参类型，避免依赖 lib 是否导出 RequestInfo（services 只开 es2025 lib）。
+  const fetchImpl = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
     requests.push({ url: String(input), init: init ?? {} });
     return response;
   }) as typeof fetch;

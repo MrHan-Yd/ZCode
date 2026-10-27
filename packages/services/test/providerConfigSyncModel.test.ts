@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parsePersonalModelConfigRules, parsePersonalProviderConfigMap } from "@zcode/provider";
+import {
+  parsePersonalModelConfigRules,
+  parsePersonalProviderConfigMap,
+  type ModelConfigRule,
+} from "@zcode/provider";
 import {
   mergePersonalModelRules,
   mergeProviderOrder,
@@ -32,6 +36,20 @@ function manualModelConfig(enabled: boolean) {
       maxOutputTokens: { max: 8192 },
     },
   };
+}
+
+/**
+ * `ModelConfigRule` 是判别联合，只有 provider-model / manual-provider-model 带 providerId+modelId。
+ * 这两个测试构造的正是这两类，先收窄再取字段。
+ */
+function exactRuleKey(rule: ModelConfigRule): [string, string] {
+  assert.ok(rule.type === "provider-model" || rule.type === "manual-provider-model");
+  return [rule.providerId, rule.modelId];
+}
+
+function exactRuleSummary(rule: ModelConfigRule): [string, string, string] {
+  assert.ok(rule.type === "provider-model" || rule.type === "manual-provider-model");
+  return [rule.type, rule.providerId, rule.modelId];
 }
 
 function rule(
@@ -84,9 +102,10 @@ test("剥离 API Key：只摘掉 apiKey，其余配置参数原样保留", () =>
   });
 
   // 账号型 access 本来就不带 Key，整体保留。
+  // as const 保留字面量类型，才能匹配 access 的 zhipu-account 判别分支。
   const account = {
     access: { type: "zhipu-account", accountType: "zai", mode: "start-plan", entitled: true },
-  };
+  } as const;
   assert.deepEqual(stripProviderApiKey(account), account);
 });
 
@@ -215,7 +234,7 @@ test("个人模型规则合并：按 Provider/Model 覆盖、本机独有键保�
 
   const merged = mergePersonalModelRules(local, remote);
   assert.deepEqual(
-    merged.rules().map((entry) => [entry.providerId, entry.modelId]),
+    merged.rules().map(exactRuleKey),
     [
       ["local-only", "x"],
       ["p2", "m2"],
@@ -243,7 +262,7 @@ test("个人模型规则合并：本机手动与远端智能同键时远端胜�
   const merged = mergePersonalModelRules(local, remote);
   // 同一 Provider/Model 只留一条，且是远端那一条（跨类型覆盖）。
   assert.deepEqual(
-    merged.rules().map((entry) => [entry.type, entry.providerId, entry.modelId]),
+    merged.rules().map(exactRuleSummary),
     [["manual-provider-model", "p1", "m1"]],
   );
   // 旧实现会同时保留智能与手动两条同键规则，`toPersonalJSON` 会抛「不能同时声明智能和手动配置」。

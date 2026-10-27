@@ -280,9 +280,20 @@ function resolveZCodeAgentCurrentLogFilePath(now = new Date()): string {
   return join(logDir, `zcode-${formatZCodeAgentLogDate(now)}.jsonl`);
 }
 
+/**
+ * 适配器在 `IZCodeTaskService` 之外还提供 host 退出回收用的生命周期方法。
+ *
+ * 返回类型必须带上它们：只声明成 `IZCodeTaskService` 会把公开类型擦窄，
+ * 按导出类型调用的退出回收路径会编译失败（运行时方法本来就存在）。
+ */
+export type ZCodeTaskServiceAdapter = IZCodeTaskService & {
+  disposeAll(): void;
+  disposeAllAndWait(): Promise<void>;
+};
+
 export function createZCodeTaskServiceAdapter(
   options: CreateZCodeTaskServiceAdapterOptions,
-): IZCodeTaskService {
+): ZCodeTaskServiceAdapter {
   const errorEmitter = new Emitter<ZCodeError>();
   const taskEmitters = new Map<string, Emitter<ZCodeStreamEvent>>();
   const globalTaskEmitters = new Map<string, Emitter<ZCodeStreamEvent>>();
@@ -1741,10 +1752,7 @@ export function createZCodeTaskServiceAdapter(
     agentService.disposeAll();
   }
 
-  const service: IZCodeTaskService & {
-    disposeAll(): void;
-    disposeAllAndWait(): Promise<void>;
-  } = {
+  const service: ZCodeTaskServiceAdapter = {
     async initialize(params) {
       const result = await options.zcodeAgentService.initialize(params);
       return {

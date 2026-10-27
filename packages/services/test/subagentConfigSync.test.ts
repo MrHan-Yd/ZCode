@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import type { ConfigSyncError } from "../src/config-sync/types.js";
 import { GITHUB_ACCESS_TOKEN_CREDENTIAL_KEY } from "../src/github/githubAuth.js";
 import { setDataBaseDir } from "../src/paths.js";
 import {
@@ -152,7 +153,12 @@ function createFakeGithub() {
       gate = next;
     },
     gistFile: (gistId: string, fileName: string) => gists.get(gistId)?.files.get(fileName),
-    onlyGist: () => [...gists.values()][0],
+    // 测试里访问 gist 前都应已经建成功；缺失直接抛错，比返回 undefined 让断言空转更可靠。
+    onlyGist: () => {
+      const [gist] = [...gists.values()];
+      if (!gist) throw new Error("测试期望已创建 gist，但实际不存在");
+      return gist;
+    },
   };
 }
 
@@ -222,7 +228,7 @@ function createService(
   });
 }
 
-function expectError<T>(result: T | { status: "error"; error: { code: string; message: string } }) {
+function expectError<T>(result: T | { status: "error"; error: ConfigSyncError }): ConfigSyncError {
   assert.ok(
     typeof result === "object" &&
       result !== null &&
@@ -230,7 +236,7 @@ function expectError<T>(result: T | { status: "error"; error: { code: string; me
       result.status === "error",
     `期望错误结果，实际：${JSON.stringify(result)}`,
   );
-  return (result as { status: "error"; error: { code: string; message: string } }).error;
+  return (result as { status: "error"; error: ConfigSyncError }).error;
 }
 
 test("未登录：不发任何网络请求", async () => {

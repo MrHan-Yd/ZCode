@@ -9,6 +9,14 @@ import { TaskIndexRepo } from "../src/session/taskIndexRepo.js";
 import { runTaskAutoArchiveSweep } from "../src/session/taskAutoArchive.js";
 import { createZCodeTaskServiceAdapter } from "../src/zcode-agent/zcodeTaskServiceAdapter.js";
 
+/**
+ * 实现对象在运行时带 disposeAll，但 factory 的导出返回类型 IZCodeTaskService 没暴露它。
+ * 测试清理阶段按实现签名收窄，避免用 `as any` 糊过去。
+ */
+type DisposableTaskService = ReturnType<typeof createZCodeTaskServiceAdapter> & {
+  disposeAll(): void;
+};
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WORKSPACE = { workspacePath: "/example/auto-archive", workspaceIdentity: "auto-archive-ws" };
 
@@ -145,7 +153,7 @@ test("listArchivedTasks 不再按 provider 过滤，历史 NULL-provider 归档�
         },
       ]);
     } finally {
-      service.disposeAll();
+      (service as DisposableTaskService).disposeAll();
     }
   });
 });

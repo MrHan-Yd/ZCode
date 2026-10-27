@@ -2625,6 +2625,8 @@ const enUS: Record<string, string> = {
   "settings.syncConfig.githubConnected": "Connected",
   "settings.syncConfig.githubSignOut": "Sign out",
   "settings.syncConfig.githubSignedOut": "Signed out of GitHub",
+  "settings.syncConfig.githubSignOutFailed":
+    "Could not sign out. Your credentials may still be stored. Please try again.",
   "settings.syncConfig.githubSignInFailed": "GitHub authorization failed: {error}",
   "settings.syncConfig.githubDenied": "Authorization was denied. You can sign in again.",
   "settings.syncConfig.githubExpired": "The device code expired. Please sign in again.",

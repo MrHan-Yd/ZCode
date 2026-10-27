@@ -166,8 +166,8 @@ test("远端解析：内容无法被本功能加载时按 remote_invalid 拒绝"
       truncated: false,
     },
   });
+  // assert.equal 已带断言签名把 status 收窄到 "invalid"，再判 !== "ok" 是恒真死代码。
   assert.equal(parsed.status, "invalid");
-  assert.ok(parsed.status !== "ok");
   assert.match(parsed.message, /item\.a\.json/);
 });
 

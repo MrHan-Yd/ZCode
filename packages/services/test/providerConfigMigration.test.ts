@@ -78,7 +78,10 @@ test("startup migrates published ZCode config into personal config without chang
     assert.ok(rule);
     assert.equal(rule.providerName, "Example provider");
     assert.equal(rule.enabled, false);
-    assert.equal(rule.config.access?.toJSON().apiKey, "test-only-key");
+    // access 是判别联合，只有 api-key 分支带 apiKey，先收窄再取值。
+    const access = rule.config.access?.toJSON();
+    assert.ok(access && access.type === "api-key");
+    assert.equal(access.apiKey, "test-only-key");
     assert.equal(rule.config.api?.baseUrl, "https://provider.example/v1");
     assert.deepEqual(rule.config.api?.headers, { "X-Example": "test" });
     assert.deepEqual(rule.config.personalModelIds, ["model-b", "model-a"]);

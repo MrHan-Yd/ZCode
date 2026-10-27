@@ -2461,6 +2461,7 @@ const zhCN: Record<string, string> = {
   "settings.syncConfig.githubConnected": "已连接",
   "settings.syncConfig.githubSignOut": "退出登录",
   "settings.syncConfig.githubSignedOut": "已退出 GitHub 登录",
+  "settings.syncConfig.githubSignOutFailed": "退出登录失败，凭据可能仍保留，请稍后重试。",
   "settings.syncConfig.githubSignInFailed": "GitHub 授权失败：{error}",
   "settings.syncConfig.githubDenied": "授权被拒绝。可以重新登录再试一次。",
   "settings.syncConfig.githubExpired": "设备码已过期，请重新登录。",

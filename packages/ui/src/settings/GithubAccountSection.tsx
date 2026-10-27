@@ -198,11 +198,11 @@ export function GithubAccountSection() {
       dispatch({ type: "signedOut" });
       toast(formatMessage("settings.syncConfig.githubSignedOut"));
     } catch (error) {
-      // 退出失败不能把 UI 改成未登录：token 可能还留在 host 侧，
-      // 保持 connected 态让用户重试，并如实提示网络错误。
+      // 退出失败不能把 UI 改成未登录：凭据可能还留在 host 侧，
+      // 保持 connected 态让用户重试，并明确提示「退出失败」而不是网络错误。
       const message = getErrorMessage(error);
       logger.warn("[GithubAccountSection] 退出 GitHub 登录失败", { error: message });
-      toast(formatMessage("settings.syncConfig.githubNetworkError"));
+      toast(formatMessage("settings.syncConfig.githubSignOutFailed"));
     }
   }, [formatMessage, service]);
 

@@ -14,6 +14,14 @@ import { parseLegacyTaskSessionFile } from "../src/session/legacyTaskSessionFile
 import { TaskIndexRepo } from "../src/session/taskIndexRepo.js";
 import { createZCodeTaskServiceAdapter } from "../src/zcode-agent/zcodeTaskServiceAdapter.js";
 
+/**
+ * 实现对象在运行时带 disposeAll，但 factory 的导出返回类型 IZCodeTaskService 没暴露它。
+ * 测试清理阶段按实现签名收窄，避免用 `as any` 糊过去。
+ */
+type DisposableTaskService = ReturnType<typeof createZCodeTaskServiceAdapter> & {
+  disposeAll(): void;
+};
+
 for (const clientMode of ["desktop-continuous", "web-remote-replayable"] as const) {
   test(`previously imported Claude history becomes a real session for ${clientMode}`, async () => {
     const dir = await mkdtemp(join(tmpdir(), "zcode-import-recovery-"));
@@ -129,7 +137,7 @@ for (const clientMode of ["desktop-continuous", "web-remote-replayable"] as cons
       });
       assert.equal(await readFile(path, "utf8"), content);
     } finally {
-      service.disposeAll();
+      (service as DisposableTaskService).disposeAll();
       taskIndexRepo.close();
       setDataBaseDir(null);
       await rm(dir, { recursive: true, force: true });

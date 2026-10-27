@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
+import type { ConfigSyncError } from "../src/config-sync/types.js";
 import { GITHUB_ACCESS_TOKEN_CREDENTIAL_KEY } from "../src/github/githubAuth.js";
 import { createMcpSyncService } from "../src/mcp-sync/mcpSyncService.js";
 import { setDataBaseDir } from "../src/paths.js";
@@ -126,7 +127,12 @@ function createFakeGithub() {
   return {
     fetchImpl,
     requests,
-    onlyGist: () => [...gists.values()][0],
+    // 测试里访问 gist 前都应已经建成功；缺失直接抛错，比返回 undefined 让断言空转更可靠。
+    onlyGist: () => {
+      const [gist] = [...gists.values()];
+      if (!gist) throw new Error("测试期望已创建 gist，但实际不存在");
+      return gist;
+    },
     setFailure: (next: { status: number; headers?: Record<string, string> } | null) => {
       failure = next;
     },
@@ -189,7 +195,7 @@ function createService(
   });
 }
 
-function expectError<T>(result: T | { status: "error"; error: { code: string; message: string } }) {
+function expectError<T>(result: T | { status: "error"; error: ConfigSyncError }): ConfigSyncError {
   assert.ok(
     typeof result === "object" &&
       result !== null &&
@@ -197,7 +203,13 @@ function expectError<T>(result: T | { status: "error"; error: { code: string; me
       result.status === "error",
     `期望错误结果，实际：${JSON.stringify(result)}`,
   );
-  return (result as { status: "error"; error: { code: string; message: string } }).error;
+  return (result as { status: "error"; error: ConfigSyncError }).error;
+}
+
+/** 读取 server 配置里第 index 个 args；缺字段时返回 undefined，避免直接索引 unknown。 */
+function serverArg(server: Record<string, unknown> | undefined, index: number): unknown {
+  const args = server?.args;
+  return Array.isArray(args) ? args[index] : undefined;
 }
 
 test("未登录：不发任何网络请求", async () => {
@@ -323,7 +335,10 @@ test("merge 下载：远端覆盖同名、本地独有保留；replace 需显式
       ).code,
       "unknown",
     );
-    assert.equal((await readZcodeServers(homeB)).shared.command, "npx");
+    const beforeMerge = await readZcodeServers(homeB);
+    const sharedBeforeMerge = beforeMerge.shared;
+    assert.ok(sharedBeforeMerge);
+    assert.equal(sharedBeforeMerge.command, "npx");
 
     const merged = await service.applyConfigFromGist({
       strategy: "merge",
@@ -332,7 +347,9 @@ test("merge 下载：远端覆盖同名、本地独有保留；replace 需显式
     assert.ok(merged.status === "ok");
     assert.deepEqual(merged.applied, { added: 0, updated: 1, removed: 0, kept: 1 });
     const afterMerge = await readZcodeServers(homeB);
-    assert.deepEqual(afterMerge.shared.env, { FROM: "remote" });
+    const sharedAfterMerge = afterMerge.shared;
+    assert.ok(sharedAfterMerge);
+    assert.deepEqual(sharedAfterMerge.env, { FROM: "remote" });
     assert.ok(afterMerge["local-only"]);
 
     const replaced = await service.applyConfigFromGist({
@@ -368,7 +385,10 @@ test("新机器无元数据：按 description 发现 gist 并全量下载", asyn
     });
     assert.ok(applied.status === "ok");
     assert.deepEqual(applied.applied, { added: 1, updated: 0, removed: 0, kept: 0 });
-    assert.equal((await readZcodeServers(homeB)).alpha.command, "npx");
+    const downloaded = await readZcodeServers(homeB);
+    const alphaAfterDownload = downloaded.alpha;
+    assert.ok(alphaAfterDownload);
+    assert.equal(alphaAfterDownload.command, "npx");
     assert.ok(applied.backupDir);
   });
 });
@@ -389,7 +409,10 @@ test("远端内容非法 / revision 不符：拒绝写入且本地零变更", as
 
     github.onlyGist().files.set("server.alpha.json", "不是 JSON");
     assert.equal(expectError(await service.previewConfigFromGist()).code, "remote_invalid");
-    assert.equal((await readZcodeServers(home)).alpha.command, "npx");
+    const unchanged = await readZcodeServers(home);
+    const alphaUnchanged = unchanged.alpha;
+    assert.ok(alphaUnchanged);
+    assert.equal(alphaUnchanged.command, "npx");
   });
 });
 
@@ -438,7 +461,8 @@ test("下载后可列出备份并整份还原；还原前会再备份当前状�
       expectedRemoteRevision: plan.remoteRevision,
     });
     assert.ok(applied.status === "ok");
-    assert.equal((await readZcodeServers(homeB)).shared.args?.[1], "remote");
+    const afterDownload = await readZcodeServers(homeB);
+    assert.equal(serverArg(afterDownload.shared, 1), "remote");
 
     // 备份落在数据存储路径下，1 份 = 应用前那次，条目数 = 1 个 server。
     const backups = await service.listConfigSyncBackups();
@@ -450,7 +474,8 @@ test("下载后可列出备份并整份还原；还原前会再备份当前状�
       backupDir: backups.backups[0]!.backupDir,
     });
     assert.ok(restored.status === "ok");
-    assert.equal((await readZcodeServers(homeB)).shared.args?.[1], "local");
+    const afterRestore = await readZcodeServers(homeB);
+    assert.equal(serverArg(afterRestore.shared, 1), "local");
     assert.equal((await service.listConfigSyncBackups()).backups.length, 2);
     // 元数据未改写 → 状态行会提示本地有未上传的修改。
     assert.equal((await service.getConfigSyncStatus()).localChangedSinceLastSync, true);
@@ -465,7 +490,10 @@ test("还原只接受已知备份：任意路径被拒且本地零变更", async
       await service.restoreConfigSyncBackup({ backupDir: join(home, "..", "etc") }),
     );
     assert.equal(error.code, "unknown");
-    assert.equal((await readZcodeServers(home)).alpha.command, "npx");
+    const unchanged = await readZcodeServers(home);
+    const alphaUnchanged = unchanged.alpha;
+    assert.ok(alphaUnchanged);
+    assert.equal(alphaUnchanged.command, "npx");
     assert.equal((await service.listConfigSyncBackups()).backups.length, 0);
   });
 });
@@ -595,10 +623,8 @@ test("项目级备份与用户级备份分目录", async () => {
       ).status,
       "ok",
     );
-    assert.equal(
-      (await readWorkspaceZcodeServers(workspacePath)).alpha.args?.[1],
-      "https://alpha.example.com",
-    );
+    const workspaceServers = await readWorkspaceZcodeServers(workspacePath);
+    assert.equal(serverArg(workspaceServers.alpha, 1), "https://alpha.example.com");
 
     const workspaceBackups = await service.listConfigSyncBackups({ workspacePath });
     assert.equal(workspaceBackups.backups.length, 1);

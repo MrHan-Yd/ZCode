@@ -9,6 +9,7 @@ import {
   PERSONAL_PROVIDER_CONFIG_FILE_NAME,
 } from "@zcode/provider-node";
 import { sha256Hex } from "../src/config-sync/manifest.js";
+import type { ConfigSyncError } from "../src/config-sync/types.js";
 import { GITHUB_ACCESS_TOKEN_CREDENTIAL_KEY } from "../src/github/githubAuth.js";
 import { createProviderConfigSync } from "../src/model-provider/providerConfigSync.js";
 
@@ -208,7 +209,7 @@ function createSync(
   });
 }
 
-function expectError<T>(result: T | { status: "error"; error: { code: string; message: string } }) {
+function expectError<T>(result: T | { status: "error"; error: ConfigSyncError }): ConfigSyncError {
   assert.ok(
     typeof result === "object" &&
       result !== null &&
@@ -216,7 +217,7 @@ function expectError<T>(result: T | { status: "error"; error: { code: string; me
       result.status === "error",
     `期望错误结果，实际：${JSON.stringify(result)}`,
   );
-  return (result as { status: "error"; error: { code: string; message: string } }).error;
+  return (result as { status: "error"; error: ConfigSyncError }).error;
 }
 
 async function readFileProviders(
@@ -288,7 +289,9 @@ test("上传：条目不含 API Key，文件名转义 `:`，额外通道写出�
       assert.equal(entry.content.includes("sk-alpha"), false, `${name} 不应含 apiKey`);
       assert.equal(entry.content.includes("sk-beta"), false, `${name} 不应含 apiKey`);
     }
-    const settings = JSON.parse(files["settings.json"].content) as { providerOrder: string[] };
+    const settingsEntry = files["settings.json"];
+    assert.ok(settingsEntry, "请求体应包含 settings.json");
+    const settings = JSON.parse(settingsEntry.content) as { providerOrder: string[] };
     assert.deepEqual(settings.providerOrder, ["alpha", "vendor:beta"]);
   });
 });

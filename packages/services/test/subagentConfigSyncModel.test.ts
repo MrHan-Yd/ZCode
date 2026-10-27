@@ -42,17 +42,19 @@ test("agent 文件名映射：往返一致，带路径语义或控制字符的�
 });
 
 test("精选 state 只留三个字段：旧版回滚字段不进快照", () => {
-  const curated = pickCuratedState({
+  // 旧版回滚字段不在 pickCuratedState 的入参类型里，但下载侧确实可能读到带这些字段的 state。
+  // 先存进变量再传入（变量赋值不做多余属性检查），仍能断言它们被丢弃，无需 @ts-expect-error。
+  const legacyState = {
     disabledAgentIds: ["user:user:b", "user:user:a"],
     builtInModelSelectionOverrides: { Explore: { providerId: "zai", modelId: "glm-5.3" } },
     pluginAgentModelSelectionOverrides: {
       "plugin:x:y": { providerId: "zai", modelId: "glm-5.3" },
       "not-a-plugin-key": { providerId: "zai", modelId: "glm-5.3" },
     },
-    // @ts-expect-error 旧版回滚字段：故意传入以断言它被丢弃
     builtInModelOverrides: { Explore: { providerId: "zai", modelId: "legacy" } },
     builtInThoughtLevelOverrides: { Explore: "high" },
-  } as Parameters<typeof pickCuratedState>[0]);
+  };
+  const curated = pickCuratedState(legacyState);
 
   assert.deepEqual(curated.disabledAgentIds, ["user:user:a", "user:user:b"]);
   assert.deepEqual(Object.keys(curated.builtInModelSelectionOverrides), ["Explore"]);
