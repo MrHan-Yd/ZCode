@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.19.2](https://github.com/MrHan-Yd/ZCode/compare/v3.19.1...v3.19.2) (2026-10-29)
+
+### Features
+
+* **provider:** 新增 Ollama Cloud 模板并补齐内置品牌 Logo ([cfb809b](https://github.com/MrHan-Yd/ZCode/commit/cfb809b53fc604769b9d3778ffd94915b2a1f192))
+
 ## [3.19.1](https://github.com/MrHan-Yd/ZCode/compare/v3.19.0...v3.19.1) (2026-10-29)
 
 ### Bug Fixes
