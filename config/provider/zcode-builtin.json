@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": 33,
+  "revision": 35,
   "config": {
     "providerConfigRules": {
       "templateRules": [
@@ -795,7 +795,11 @@
               "deepseek/deepseek-v4.1-flash",
               "deepseek/deepseek-v4.1-flash-fast",
               "inclusionai/ling-3.1-flash:free"
-            ]
+            ],
+            "logo": {
+              "type": "builtin",
+              "key": "commandcode"
+            }
           }
         },
         {
@@ -832,7 +836,57 @@
               "cline-pass/kimi-k2.6",
               "cline-pass/kimi-k2.7-code",
               "cline-pass/minimax-m3"
-            ]
+            ],
+            "logo": {
+              "type": "builtin",
+              "key": "cline"
+            }
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "templateNameMap": {
+            "zh-CN": "Ollama Cloud",
+            "en-US": "Ollama Cloud"
+          },
+          "config": {
+            "access": {
+              "type": "api-key",
+              "apiKeyManagementUrl": "https://ollama.com/settings/keys"
+            },
+            "api": {
+              "type": "openai-chat-completions",
+              "baseUrl": "https://ollama.com/v1"
+            },
+            "builtinModelIds": [
+              "deepseek-v4.1-flash:1017",
+              "deepseek-v4-pro:0813",
+              "gpt-oss:120b",
+              "minimax-m3",
+              "minimax-m3.1-flash",
+              "nemotron-3-ultra",
+              "deepseek-v4.1-flash",
+              "muse-spark-open",
+              "nemotron-3-super",
+              "deepseek-v4-pro",
+              "beam",
+              "gemma4:31b",
+              "kimi-k2.7-code",
+              "glm-5.3-flash",
+              "minimax-m2.7",
+              "glm-5.3",
+              "kimi-k2.6",
+              "glm-5.2",
+              "gpt-oss:20b",
+              "nemotron-3-nano:30b",
+              "mistral-large-3:675b",
+              "kimi-k3",
+              "mistral-large-4"
+            ],
+            "logo": {
+              "type": "builtin",
+              "key": "ollama"
+            }
           }
         }
       ],
@@ -7153,6 +7207,167 @@
         {
           "templateId": "cline-pass",
           "modelId": "cline-pass/minimax-m3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "deepseek-v4.1-flash:1017",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "deepseek-v4-pro:0813",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "gpt-oss:120b",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "minimax-m3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "minimax-m3.1-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "nemotron-3-ultra",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "deepseek-v4.1-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "muse-spark-open",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "nemotron-3-super",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "deepseek-v4-pro",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "beam",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "gemma4:31b",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "kimi-k2.7-code",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "glm-5.3-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "minimax-m2.7",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "glm-5.3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "kimi-k2.6",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "glm-5.2",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "gpt-oss:20b",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "nemotron-3-nano:30b",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "mistral-large-3:675b",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "kimi-k3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud",
+          "modelId": "mistral-large-4",
           "config": {
             "enabled": true
           }

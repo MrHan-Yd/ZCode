@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "reviewedAt": "2026-09-02",
+  "reviewedAt": "2026-10-29",
   "logos": [
     {
       "brand": "OpenRouter",
@@ -119,6 +119,37 @@
       "sourceUrl": "https://avatars.githubusercontent.com/u/130314967?v=4",
       "sourceOwner": "xAI",
       "normalization": "Official GitHub organization avatar downsampled from 460x460 to 80x80 RGB."
+    },
+    {
+      "brand": "CommandCode",
+      "file": "model-provider-commandcode.svg",
+      "providerIds": ["commandcode"],
+      "sourceUrl": "https://raw.githubusercontent.com/CommandCodeAI/command-code/refs/heads/main/.github/commandcode/symbols/symbol.svg",
+      "sourcePage": "https://commandcode.ai/brand",
+      "sourceOwner": "CommandCode",
+      "normalization": "Official 137x137 square symbol SVG linked from the CommandCode brand page, unchanged. Black rounded square with white glyph, shared by light and dark themes. Retrieved 2026-10-29."
+    },
+    {
+      "brand": "Cline",
+      "file": "model-provider-cline-light.svg",
+      "darkFile": "model-provider-cline-dark.svg",
+      "providerIds": ["cline-pass"],
+      "sourceUrl": "https://cline.bot/assets/branding/brand/cline-brand-assets.zip#Source%20SVGs/cline-icon-dark.svg",
+      "darkSourceUrl": "https://cline.bot/assets/branding/brand/cline-brand-assets.zip#Source%20SVGs/cline-icon-white.svg",
+      "sourcePage": "https://cline.bot/brand",
+      "sourceOwner": "Cline",
+      "normalization": "Official 112x112 transparent bot icon SVGs from the Cline brand package, unchanged. Dark artwork for light backgrounds, white artwork for dark backgrounds. Retrieved 2026-10-29."
+    },
+    {
+      "brand": "Ollama",
+      "file": "model-provider-ollama-light.svg",
+      "darkFile": "model-provider-ollama-dark.svg",
+      "providerIds": ["ollama-cloud"],
+      "sourceUrl": "https://raw.githubusercontent.com/ollama/ollama/main/docs/favicon-dark.svg",
+      "darkSourceUrl": "https://raw.githubusercontent.com/ollama/ollama/main/docs/favicon.svg",
+      "sourcePage": "https://ollama.com",
+      "sourceOwner": "Ollama",
+      "normalization": "Official 28x28 llama mark SVGs from the Ollama docs asset set, unchanged. Upstream file names state the background each artwork targets: docs/favicon-dark.svg is the black mark for light backgrounds, docs/favicon.svg is the white mark for dark backgrounds. Retrieved 2026-10-29."
     }
   ]
 }

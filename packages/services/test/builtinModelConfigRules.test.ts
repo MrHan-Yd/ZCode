@@ -216,7 +216,22 @@ test("新增模型在对应模板中默认启用", async () => {
 
 test("内置 release revision 随内容递增", async () => {
   const release = decodeZCodeBuiltinRelease(JSON.parse(await readFile(BUILTIN_PATH, "utf8")));
-  assert.equal(release.revision, 33);
+  assert.equal(release.revision, 35);
+});
+
+test("CommandCode / ClinePass / Ollama Cloud 模板声明内置 Logo key", async () => {
+  const release = decodeZCodeBuiltinRelease(JSON.parse(await readFile(BUILTIN_PATH, "utf8")));
+  const cases = [
+    ["commandcode", "commandcode"],
+    ["cline-pass", "cline"],
+    ["ollama-cloud", "ollama"],
+  ] as const;
+  for (const [templateId, logoKey] of cases) {
+    assert.deepEqual(release.config.providerTemplates.get(templateId)?.config.logo, {
+      type: "builtin",
+      key: logoKey,
+    });
+  }
 });
 
 test("CommandCode / ClinePass 模板内置完整模型清单并默认启用", async () => {
@@ -229,6 +244,9 @@ test("CommandCode / ClinePass 模板内置完整模型清单并默认启用", as
     ["cline-pass", "cline-pass/glm-5.3-flash"],
     ["cline-pass", "cline-pass/mimo-v2.6-pro"],
     ["cline-pass", "cline-pass/kimi-k3"],
+    ["ollama-cloud", "gpt-oss:120b"],
+    ["ollama-cloud", "glm-5.3"],
+    ["ollama-cloud", "mistral-large-4"],
   ] as const;
   for (const [templateId, modelId] of cases) {
     const resolved = rules.resolve({

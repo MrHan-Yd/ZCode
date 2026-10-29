@@ -21,7 +21,13 @@ ZCode 之前没有这两家的内置 Provider 模板，用户只能手工添加�
      `builtinModelIds` 为上游 18 个模型。
 2. 两个模板的 access 都是 `api-key`，`apiKeyManagementUrl` 先指向各自官方文档页
    （`https://commandcode.ai/docs/provider`、`https://docs.cline.bot/getting-started/clinepass`），
-   确认控制台地址后再替换。模板不写 `logo`（当前没有内置 logo 资源）。
+   确认控制台地址后再替换。两个模板都声明内置 Logo：`commandcode` → `{ type: "builtin",
+   key: "commandcode" }`，`cline-pass` → `{ type: "builtin", key: "cline" }`。
+   - CommandCode 用品牌页提供的黑底白结方形符号 SVG，浅色与深色主题共用同一份素材。
+   - Cline 用官方品牌包里的机器人图标：深色描边版用于浅色主题，白色版用于深色主题。
+   - 素材与来源记录在 `packages/ui/src/assets/provider-icons/`（`model-provider-commandcode.svg`、
+     `model-provider-cline-light.svg`、`model-provider-cline-dark.svg`）和
+     `model-provider-logo-sources.json`；`ProviderLogo` 只按 `logo.key` 解析，不认 Provider ID。
 3. `templateModelRules` 为两个模板的每个模型写入 `enabled: true`。
 4. `modelRules` 补两条新家族规则（两家目录里出现、但内置此前没有的模型）：
    - `.*mimo-v2\.6(?:-(?:pro|flash))?(?:[.\-:/\[].*)?`：context 1048576 / output 131072，
@@ -34,7 +40,8 @@ ZCode 之前没有这两家的内置 Provider 模板，用户只能手工添加�
    `revision` 3 → 4。分片条目按上游 `models.dev` 的 limit / modalities / tool_call /
    structured_output / reasoning_options 生成，映射沿用 `openai-chat-completions` 的通用
    `maxOutputTokensMap` 与 `reasoningLevelMap`。
-7. `revision` 32 → 33。
+7. 内置 release `revision` 32 → 33；补齐 Logo 属内容变更，`revision` 33 → 34
+   （同一 revision 必须对应同一份内容，否则远端同序号会冲突）。
 
 ## 状态所有者与接口
 
@@ -54,4 +61,6 @@ ZCode 之前没有这两家的内置 Provider 模板，用户只能手工添加�
    `thinkingmachines/inkling-small` 1000000/1000000、`mistral/mistral-large-4` 524288/262144）
    不再落到兜底 200000/32000。
 5. 17 个分片合并后通过 `modelSmartConfigFileSchema`，`decodeZCodeBuiltinRelease` 通过，
-   `revision = 33`。
+   `revision = 34`。
+6. Provider 模板卡片与侧栏展示 CommandCode、ClinePass 的品牌 Logo，不再回落到兜底方块图标；
+   Cline 的描边在浅色 / 深色主题下都能看清。

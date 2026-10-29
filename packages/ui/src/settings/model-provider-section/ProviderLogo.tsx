@@ -19,6 +19,11 @@ import openrouterLight from "@/assets/provider-icons/model-provider-openrouter-l
 import openrouterDark from "@/assets/provider-icons/model-provider-openrouter-dark.svg";
 import opencodeLight from "@/assets/provider-icons/model-provider-opencode-light.svg";
 import opencodeDark from "@/assets/provider-icons/model-provider-opencode-dark.svg";
+import commandCodeLogo from "@/assets/provider-icons/model-provider-commandcode.svg";
+import clineLight from "@/assets/provider-icons/model-provider-cline-light.svg";
+import clineDark from "@/assets/provider-icons/model-provider-cline-dark.svg";
+import ollamaLight from "@/assets/provider-icons/model-provider-ollama-light.svg";
+import ollamaDark from "@/assets/provider-icons/model-provider-ollama-dark.svg";
 
 type ProviderLogoRef = NonNullable<ProviderConfigObject["logo"]>;
 
@@ -43,6 +48,10 @@ const BUILTIN_PROVIDER_LOGO_ASSETS: Readonly<Record<string, BuiltinProviderLogoA
   xai: { light: xAiLogo },
   openrouter: { light: openrouterLight, dark: openrouterDark },
   opencode: { light: opencodeLight, dark: opencodeDark },
+  // 官方只提供黑底白结的方形符号，浅色与深色主题共用同一份素材。
+  commandcode: { light: commandCodeLogo },
+  cline: { light: clineLight, dark: clineDark },
+  ollama: { light: ollamaLight, dark: ollamaDark },
 };
 
 function resolveBuiltinProviderLogoAsset(
