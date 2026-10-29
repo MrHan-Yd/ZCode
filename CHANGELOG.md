@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.19.3](https://github.com/MrHan-Yd/ZCode/compare/v3.19.2...v3.19.3) (2026-10-29)
+
+### Bug Fixes
+
+* 修复 Git 环境与模型探测兼容性 ([bbd9e78](https://github.com/MrHan-Yd/ZCode/commit/bbd9e78013201dcfb206a8b4eda8d5baca38fb53))
+  * 保留未跟踪的二进制、空文件及目录条目，确保可在提交弹窗中查看和提交
+  * 为 Git 子进程注入设置页代理和运行时 PATH，避免 push/pull/fetch 直连失败
+  * 为 OpenAI Responses 补充 prompt cache key，并将连接探测输出预算调整为合法最小值
+
+
+### Documentation
+
+* 补充 README 的 v3.19.2 更新说明 ([d3a999b](https://github.com/MrHan-Yd/ZCode/commit/d3a999be44dda41baf31243bf9da49ac54e70e6e))
+
 ## [3.19.2](https://github.com/MrHan-Yd/ZCode/compare/v3.19.1...v3.19.2) (2026-10-29)
 
 ### Features
