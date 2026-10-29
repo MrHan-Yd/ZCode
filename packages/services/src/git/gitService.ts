@@ -56,17 +56,6 @@ function buildFileChange(
   };
 }
 
-function shouldIncludeUntrackedChange(
-  entry: GitStatusEntry,
-  stat: { added: number; removed: number },
-): boolean {
-  // 构建目录里常见大量未跟踪的空文件、失效链接或不可读产物。
-  // 这类条目没有可审查的文本增删，之前会以 +0/-0 挤进 Review 面板，既污染列表又拖慢打开。
-  // 但详细 status 超限后，Git 会用末尾 `/` 的目录记录表达整棵未跟踪目录；它本身不可读，
-  // 行数必然为 0，却仍必须作为可 stage/discard 的降级入口保留。
-  return entry.path.endsWith("/") || stat.added > 0 || stat.removed > 0;
-}
-
 function toChangeForSource(
   snapshot: GitStatusSnapshot,
   entry: GitStatusEntry,
@@ -97,9 +86,10 @@ function toChangeForSource(
       added: 0,
       removed: 0,
     };
-    if (!shouldIncludeUntrackedChange(entry, stat)) {
-      return null;
-    }
+    // `??` 条目一律是一条变更：行数只用于展示，不能当成「文件是否存在」的判据。
+    // 之前按 added>0 过滤，把二进制文件（PNG/ICO 含 NUL 字节，行数恒为 0）与空文件
+    // 从变更集合里整条删掉，提交弹窗因此看不到也无法提交它们；
+    // 大仓库折叠出来的目录条目（路径以 `/` 结尾，行数同样为 0）也需要保留。
     return buildFileChange(snapshot, entry, "untracked", stat.added, stat.removed);
   }
 

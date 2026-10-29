@@ -41,14 +41,18 @@ export function createGenerateTextOptions(input: {
   resolved: ResolvedAiSdkModel;
   statusContext: ModelStatusContext;
 }): AiSdkGenerateTextOptions {
-  const providerOptions = mergeProviderOptions(
-    input.resolved.providerOptions,
-    input.request.providerOptions,
-  );
+  const providerOptionsWithPromptCache = withOpenAIResponsesPromptCacheKey({
+    providerKind: input.resolved.providerKind,
+    providerOptions: mergeProviderOptions(
+      input.resolved.providerOptions,
+      input.request.providerOptions,
+    ),
+    sessionId: input.statusContext.sessionId,
+  });
   const providerOptionsWithMetadata = mergeAnthropicRequestMetadata({
     metadataUserId: input.anthropicMetadataUserId,
     providerKind: input.resolved.providerKind,
-    providerOptions,
+    providerOptions: providerOptionsWithPromptCache,
   });
   const requestProviderOptions = withNativeGenerateOutputFormat({
     providerOptions: providerOptionsWithMetadata,
@@ -58,8 +62,8 @@ export function createGenerateTextOptions(input: {
   return removeUndefined({
     model: input.resolved.model,
     messages: toAiSdkMessages(input.request.messages, {
-      apiFormat: resolveProviderApiFormat(providerOptions),
-      providerOptions,
+      apiFormat: resolveProviderApiFormat(providerOptionsWithPromptCache),
+      providerOptions: providerOptionsWithPromptCache,
       providerKind: input.resolved.providerKind,
       inputFormat: input.resolved.properties?.inputFormat,
     }),
@@ -107,10 +111,14 @@ export function createStreamTextOptions(input: {
   resolved: ResolvedAiSdkModel;
   statusContext: ModelStatusContext;
 }): AiSdkStreamTextOptions {
-  const providerOptions = mergeProviderOptions(
-    input.resolved.providerOptions,
-    input.request.providerOptions,
-  );
+  const providerOptions = withOpenAIResponsesPromptCacheKey({
+    providerKind: input.resolved.providerKind,
+    providerOptions: mergeProviderOptions(
+      input.resolved.providerOptions,
+      input.request.providerOptions,
+    ),
+    sessionId: input.statusContext.sessionId,
+  });
   const requestProviderOptions = mergeAnthropicRequestMetadata({
     metadataUserId: input.anthropicMetadataUserId,
     providerKind: input.resolved.providerKind,
@@ -203,6 +211,39 @@ function withNativeGenerateOutputFormat(input: {
     // Lite role 的真实模型 ID 可能不在 AI SDK 的静态能力表中；
     // 显式 schema 必须继续生成目标 output_config，而不能退化成 JSON tool。
     anthropic: { ...anthropicOptions, structuredOutputMode: "outputFormat" },
+  };
+}
+
+/**
+ * Responses 格式的 codex 类上游把 prompt_cache_key 当必填项，缺省直接 400；
+ * 未上送时 ZCode 只能看到空完成流，报成「模型未返回任何内容」。键取会话 id：
+ * 同一会话复用同一缓存分组，也是 OpenAI 对该字段的推荐用法。
+ */
+function withOpenAIResponsesPromptCacheKey(input: {
+  providerKind: ResolvedAiSdkModel["providerKind"];
+  providerOptions: Record<string, unknown> | undefined;
+  sessionId: ModelStatusContext["sessionId"];
+}): Record<string, unknown> | undefined {
+  if (input.providerKind !== "openai") {
+    return input.providerOptions;
+  }
+  if (resolveProviderApiFormat(input.providerOptions) !== "openai-responses") {
+    return input.providerOptions;
+  }
+
+  const sessionId = typeof input.sessionId === "string" ? input.sessionId.trim() : "";
+  if (sessionId.length === 0) {
+    return input.providerOptions;
+  }
+
+  const openaiOptions = asPlainRecord(input.providerOptions?.openai) ?? {};
+  if (openaiOptions.promptCacheKey !== undefined) {
+    return input.providerOptions;
+  }
+
+  return {
+    ...input.providerOptions,
+    openai: { ...openaiOptions, promptCacheKey: sessionId },
   };
 }
 

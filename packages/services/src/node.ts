@@ -346,6 +346,9 @@ import { createFileService } from "./file/fileService.js";
 import { createMediaPreviewService } from "./media-preview/mediaPreview.js";
 import type { WorkspaceFileSearchFilter } from "./file/workspaceFileMentionFilter.js";
 import { createGitService } from "./git/gitService.js";
+import { createGitCliRepo } from "./git/repo/gitCliRepo.js";
+import { createGitCommandProvider } from "./git/providers/gitCommandProvider.js";
+import { createGitEnvironmentProvider } from "./git/providers/gitEnvironmentProvider.js";
 import { GitCommitMessageGenerator } from "./git/gitCommitMessageGenerator.js";
 import { createPromptEnhanceService } from "./prompt/promptEnhance.js";
 import { createGitCheckpointService } from "./git/gitCheckpointService.js";
@@ -449,6 +452,7 @@ import { initializeRuntimeProcessEnv } from "./runtime-tools/runtimeCommandEnv.j
 import {
   buildAgentEndpointOriginEnv,
   buildAgentRuntimeEnv,
+  buildGitNetworkEnv,
 } from "./runtime-tools/agentProxyEnv.js";
 import { ensureAppCaCert } from "./runtime-tools/appCaCert.js";
 import { buildHelperOpenArgs, isCuaLocalDevelopmentRuntime } from "@zcode/zcode-cua/broker/server";
@@ -2356,7 +2360,36 @@ export function createLocalServices(options: {
     },
     logger: createServiceLogger("git-commit-message"),
   });
+  // git 子进程不在 Bash/tool 的 passthrough 边界内：host 启动时已把 HTTP(S)_PROXY 从
+  // process.env 剥离，只有工具子进程才恢复。这里把设置页代理显式下发给 git，
+  // 否则 push/pull/fetch 会直连远端（典型表现：Recv failure: Connection was reset）。
+  // 与设置项文案一致，每个 host 进程只解析一次代理，修改后需重启应用生效。
+  let gitNetworkEnvPromise: Promise<Record<string, string>> | null = null;
+  const resolveGitNetworkEnv = (): Promise<Record<string, string>> => {
+    gitNetworkEnvPromise ??= settingService
+      .get()
+      .then((settings) =>
+        buildGitNetworkEnv({
+          httpProxy: settings.httpProxy,
+          noProxy: settings.httpProxyNoProxy,
+          caCertPath: settings.httpProxyCaCertPath,
+        }),
+      )
+      .catch((error: unknown) => {
+        // 读设置失败不能连坐本地 Git：退回直连，把原因留在日志里。
+        createServiceLogger("git-proxy").warn(undefined, "读取代理设置失败，git 将直连", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return {};
+      });
+    return gitNetworkEnvPromise;
+  };
   const gitService = createGitService({
+    repo: createGitCliRepo({
+      commandProvider: createGitCommandProvider({
+        environmentProvider: createGitEnvironmentProvider({ networkEnv: resolveGitNetworkEnv }),
+      }),
+    }),
     commitMessageGenerator: gitCommitMessageGenerator,
   });
   const promptEnhanceService = createPromptEnhanceService({

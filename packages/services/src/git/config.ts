@@ -65,7 +65,12 @@ export function getGitBinaryCandidates(): string[] {
   return candidates.filter((candidate): candidate is string => Boolean(candidate));
 }
 
-export function getGitCommandEnv(): NodeJS.ProcessEnv {
+/**
+ * `extraEnv` 用来叠加 host 显式下发的网络环境（设置页代理）。
+ * host 启动时已把 HTTP(S)_PROXY 从 process.env 剥离，只给工具子进程恢复，
+ * 所以 git 必须靠这份注入拿到代理，且设置页的值要覆盖任何继承来的同名变量。
+ */
+export function getGitCommandEnv(extraEnv?: Record<string, string>): NodeJS.ProcessEnv {
   const env = {
     ...process.env,
   };
@@ -85,6 +90,7 @@ export function getGitCommandEnv(): NodeJS.ProcessEnv {
     TERM: "dumb",
     LC_ALL: "C",
     LANG: "C",
+    ...extraEnv,
   };
 }
 

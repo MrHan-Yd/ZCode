@@ -80,6 +80,38 @@ export function buildAgentRuntimeEnv(input: {
 }
 
 /**
+ * Git 子进程的代理补丁。git 不是「工具子进程」：host 启动时已把网络变量从 process.env 剥离，
+ * 只有 Bash/tool 边界才恢复，因此 git 的 push/pull/fetch 会直连远端并被重置。
+ * 这里复用 agent 那套归一化（设置页优先、裸 host:port 补 http://），只产出 git 认的键；
+ * 证书走 GIT_SSL_CAINFO，让代理终结 TLS 时 git 信任同一份 CA。
+ */
+export function buildGitNetworkEnv(input: {
+  httpProxy: string | undefined;
+  noProxy?: string | undefined;
+  caCertPath?: string | undefined;
+}): Record<string, string> {
+  const env: Record<string, string> = {};
+  const proxy = normalizeProxyValue(input.httpProxy);
+  if (proxy) {
+    for (const key of ["HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"] as const) {
+      env[key] = proxy;
+    }
+  }
+
+  const noProxy = normalizeNoProxyValue(input.noProxy);
+  if (noProxy) {
+    env.NO_PROXY = noProxy;
+  }
+
+  const caCertPath = input.caCertPath?.trim();
+  if (caCertPath) {
+    env.GIT_SSL_CAINFO = caCertPath;
+  }
+
+  return env;
+}
+
+/**
  * 把 host 已解析出的**权威 ZCode API origin** 下发给 agent 子进程。
  *
  * 两侧的官方 MCP 信任判定共用 `@zcode/shared` 的同一份实现，但**输入**

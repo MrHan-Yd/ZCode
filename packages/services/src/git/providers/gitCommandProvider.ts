@@ -93,7 +93,7 @@ export function createGitCommandProvider(options?: {
       const timeoutMs = command.timeoutMs ?? DEFAULT_GIT_COMMAND_TIMEOUT_MS;
       const maxOutputBytes = command.maxOutputBytes ?? DEFAULT_GIT_OUTPUT_BYTES;
       const env = {
-        ...environmentProvider.createCommandEnv(),
+        ...(await environmentProvider.createCommandEnv()),
         ...command.env,
       };
       const startedAt = Date.now();

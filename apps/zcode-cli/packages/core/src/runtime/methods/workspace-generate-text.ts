@@ -22,7 +22,10 @@ import { generateAuxiliaryText, normalizeStreamError } from "../helpers/index.js
 import { auxiliaryModelOptions } from "../../model/auxiliary-model-options.js";
 
 const WORKSPACE_GENERATE_TEXT_TIMEOUT_MS = 60_000;
-const CONNECTIVITY_PROBE_MAX_OUTPUT_TOKENS = 1;
+// Responses 类上游对 max_output_tokens 有最小值校验：1..15 会被 400
+// integer_below_min_value 拒掉（2026-10-29 在 codex 渠道实测下限为 16）。
+// 探测不需要正文，但预算必须落在合法区间，否则连接测试永远失败。
+const CONNECTIVITY_PROBE_MAX_OUTPUT_TOKENS = 16;
 // 探测请求使用固定最小 prompt，避免多余推理开销；不可改写角色、文本或混入会话历史。
 const CONNECTIVITY_PROBE_SYSTEM = "You are ZCode connectivity probe.";
 const CONNECTIVITY_PROBE_USER = "hi";
@@ -56,7 +59,7 @@ export async function testModelConnectivity(
 ): Promise<void> {
   const baseModel = createRuntimeModel(this, { selection: input.selection });
   // 连接探测不需要生成正文；复用辅助生成的 5,000 预算会等待多余推理和输出。
-  // 独立限制为 1 Token，仍使用最低公开档位，不改变其他辅助调用的预算。
+  // 独立限制为最小合法 Token 数，仍使用最低公开档位，不改变其他辅助调用的预算。
   const model = baseModel.bind({
     reasoningLevel: baseModel.optionSpecs.reasoningLevel.values[0]!,
     maxOutputTokens: CONNECTIVITY_PROBE_MAX_OUTPUT_TOKENS,
