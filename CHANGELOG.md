@@ -1,5 +1,20 @@
 # Changelog
 
+## [3.19.1](https://github.com/MrHan-Yd/ZCode/compare/v3.19.0...v3.19.1) (2026-10-29)
+
+### Bug Fixes
+
+* **credential:** 增加 deleteIf 原子条件删除并统一 GitHub token 获取 ([7b45965](https://github.com/MrHan-Yd/ZCode/commit/7b4596527083b978e6ff8c5db9f80dfd9f7a9c35))
+
+
+### Chores
+
+* 完善类型定义并清理测试中的冗余断言 ([e0d284b](https://github.com/MrHan-Yd/ZCode/commit/e0d284b4a642a1ad930db37496c36ecfc855b20a))
+  * 导出 ZCodeTaskServiceAdapter 类型，补齐 disposeAll/disposeAllAndWait
+  * 测试改用类型收窄替代 as any 和恒真断言
+  * AGENTS.md 补充临时文件与产物清理规范
+  * 更新 GitHub 账号区块与中英文文案
+
 ## [3.19.0](https://github.com/MrHan-Yd/ZCode/compare/v3.18.9...v3.19.0) (2026-10-26)
 
 ### Features
