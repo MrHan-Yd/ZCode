@@ -213,7 +213,9 @@ export function resolveControlledUnknownMessageAttribution(
     return { errorSource: "runtime", failureReason: "offpeak_ticket_expired" };
   }
   if (
-    /cannot connect to api:.*(?:self-signed certificate|ssl routines:.*key_usage_bit_incorrect)/iu.test(
+    // Bugfix：服务端返回 TLS alert 时，Electron 41 / Node 24 的错误文案不含
+    // certificate 字段，旧规则只认自签名证书会把它落成 unknown。
+    /cannot connect to api:.*(?:self-signed certificate|ssl routines:.*key_usage_bit_incorrect|sslv3[ _]alert|tlsv1[ _]alert|handshake failure|ssl alert number \d+)/iu.test(
       message,
     )
   ) {

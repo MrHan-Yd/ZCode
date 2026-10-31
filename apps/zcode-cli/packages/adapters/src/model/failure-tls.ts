@@ -24,6 +24,10 @@ export function isTlsFailure(code?: string): boolean {
   return Boolean(
     normalized?.includes("CERT") ||
     normalized?.includes("TLS") ||
+    // Bugfix：Electron 41 / Node 24 把服务端 TLS alert 编码为 ERR_SSL_*（例如
+    // ERR_SSL_SSLV3_ALERT_HANDSHAKE_FAILURE），错误码既不含 CERT 也不含 TLS，
+    // 旧的 CERT/TLS 白名单会把握手拒绝误判成 unknown。ERR_SSL_* 同样属于 TLS 层失败。
+    normalized?.includes("SSL") ||
     normalized === "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
   );
 }
