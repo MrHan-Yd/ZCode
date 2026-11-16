@@ -355,7 +355,74 @@ nodes:
     codeSeeds:
       - file: apps/zcode-cli/packages/core/src/runtime/methods/turn-model.ts
         symbol: applySubmissionExecutionState
+  - id: capability.model-request-logs
+    kind: capability
+    label: Model request logs
+    aliases: [request logs, model calls, 请求日志, 模型调用日志]
+    codeSeeds:
+      - file: packages/ui/src/settings/request-logs/RequestLogsSection.tsx
+        symbol: RequestLogsSection
+    invariants:
+      - "Read-only metadata from the current Host usage store; no request/response bodies or cross-Host fallback."
+  - id: surface.settings-request-logs
+    kind: ui-surface
+    label: Settings request, provider and model log views
+    codeSeeds:
+      - file: packages/ui/src/settings/request-logs/RequestLogsSection.tsx
+        symbol: RequestLogsPanel
+      - file: packages/ui/src/settings/settingsPageConfig.ts
+        symbol: createSettingsPageConfig
+  - id: state.request-log-query
+    kind: state-owner
+    label: Renderer request-log filters and one-page read projection
+    codeSeeds:
+      - file: packages/ui/src/hooks/useModelRequestLogs.ts
+        symbol: useModelRequestLogs
+  - id: service.model-request-logs
+    kind: service
+    label: Current environment usage service request-log query
+    codeSeeds:
+      - file: packages/services/src/usage-stats/usageStats.ts
+        symbol: IUsageStatsService
+      - file: packages/services/src/zcode-agent/zcodeAgentService.ts
+        symbol: getModelRequestLogs
+  - id: protocol.model-request-logs
+    kind: protocol
+    label: Bounded v4 usage requestLogs query
+    codeSeeds:
+      - file: packages/shared/src/model-request-logs.ts
+        symbol: modelRequestLogsRequestSchema
+      - file: apps/zcode-cli/packages/bootstrap/src/zcode-protocol/model-request-logs.ts
+        symbol: getModelRequestLogs
+  - id: persistence.model-request-logs
+    kind: persistence
+    label: CLI SQLite model_usage facts and bounded queries
+    codeSeeds:
+      - file: apps/zcode-cli/packages/core/src/runtime/methods/usage-observability.ts
+        symbol: recordModelUsageFact
+      - file: apps/zcode-cli/packages/adapters/src/storage/session-store/repositories/model-request-logs.ts
+        symbol: queryModelRequestLogs
 edges:
+  - from: capability.model-request-logs
+    to: surface.settings-request-logs
+    type: renders-in
+    rank: must-inspect
+  - from: surface.settings-request-logs
+    to: state.request-log-query
+    type: reads-through
+    rank: must-inspect
+  - from: state.request-log-query
+    to: service.model-request-logs
+    type: queries
+    rank: must-inspect
+  - from: service.model-request-logs
+    to: protocol.model-request-logs
+    type: queries
+    rank: must-inspect
+  - from: protocol.model-request-logs
+    to: persistence.model-request-logs
+    type: reads-through
+    rank: must-inspect
   - from: capability.model-selection
     to: surface.conversation-model-control
     type: renders-in

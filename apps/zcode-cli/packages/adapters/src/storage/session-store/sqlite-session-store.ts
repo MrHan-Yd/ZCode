@@ -26,6 +26,7 @@ import type {
   MessagePart,
   MessageWithParts,
   ModelUsageRecord,
+  ModelRequestLogsQueryInput,
   PartId,
   PermissionRuleset,
   ProjectId,
@@ -103,6 +104,8 @@ import * as sessionInputRepository from "./repositories/session-inputs.js";
 import * as sessionRepository from "./repositories/sessions.js";
 import * as todoRepository from "./repositories/todos.js";
 import * as usageRepository from "./repositories/usage.js";
+import { queryModelRequestLogs } from "./repositories/model-request-logs.js";
+import type { ModelRequestLogsSnapshot } from "@zcode/shared";
 
 function forkChildSessionId(entry: SessionEntryInfo): SessionId | null {
   if (!entry.data || typeof entry.data !== "object" || Array.isArray(entry.data)) return null;
@@ -908,6 +911,12 @@ export class SqliteSessionStore
 
   async queryAppUsage(input: AppUsageQueryInput): Promise<AppUsageQueryResult> {
     return usageRepository.queryAppUsage(this.db, input);
+  }
+
+  async queryModelRequestLogs(
+    input: ModelRequestLogsQueryInput,
+  ): Promise<ModelRequestLogsSnapshot> {
+    return queryModelRequestLogs(this.db, input);
   }
 
   async queryTaskUsage(input: TaskUsageQueryInput): Promise<TaskUsageQueryResult> {

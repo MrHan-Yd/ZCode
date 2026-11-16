@@ -8,6 +8,7 @@ import {
 import type {
   MessageId,
   Model,
+  ModelNetworkStatusEvent,
   SessionEvent,
   ToolCallId,
   TraceContext,
@@ -17,6 +18,7 @@ import type {
 import type { RuntimeModelTextResult } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { isModelContextExceededError } from "../helpers/index.js";
+import { firstModelTokenAt, firstProviderContentAt } from "./model-usage-timing.js";
 
 type ModelUsageQuerySource =
   | "main_turn"
@@ -66,7 +68,9 @@ export async function recordModelUsageFact(
   const failedNetworkEvent = networkEvents.findLast(
     (event) => event.type === "model_request_failed",
   );
-  const firstTokenAt = firstModelTokenAt(input.events, input.networkEventStartIndex);
+  const firstTokenAt =
+    firstModelTokenAt(input.events, input.networkEventStartIndex) ??
+    firstProviderContentAt(input.events, input.networkEventStartIndex);
   const durationMs = completedAt - input.startedAt;
   const errorInfo = errorInfoFor(input.error, failedNetworkEvent);
   const contextExceeded =
@@ -107,6 +111,8 @@ export async function recordModelUsageFact(
       cacheCreationInputTokens: usage?.cacheWriteTokens,
       cacheReadInputTokens: usage?.cacheReadTokens,
       providerTotalTokens: usage?.totalTokens,
+      costUsd: usage?.costUsd,
+      httpStatus: input.status === "error" ? failedNetworkEvent?.statusCode : undefined,
       retryCount,
       retryable: errorInfo.retryable ?? retryCount > 0,
       cancelledByUser: input.status === "cancelled",
@@ -358,34 +364,9 @@ function modelNetworkEvents(events: readonly SessionEvent[]) {
   return events
     .filter((event) => event.type === SessionEventType.ModelNetworkStatus)
     .map((event) => event.payload)
-    .filter(
-      (
-        payload,
-      ): payload is {
-        type: string;
-        reason?: string;
-        retryable?: boolean;
-        message?: string;
-      } => Boolean(payload && typeof payload === "object" && "type" in payload),
+    .filter((payload): payload is ModelNetworkStatusEvent =>
+      Boolean(payload && typeof payload === "object" && "type" in payload),
     );
-}
-
-function firstModelTokenAt(
-  events: readonly SessionEvent[],
-  startIndex: number,
-): number | undefined {
-  for (const event of events.slice(startIndex)) {
-    if (event.type !== SessionEventType.ModelStreaming) continue;
-    const payload = event.payload as { delta?: string; kind?: string };
-    if (
-      (payload.kind === "text_delta" || payload.kind === "reasoning_delta") &&
-      payload.delta &&
-      payload.delta.length > 0
-    ) {
-      return event.timestamp.getTime();
-    }
-  }
-  return undefined;
 }
 
 function errorInfoFor(

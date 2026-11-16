@@ -71,13 +71,15 @@ export async function recordModelUsage(db: DatabaseSync, input: ModelUsageRecord
         error_code,
         error_message,
         raw_usage_json,
-        provider_metadata_json
+        provider_metadata_json,
+        cost_usd,
+        http_status
       )
       values (
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       )
       on conflict(id) do update set
         logical_request_id = excluded.logical_request_id,
@@ -118,7 +120,9 @@ export async function recordModelUsage(db: DatabaseSync, input: ModelUsageRecord
         error_code = excluded.error_code,
         error_message = excluded.error_message,
         raw_usage_json = excluded.raw_usage_json,
-        provider_metadata_json = excluded.provider_metadata_json
+        provider_metadata_json = excluded.provider_metadata_json,
+        cost_usd = excluded.cost_usd,
+        http_status = excluded.http_status
       `,
   ).run(
     input.id,
@@ -161,6 +165,15 @@ export async function recordModelUsage(db: DatabaseSync, input: ModelUsageRecord
     input.errorMessage ?? null,
     encodeJson(input.rawUsage),
     encodeJson(input.providerMetadata),
+    typeof input.costUsd === "number" && Number.isFinite(input.costUsd) && input.costUsd >= 0
+      ? input.costUsd
+      : null,
+    typeof input.httpStatus === "number" &&
+      Number.isInteger(input.httpStatus) &&
+      input.httpStatus >= 100 &&
+      input.httpStatus <= 599
+      ? input.httpStatus
+      : null,
   );
   await pruneUsage(db);
 }
@@ -803,7 +816,7 @@ function inputSideTokensFromNormalizedUsage(
   return integer(cacheCreationTokens) + integer(cacheReadTokens);
 }
 
-function inputSideTokensFromStoredUsage(row: {
+export function inputSideTokensFromStoredUsage(row: {
   cacheCreationTokens: number;
   cacheReadTokens: number;
   computedTotalTokens: number;

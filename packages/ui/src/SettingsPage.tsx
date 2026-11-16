@@ -59,6 +59,7 @@ import { ModelProviderSection } from "@/settings/ModelProviderSection.js";
 import { SyncConfigPage } from "@/settings/SyncConfigPage.js";
 import { useEnterpriseCodingPlanProducts } from "@/settings/model-provider-section/useEnterpriseCodingPlanProducts.js";
 import { UsageStatsSection, type UsageStatsSectionTab } from "@/settings/UsageStatsSection.js";
+import { RequestLogsSection } from "@/settings/request-logs/RequestLogsSection.js";
 import {
   buildCodingPlanUsageSources,
   type CodingPlanUsageSource,
@@ -1857,6 +1858,11 @@ export function SettingsPage({
                             selectedCodingPlanSource={selectedUsageCodingPlanSource}
                             workspaceIdentity={activeWorkspaceIdentity}
                             workspacePath={activeWorkspacePath ?? undefined}
+                          />
+                        ) : activeSection === "requestLogs" ? (
+                          <RequestLogsSection
+                            workspacePath={activeWorkspacePath}
+                            workspaceIdentity={activeWorkspaceIdentity}
                           />
                         ) : activeSection === "archive" ? (
                           <ArchiveManagementSection workspaceTabs={workspaceTabs} />

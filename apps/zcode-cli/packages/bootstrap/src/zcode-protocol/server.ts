@@ -1,6 +1,7 @@
 import { querySessionDebug } from "./session-debug.js";
 import { querySessionPerformance } from "./session-performance.js";
 import { querySessionPerformanceBatch } from "./session-performance-batch.js";
+import { getModelRequestLogs } from "./model-request-logs.js";
 import {
   zcodePluginsCancelOperationParamsSchema,
   zcodeProtocolMethods,
@@ -564,6 +565,8 @@ export class ZCodeProtocolAgentServer {
       // ── usage query（additive）：与旧 usage/stats、session/usage 同一数据访问
       // 层（usage store 聚合），仅换 v4 名字空间——不经 v4Gateway（无会话投影依赖），
       // 也不经旧 op 分派（无桥）。旧 case 保留到旧词删除（老 host 版本兼容）。──
+      case V4_METHODS.usageRequestLogs:
+        return await getModelRequestLogs(this.context, request.params);
       case V4_METHODS.usageStats:
         return await getUsageStats(this.context, request.params);
       case V4_METHODS.conversationUsage:

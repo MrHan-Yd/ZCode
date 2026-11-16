@@ -21,6 +21,7 @@ import {
   FileSearch,
   SlidersHorizontal,
   LibraryBig,
+  ScrollText,
 } from "lucide-react";
 import { isSettingsSectionEnabled, type SettingsSectionId } from "@/lib/settingsNavigation.js";
 import type { Theme } from "@/useTheme.js";
@@ -176,7 +177,13 @@ const BASE_SETTINGS_SECTIONS: SettingsSectionDefinition[] = [
     titleId: "settings.usageTitle",
     groupId: "dataAndStats",
   },
-  // 归档管理紧跟用量统计：同属「数据与统计」，按项目盘点归档任务并提供恢复/删除。
+  {
+    id: "requestLogs",
+    icon: ScrollText,
+    titleId: "settings.requestLogs.title",
+    groupId: "dataAndStats",
+  },
+  // 归档管理同属「数据与统计」，按项目盘点归档任务并提供恢复/删除。
   {
     id: "archive",
     icon: Archive,

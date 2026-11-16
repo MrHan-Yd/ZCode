@@ -1,6 +1,8 @@
 import type {
   AppUsageRequest,
   AppUsageSnapshot,
+  ModelRequestLogsServiceRequest,
+  ModelRequestLogsSnapshot,
   CodingPlanUsageRequest,
   CodingPlanUsageSnapshot,
   CodingPlanResetOpportunityRequest,
@@ -18,6 +20,7 @@ import { ServiceChannels } from "@zcode/shared";
 import { createServiceDescriptor } from "../descriptors.js";
 
 export interface IUsageStatsService {
+  getModelRequestLogs(request: ModelRequestLogsServiceRequest): Promise<ModelRequestLogsSnapshot>;
   getAppUsageSnapshot(request: AppUsageRequest): Promise<AppUsageSnapshot>;
   getCodingPlanUsageSnapshot(request: CodingPlanUsageRequest): Promise<CodingPlanUsageSnapshot>;
   getCodingPlanResetStatus(

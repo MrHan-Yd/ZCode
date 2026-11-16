@@ -497,6 +497,7 @@ export interface ModelServerToolUsage {
 }
 
 export interface ModelUsage {
+  costUsd?: number;
   inputTokens?: number;
   outputTokens?: number;
   totalTokens?: number;

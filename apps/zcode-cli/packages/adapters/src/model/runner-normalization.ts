@@ -12,6 +12,7 @@ import { normalizeModelToolInput } from "./tool-input-normalization.js";
 import type { AiSdkGenerateTextResult } from "./runner-runtime.js";
 import { asRecord, isRecord, numberProperty, stringProperty } from "./runner-record.js";
 import { normalizeModelToolName } from "./tool-call-validation.js";
+import { readModelRequestCostUsd } from "./model-request-cost.js";
 
 export function normalizeUsage(usage?: Partial<LanguageModelUsage>): ModelUsage {
   const rawUsage = isRecord(usage?.raw) ? usage.raw : undefined;
@@ -20,8 +21,10 @@ export function normalizeUsage(usage?: Partial<LanguageModelUsage>): ModelUsage 
     : undefined;
   const webSearchRequests = numberProperty(rawServerToolUse, "web_search_requests");
   const webFetchRequests = numberProperty(rawServerToolUse, "web_fetch_requests");
+  const costUsd = readModelRequestCostUsd(rawUsage);
 
   return {
+    ...(costUsd !== undefined ? { costUsd } : {}),
     inputTokens: usage?.inputTokens,
     outputTokens: usage?.outputTokens,
     totalTokens: usage?.totalTokens,

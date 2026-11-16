@@ -1,6 +1,7 @@
 // Session Store Port：为会话输入、消息和投影提供稳定的存储边界。
 // ============================================================
 
+import type { ModelRequestLogsRequest, ModelRequestLogsSnapshot } from "@zcode/shared";
 import type {
   MessageId,
   PartId,
@@ -909,6 +910,8 @@ export interface ModelUsageRecord {
   cacheReadInputTokens?: number;
   providerTotalTokens?: number;
   computedTotalTokens?: number;
+  costUsd?: number;
+  httpStatus?: number;
   retryCount?: number;
   retryable?: boolean;
   cancelledByUser?: boolean;
@@ -1101,7 +1104,13 @@ export interface SessionPerformanceQueryResult {
   generationMs: number;
 }
 
+export interface ModelRequestLogsQueryInput extends ModelRequestLogsRequest {
+  since: number;
+  until: number;
+}
+
 export interface UsageStorePort {
+  queryModelRequestLogs(input: ModelRequestLogsQueryInput): Promise<ModelRequestLogsSnapshot>;
   recordModelUsage(input: ModelUsageRecord): Promise<void>;
   upsertTurnUsage(input: TurnUsageRecord): Promise<void>;
   upsertToolUsage(input: ToolUsageRecord): Promise<void>;

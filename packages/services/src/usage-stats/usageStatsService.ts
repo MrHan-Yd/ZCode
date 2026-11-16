@@ -2,6 +2,8 @@ import type {
   ApiClient,
   AppUsageRequest,
   AppUsageSnapshot,
+  ModelRequestLogsServiceRequest,
+  ModelRequestLogsSnapshot,
   CodingPlanUsageRequest,
   CodingPlanUsageSnapshot,
   CodingPlanResetOpportunityRequest,
@@ -15,7 +17,7 @@ import type {
   UsageStatsRequest,
   UsageStatsSnapshot,
 } from "@zcode/shared";
-import { isCodingPlanModelProviderId } from "@zcode/shared";
+import { isCodingPlanModelProviderId, modelRequestLogsServiceRequestSchema } from "@zcode/shared";
 import type { ICredentialService } from "../credential/credential.js";
 import type { IAccountRequestAuthService } from "../model-provider/accountRequestAuthService.js";
 import type { IZCodeAgentService } from "../zcode-agent/zcodeAgent.js";
@@ -39,7 +41,8 @@ interface UsageStatsServiceDependencies {
   credentialService?: Pick<ICredentialService, "load">;
   env?: NodeJS.ProcessEnv;
   /** App Usage 经 ZCode Protocol 读取 agent 数据库真实统计。 */
-  zcodeAgentService: Pick<IZCodeAgentService, "getAppUsageStats">;
+  zcodeAgentService: Pick<IZCodeAgentService, "getAppUsageStats"> &
+    Partial<Pick<IZCodeAgentService, "getModelRequestLogs">>;
   /**
    * 官方 Server MCP 额度的凭证来源（与 server MCP 调用同一套 5 个身份头）。
    * 缺省时 entitlement 快照不含 MCP 额度。
@@ -66,6 +69,14 @@ export function createUsageStatsService(
   });
 
   return {
+    async getModelRequestLogs(
+      request: ModelRequestLogsServiceRequest,
+    ): Promise<ModelRequestLogsSnapshot> {
+      const validatedRequest = modelRequestLogsServiceRequestSchema.parse(request);
+      const read = dependencies.zcodeAgentService.getModelRequestLogs;
+      if (!read) throw new Error("model_request_logs_unavailable");
+      return read.call(dependencies.zcodeAgentService, validatedRequest);
+    },
     async getAppUsageSnapshot(request: AppUsageRequest): Promise<AppUsageSnapshot> {
       // App Usage 现读取 agent 数据库真实统计（model_usage/turn_usage/tool_usage），
       // 经 ZCode Protocol usage/stats 取回。不再读本地 session JSON 估算。

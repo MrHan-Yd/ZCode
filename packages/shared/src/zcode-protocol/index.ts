@@ -19,6 +19,7 @@ import {
 import { bashOutputDisplaySchema } from "../bash-output-display.js";
 // 后台详情共享精简的只读响应 schema，不携带命令或计时元数据。
 export * from "../background-bash-output.js";
+export * from "../model-request-logs.js";
 import { executionOutputPreviewSchema } from "../execution-output-preview.js";
 import { z } from "zod";
 export * from "../process-diagnostic.js";

@@ -128,6 +128,7 @@ import {
 import { ZCODE_AGENT_RUNTIME_UNAVAILABLE_CODE } from "./zcodeAgent.js";
 import type {
   ZCodeProtocolRequestId,
+  ModelRequestLogsServiceRequest,
   ModelSelection,
   ZCodeProviderRuntimeHeadersRequestParams,
   ZCodeSessionEvent,
@@ -277,6 +278,8 @@ import {
   v4ConversationUsageResultSchema,
   v4SessionsIndexSubscribeResultSchema,
   v4UsageStatsResultSchema,
+  v4UsageRequestLogsParamsSchema,
+  v4UsageRequestLogsResultSchema,
   v4WorkspaceConfigSubscribeResultSchema,
   workspaceConfigTopic,
   workspaceConfigTopicWireCandidateSchema,
@@ -3664,6 +3667,32 @@ export function createZCodeAgentService(
         { range: params.range, timeZone: params.timeZone },
         v4UsageStatsResultSchema,
       );
+    },
+
+    async getModelRequestLogs(params: ModelRequestLogsServiceRequest) {
+      const { workspacePath, workspaceIdentity, remoteSessionId, ...query } = params;
+      const request = v4UsageRequestLogsParamsSchema.parse(query);
+      let client: ZCodeProtocolClient;
+      if (workspacePath) {
+        client = await getReadOnlyClient(
+          { workspacePath, workspaceIdentity, remoteSessionId },
+          "existing-only",
+        );
+      } else {
+        if (workspaceIdentity?.trim() || remoteSessionId?.trim()) {
+          throw new Error("model_request_logs_target_required");
+        }
+        // 本地服务也可能持有远端 attachment；无目标的全应用查询只能复用本地且未释放的 client。
+        const active = [...activeClientsByWorkspaceKey.values()].find(
+          (entry) =>
+            !entry.workspace.workspaceIdentity?.trim() &&
+            !entry.workspace.remoteSessionId?.trim() &&
+            isReusableActiveClientEntry(entry.workspace, entry),
+        );
+        if (!active) throw new Error("no_active_workspace");
+        client = active.client;
+      }
+      return client.request(V4_METHODS.usageRequestLogs, request, v4UsageRequestLogsResultSchema);
     },
 
     async getTaskTokenUsage(params: ZCodeAgentTaskTokenUsageParams) {
