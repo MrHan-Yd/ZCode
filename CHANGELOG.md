@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.19.4](https://github.com/MrHan-Yd/ZCode/compare/v3.19.3...v3.19.4) (2026-11-17)
+
+### Features
+
+* **provider:** 内置网关按接口格式拆分 Chat/Anthropic/Responses 模板 ([ca5c2f0](https://github.com/MrHan-Yd/ZCode/commit/ca5c2f067df911da933ad14bb2ae047426691f2f))
+
+* **usage:** 新增模型请求日志查询与成本/HTTP 状态记录 ([761fea8](https://github.com/MrHan-Yd/ZCode/commit/761fea8f96db235f857e15ec54af31e2956230d7))
+
+
+### Bug Fixes
+
+* 识别 ERR_SSL_* 握手告警并归因为 tls_error ([f19441c](https://github.com/MrHan-Yd/ZCode/commit/f19441c493bc63f261a3c7cc317336ecba573b29))
+
 ## [3.19.3](https://github.com/MrHan-Yd/ZCode/compare/v3.19.2...v3.19.3) (2026-10-29)
 
 ### Bug Fixes
