@@ -216,15 +216,21 @@ test("新增模型在对应模板中默认启用", async () => {
 
 test("内置 release revision 随内容递增", async () => {
   const release = decodeZCodeBuiltinRelease(JSON.parse(await readFile(BUILTIN_PATH, "utf8")));
-  assert.equal(release.revision, 35);
+  assert.equal(release.revision, 36);
 });
 
 test("CommandCode / ClinePass / Ollama Cloud 模板声明内置 Logo key", async () => {
   const release = decodeZCodeBuiltinRelease(JSON.parse(await readFile(BUILTIN_PATH, "utf8")));
   const cases = [
     ["commandcode", "commandcode"],
+    ["commandcode-messages", "commandcode"],
+    ["commandcode-responses", "commandcode"],
     ["cline-pass", "cline"],
+    ["cline-pass-messages", "cline"],
+    ["cline-pass-responses", "cline"],
     ["ollama-cloud", "ollama"],
+    ["ollama-cloud-messages", "ollama"],
+    ["ollama-cloud-responses", "ollama"],
   ] as const;
   for (const [templateId, logoKey] of cases) {
     assert.deepEqual(release.config.providerTemplates.get(templateId)?.config.logo, {
@@ -234,10 +240,122 @@ test("CommandCode / ClinePass / Ollama Cloud 模板声明内置 Logo key", async
   }
 });
 
+test("三个网关模板按接口格式拆成九张卡片且共用 baseUrl", async () => {
+  const release = decodeZCodeBuiltinRelease(JSON.parse(await readFile(BUILTIN_PATH, "utf8")));
+  const cards = [
+    ["commandcode", "CommandCode (Chat)", "openai-chat-completions"],
+    ["commandcode-messages", "CommandCode (Anthropic)", "anthropic-messages"],
+    ["commandcode-responses", "CommandCode (Responses)", "openai-responses"],
+    ["cline-pass", "ClinePass (Chat)", "openai-chat-completions"],
+    ["cline-pass-messages", "ClinePass (Anthropic)", "anthropic-messages"],
+    ["cline-pass-responses", "ClinePass (Responses)", "openai-responses"],
+    ["ollama-cloud", "Ollama Cloud (Chat)", "openai-chat-completions"],
+    ["ollama-cloud-messages", "Ollama Cloud (Anthropic)", "anthropic-messages"],
+    ["ollama-cloud-responses", "Ollama Cloud (Responses)", "openai-responses"],
+  ] as const;
+  const baseUrlByTemplate = new Map<string, string | undefined>();
+  for (const [templateId, name, apiType] of cards) {
+    const template = release.config.providerTemplates.get(templateId);
+    assert.ok(template, templateId);
+    assert.equal(template.templateNameMap["zh-CN"], name, templateId);
+    assert.equal(template.templateNameMap["en-US"], name, templateId);
+    assert.equal(template.config.api?.type, apiType, templateId);
+    baseUrlByTemplate.set(templateId, template.config.api?.baseUrl ?? undefined);
+  }
+
+  // 同一供应商的三张卡片只是协议不同；baseUrl 里已带 /v1，
+  // CLI 的 normalizeAnthropicBaseURL 会保留它并补 /messages。
+  for (const prefix of ["commandcode", "cline-pass", "ollama-cloud"]) {
+    const urls = new Set([
+      baseUrlByTemplate.get(prefix),
+      baseUrlByTemplate.get(`${prefix}-messages`),
+      baseUrlByTemplate.get(`${prefix}-responses`),
+    ]);
+    assert.equal(urls.size, 1, prefix);
+  }
+});
+
+test("CommandCode 按上游 supported_endpoints 拆分模型清单", async () => {
+  const release = decodeZCodeBuiltinRelease(JSON.parse(await readFile(BUILTIN_PATH, "utf8")));
+  const modelIds = (templateId: string) => [
+    ...(release.config.providerTemplates.get(templateId)?.config.builtinModelIds ?? []),
+  ];
+
+  const chat = modelIds("commandcode");
+  const messages = modelIds("commandcode-messages");
+  const responses = modelIds("commandcode-responses");
+
+  // 上游文档：Claude 模型只走 /messages，在 Chat 卡片里选中必然报 wrong endpoint。
+  assert.equal(chat.filter((modelId) => modelId.startsWith("claude-")).length, 0);
+  assert.equal(messages.length, 11);
+  assert.ok(messages.every((modelId) => modelId.startsWith("claude-")));
+  assert.equal(responses.length, 53);
+  assert.equal(chat.length, 60);
+
+  // 只在 /chat/completions 上提供的模型不能出现在 Responses 卡片。
+  for (const modelId of [
+    "deepseek/deepseek-v4-flash-fast",
+    "z-ai/glm-5.3-flash",
+    "Qwen/Qwen3.8-Max-0902",
+    "Qwen/Qwen3.8-Flash",
+    "tencent/hy4-preview",
+    "google/gemini-3.7-flash",
+  ]) {
+    assert.ok(chat.includes(modelId), `Chat 缺少 ${modelId}`);
+    assert.ok(!responses.includes(modelId), `Responses 不应包含 ${modelId}`);
+  }
+
+  // 已下线模型无法确认 /responses，只保留在 Chat 里避免打断现有选择。
+  assert.ok(chat.includes("inclusionai/ling-3.1-flash:free"));
+  assert.ok(!responses.includes("inclusionai/ling-3.1-flash:free"));
+});
+
+test("Ollama Cloud 与 ClinePass 的三张卡片共用同一份模型清单", async () => {
+  const release = decodeZCodeBuiltinRelease(JSON.parse(await readFile(BUILTIN_PATH, "utf8")));
+  const modelIds = (templateId: string) => [
+    ...(release.config.providerTemplates.get(templateId)?.config.builtinModelIds ?? []),
+  ];
+  const cases = [
+    ["cline-pass", 18],
+    ["ollama-cloud", 23],
+  ] as const;
+  for (const [prefix, expected] of cases) {
+    const chat = modelIds(prefix);
+    assert.equal(chat.length, expected, prefix);
+    assert.deepEqual(modelIds(`${prefix}-messages`), chat, `${prefix}-messages`);
+    assert.deepEqual(modelIds(`${prefix}-responses`), chat, `${prefix}-responses`);
+  }
+});
+
+test("CommandCode / ClinePass / Ollama Cloud 九张卡片的模型全部默认启用", async () => {
+  const rules = await readBuiltinRules();
+  const cases = [
+    ["commandcode", "gpt-6-sol", "openai-chat-completions"],
+    ["commandcode-messages", "claude-opus-5-5", "anthropic-messages"],
+    ["commandcode-messages", "claude-haiku-5-5", "anthropic-messages"],
+    ["commandcode-responses", "xai/grok-4.7", "openai-responses"],
+    ["commandcode-responses", "google/gemini-4-argon", "openai-responses"],
+    ["cline-pass", "cline-pass/kimi-k3", "openai-chat-completions"],
+    ["cline-pass-messages", "cline-pass/glm-5.3-flash", "anthropic-messages"],
+    ["cline-pass-responses", "cline-pass/mimo-v2.6-pro", "openai-responses"],
+    ["ollama-cloud", "gpt-oss:120b", "openai-chat-completions"],
+    ["ollama-cloud-messages", "glm-5.3", "anthropic-messages"],
+    ["ollama-cloud-responses", "mistral-large-4", "openai-responses"],
+  ] as const;
+  for (const [templateId, modelId, apiType] of cases) {
+    const resolved = rules.resolve({
+      providerId: `template:${templateId}`,
+      templateId,
+      modelId,
+      apiType,
+    });
+    assert.equal(resolved.enabled, true, `${templateId}:${modelId}`);
+  }
+});
+
 test("CommandCode / ClinePass 模板内置完整模型清单并默认启用", async () => {
   const rules = await readBuiltinRules();
   const cases = [
-    ["commandcode", "claude-opus-5-5"],
     ["commandcode", "gpt-6-sol"],
     ["commandcode", "xai/grok-4.7"],
     ["commandcode", "google/gemini-4-argon"],

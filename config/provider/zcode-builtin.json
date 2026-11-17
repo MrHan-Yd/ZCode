@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": 35,
+  "revision": 36,
   "config": {
     "providerConfigRules": {
       "templateRules": [
@@ -711,8 +711,8 @@
         {
           "templateId": "commandcode",
           "templateNameMap": {
-            "zh-CN": "CommandCode",
-            "en-US": "CommandCode"
+            "zh-CN": "CommandCode (Chat)",
+            "en-US": "CommandCode (Chat)"
           },
           "config": {
             "access": {
@@ -724,25 +724,14 @@
               "baseUrl": "https://api.commandcode.ai/provider/v1"
             },
             "builtinModelIds": [
-              "claude-sonnet-4-6",
-              "claude-opus-4-8",
-              "claude-haiku-4-5-20251001",
-              "claude-fable-5",
               "gpt-5.6-terra",
-              "claude-sonnet-5-5",
               "gpt-5.3-codex",
               "gpt-6.1-sol",
               "gpt-6-luna",
               "gpt-5.5",
-              "claude-opus-5-5",
-              "claude-opus-5",
-              "claude-opus-4-7",
               "gpt-6-astra",
-              "claude-sonnet-5",
               "gpt-5.4",
               "gpt-5.6-sol",
-              "claude-haiku-5-5",
-              "claude-fable-5-1",
               "gpt-5.4-mini",
               "gpt-5.6-luna",
               "gpt-6-sol",
@@ -803,10 +792,120 @@
           }
         },
         {
+          "templateId": "commandcode-messages",
+          "templateNameMap": {
+            "zh-CN": "CommandCode (Anthropic)",
+            "en-US": "CommandCode (Anthropic)"
+          },
+          "config": {
+            "access": {
+              "type": "api-key",
+              "apiKeyManagementUrl": "https://commandcode.ai/docs/provider"
+            },
+            "api": {
+              "type": "anthropic-messages",
+              "baseUrl": "https://api.commandcode.ai/provider/v1"
+            },
+            "builtinModelIds": [
+              "claude-sonnet-4-6",
+              "claude-opus-4-8",
+              "claude-haiku-4-5-20251001",
+              "claude-fable-5",
+              "claude-sonnet-5-5",
+              "claude-opus-5-5",
+              "claude-opus-5",
+              "claude-opus-4-7",
+              "claude-sonnet-5",
+              "claude-haiku-5-5",
+              "claude-fable-5-1"
+            ],
+            "logo": {
+              "type": "builtin",
+              "key": "commandcode"
+            }
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "templateNameMap": {
+            "zh-CN": "CommandCode (Responses)",
+            "en-US": "CommandCode (Responses)"
+          },
+          "config": {
+            "access": {
+              "type": "api-key",
+              "apiKeyManagementUrl": "https://commandcode.ai/docs/provider"
+            },
+            "api": {
+              "type": "openai-responses",
+              "baseUrl": "https://api.commandcode.ai/provider/v1"
+            },
+            "builtinModelIds": [
+              "gpt-5.6-terra",
+              "gpt-5.3-codex",
+              "gpt-6.1-sol",
+              "gpt-6-luna",
+              "gpt-5.5",
+              "gpt-6-astra",
+              "gpt-5.4",
+              "gpt-5.6-sol",
+              "gpt-5.4-mini",
+              "gpt-5.6-luna",
+              "gpt-6-sol",
+              "moonshotai/Kimi-K2.7-Code-Highspeed",
+              "moonshotai/Kimi-K3",
+              "moonshotai/Kimi-K2.7-Code",
+              "meta/muse-spark-1.3",
+              "meta/muse-spark-1.3-contributor",
+              "meta/muse-wonder-1.0",
+              "meta/muse-spark-1.2-contributor",
+              "meta/muse-spark-1.1",
+              "meta/muse-spark-1.2",
+              "zai-org/GLM-5.3",
+              "zai-org/GLM-5.2-Fast",
+              "zai-org/GLM-5.2",
+              "google/gemini-4-argon",
+              "google/gemini-3.1-flash-lite",
+              "google/gemini-3.6-flash",
+              "google/gemini-3.5-flash",
+              "google/gemini-3.5-flash-lite",
+              "google/gemini-3.8-flash",
+              "thinkingmachines/inkling-small",
+              "thinkingmachines/inkling",
+              "mistral/mistral-large-4",
+              "xai/grok-4.7",
+              "xai/grok-4.6",
+              "xai/grok-4.5",
+              "Qwen/Qwen3.8-Max",
+              "Qwen/Qwen3.8-Omni-Flash",
+              "Qwen/Qwen3.8-27B",
+              "MiniMaxAI/MiniMax-M2.5",
+              "MiniMaxAI/MiniMax-M3",
+              "MiniMaxAI/MiniMax-M2.7",
+              "sakana/fugu-ultra",
+              "tencent/hy3-paid",
+              "stepfun/Step-3.5-Flash",
+              "stepfun/Step-5-Preview",
+              "stepfun/Step-3.7-Flash",
+              "nvidia/nemotron-3-ultra-550b-a55b",
+              "z-ai/glm-5.3-flashx",
+              "deepseek/deepseek-v4-pro",
+              "deepseek/deepseek-v4-flash",
+              "deepseek/deepseek-v4-flash-vision-exp",
+              "deepseek/deepseek-v4.1-flash",
+              "deepseek/deepseek-v4.1-flash-fast"
+            ],
+            "logo": {
+              "type": "builtin",
+              "key": "commandcode"
+            }
+          }
+        },
+        {
           "templateId": "cline-pass",
           "templateNameMap": {
-            "zh-CN": "ClinePass",
-            "en-US": "ClinePass"
+            "zh-CN": "ClinePass (Chat)",
+            "en-US": "ClinePass (Chat)"
           },
           "config": {
             "access": {
@@ -844,10 +943,92 @@
           }
         },
         {
+          "templateId": "cline-pass-messages",
+          "templateNameMap": {
+            "zh-CN": "ClinePass (Anthropic)",
+            "en-US": "ClinePass (Anthropic)"
+          },
+          "config": {
+            "access": {
+              "type": "api-key",
+              "apiKeyManagementUrl": "https://docs.cline.bot/getting-started/clinepass"
+            },
+            "api": {
+              "type": "anthropic-messages",
+              "baseUrl": "https://api.cline.bot/api/v1"
+            },
+            "builtinModelIds": [
+              "cline-pass/glm-5.3-flash",
+              "cline-pass/deepseek-v4-pro",
+              "cline-pass/qwen3.7-max",
+              "cline-pass/glm-5.2",
+              "cline-pass/mimo-v2.5",
+              "cline-pass/deepseek-v4-flash",
+              "cline-pass/muse-spark-1.3-contributor",
+              "cline-pass/glm-5.3",
+              "cline-pass/mimo-v2.6-flash",
+              "cline-pass/qwen3.8-max",
+              "cline-pass/qwen3.7-plus",
+              "cline-pass/deepseek-v4.1-flash",
+              "cline-pass/kimi-k3",
+              "cline-pass/mimo-v2.5-pro",
+              "cline-pass/mimo-v2.6-pro",
+              "cline-pass/kimi-k2.6",
+              "cline-pass/kimi-k2.7-code",
+              "cline-pass/minimax-m3"
+            ],
+            "logo": {
+              "type": "builtin",
+              "key": "cline"
+            }
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "templateNameMap": {
+            "zh-CN": "ClinePass (Responses)",
+            "en-US": "ClinePass (Responses)"
+          },
+          "config": {
+            "access": {
+              "type": "api-key",
+              "apiKeyManagementUrl": "https://docs.cline.bot/getting-started/clinepass"
+            },
+            "api": {
+              "type": "openai-responses",
+              "baseUrl": "https://api.cline.bot/api/v1"
+            },
+            "builtinModelIds": [
+              "cline-pass/glm-5.3-flash",
+              "cline-pass/deepseek-v4-pro",
+              "cline-pass/qwen3.7-max",
+              "cline-pass/glm-5.2",
+              "cline-pass/mimo-v2.5",
+              "cline-pass/deepseek-v4-flash",
+              "cline-pass/muse-spark-1.3-contributor",
+              "cline-pass/glm-5.3",
+              "cline-pass/mimo-v2.6-flash",
+              "cline-pass/qwen3.8-max",
+              "cline-pass/qwen3.7-plus",
+              "cline-pass/deepseek-v4.1-flash",
+              "cline-pass/kimi-k3",
+              "cline-pass/mimo-v2.5-pro",
+              "cline-pass/mimo-v2.6-pro",
+              "cline-pass/kimi-k2.6",
+              "cline-pass/kimi-k2.7-code",
+              "cline-pass/minimax-m3"
+            ],
+            "logo": {
+              "type": "builtin",
+              "key": "cline"
+            }
+          }
+        },
+        {
           "templateId": "ollama-cloud",
           "templateNameMap": {
-            "zh-CN": "Ollama Cloud",
-            "en-US": "Ollama Cloud"
+            "zh-CN": "Ollama Cloud (Chat)",
+            "en-US": "Ollama Cloud (Chat)"
           },
           "config": {
             "access": {
@@ -856,6 +1037,98 @@
             },
             "api": {
               "type": "openai-chat-completions",
+              "baseUrl": "https://ollama.com/v1"
+            },
+            "builtinModelIds": [
+              "deepseek-v4.1-flash:1017",
+              "deepseek-v4-pro:0813",
+              "gpt-oss:120b",
+              "minimax-m3",
+              "minimax-m3.1-flash",
+              "nemotron-3-ultra",
+              "deepseek-v4.1-flash",
+              "muse-spark-open",
+              "nemotron-3-super",
+              "deepseek-v4-pro",
+              "beam",
+              "gemma4:31b",
+              "kimi-k2.7-code",
+              "glm-5.3-flash",
+              "minimax-m2.7",
+              "glm-5.3",
+              "kimi-k2.6",
+              "glm-5.2",
+              "gpt-oss:20b",
+              "nemotron-3-nano:30b",
+              "mistral-large-3:675b",
+              "kimi-k3",
+              "mistral-large-4"
+            ],
+            "logo": {
+              "type": "builtin",
+              "key": "ollama"
+            }
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "templateNameMap": {
+            "zh-CN": "Ollama Cloud (Anthropic)",
+            "en-US": "Ollama Cloud (Anthropic)"
+          },
+          "config": {
+            "access": {
+              "type": "api-key",
+              "apiKeyManagementUrl": "https://ollama.com/settings/keys"
+            },
+            "api": {
+              "type": "anthropic-messages",
+              "baseUrl": "https://ollama.com/v1"
+            },
+            "builtinModelIds": [
+              "deepseek-v4.1-flash:1017",
+              "deepseek-v4-pro:0813",
+              "gpt-oss:120b",
+              "minimax-m3",
+              "minimax-m3.1-flash",
+              "nemotron-3-ultra",
+              "deepseek-v4.1-flash",
+              "muse-spark-open",
+              "nemotron-3-super",
+              "deepseek-v4-pro",
+              "beam",
+              "gemma4:31b",
+              "kimi-k2.7-code",
+              "glm-5.3-flash",
+              "minimax-m2.7",
+              "glm-5.3",
+              "kimi-k2.6",
+              "glm-5.2",
+              "gpt-oss:20b",
+              "nemotron-3-nano:30b",
+              "mistral-large-3:675b",
+              "kimi-k3",
+              "mistral-large-4"
+            ],
+            "logo": {
+              "type": "builtin",
+              "key": "ollama"
+            }
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "templateNameMap": {
+            "zh-CN": "Ollama Cloud (Responses)",
+            "en-US": "Ollama Cloud (Responses)"
+          },
+          "config": {
+            "access": {
+              "type": "api-key",
+              "apiKeyManagementUrl": "https://ollama.com/settings/keys"
+            },
+            "api": {
+              "type": "openai-responses",
               "baseUrl": "https://ollama.com/v1"
             },
             "builtinModelIds": [
@@ -7367,6 +7640,1028 @@
         },
         {
           "templateId": "ollama-cloud",
+          "modelId": "mistral-large-4",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-messages",
+          "modelId": "claude-sonnet-4-6",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-messages",
+          "modelId": "claude-opus-4-8",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-messages",
+          "modelId": "claude-haiku-4-5-20251001",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-messages",
+          "modelId": "claude-fable-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-messages",
+          "modelId": "claude-sonnet-5-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-messages",
+          "modelId": "claude-opus-5-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-messages",
+          "modelId": "claude-opus-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-messages",
+          "modelId": "claude-opus-4-7",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-messages",
+          "modelId": "claude-sonnet-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-messages",
+          "modelId": "claude-haiku-5-5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-messages",
+          "modelId": "claude-fable-5-1",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "gpt-5.6-terra",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "gpt-5.3-codex",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "gpt-6.1-sol",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "gpt-6-luna",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "gpt-5.5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "gpt-6-astra",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "gpt-5.4",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "gpt-5.6-sol",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "gpt-5.4-mini",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "gpt-5.6-luna",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "gpt-6-sol",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "moonshotai/Kimi-K2.7-Code-Highspeed",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "moonshotai/Kimi-K3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "moonshotai/Kimi-K2.7-Code",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "meta/muse-spark-1.3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "meta/muse-spark-1.3-contributor",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "meta/muse-wonder-1.0",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "meta/muse-spark-1.2-contributor",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "meta/muse-spark-1.1",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "meta/muse-spark-1.2",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "zai-org/GLM-5.3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "zai-org/GLM-5.2-Fast",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "zai-org/GLM-5.2",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "google/gemini-4-argon",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "google/gemini-3.1-flash-lite",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "google/gemini-3.6-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "google/gemini-3.5-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "google/gemini-3.5-flash-lite",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "google/gemini-3.8-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "thinkingmachines/inkling-small",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "thinkingmachines/inkling",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "mistral/mistral-large-4",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "xai/grok-4.7",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "xai/grok-4.6",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "xai/grok-4.5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "Qwen/Qwen3.8-Max",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "Qwen/Qwen3.8-Omni-Flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "Qwen/Qwen3.8-27B",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "MiniMaxAI/MiniMax-M2.5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "MiniMaxAI/MiniMax-M3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "MiniMaxAI/MiniMax-M2.7",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "sakana/fugu-ultra",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "tencent/hy3-paid",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "stepfun/Step-3.5-Flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "stepfun/Step-5-Preview",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "stepfun/Step-3.7-Flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "nvidia/nemotron-3-ultra-550b-a55b",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "z-ai/glm-5.3-flashx",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "deepseek/deepseek-v4-pro",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "deepseek/deepseek-v4-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "deepseek/deepseek-v4-flash-vision-exp",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "deepseek/deepseek-v4.1-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "commandcode-responses",
+          "modelId": "deepseek/deepseek-v4.1-flash-fast",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/glm-5.3-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/deepseek-v4-pro",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/qwen3.7-max",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/glm-5.2",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/mimo-v2.5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/deepseek-v4-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/muse-spark-1.3-contributor",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/glm-5.3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/mimo-v2.6-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/qwen3.8-max",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/qwen3.7-plus",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/deepseek-v4.1-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/kimi-k3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/mimo-v2.5-pro",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/mimo-v2.6-pro",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/kimi-k2.6",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/kimi-k2.7-code",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-messages",
+          "modelId": "cline-pass/minimax-m3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/glm-5.3-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/deepseek-v4-pro",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/qwen3.7-max",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/glm-5.2",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/mimo-v2.5",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/deepseek-v4-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/muse-spark-1.3-contributor",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/glm-5.3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/mimo-v2.6-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/qwen3.8-max",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/qwen3.7-plus",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/deepseek-v4.1-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/kimi-k3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/mimo-v2.5-pro",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/mimo-v2.6-pro",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/kimi-k2.6",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/kimi-k2.7-code",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "cline-pass-responses",
+          "modelId": "cline-pass/minimax-m3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "deepseek-v4.1-flash:1017",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "deepseek-v4-pro:0813",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "gpt-oss:120b",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "minimax-m3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "minimax-m3.1-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "nemotron-3-ultra",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "deepseek-v4.1-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "muse-spark-open",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "nemotron-3-super",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "deepseek-v4-pro",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "beam",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "gemma4:31b",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "kimi-k2.7-code",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "glm-5.3-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "minimax-m2.7",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "glm-5.3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "kimi-k2.6",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "glm-5.2",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "gpt-oss:20b",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "nemotron-3-nano:30b",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "mistral-large-3:675b",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "kimi-k3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-messages",
+          "modelId": "mistral-large-4",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "deepseek-v4.1-flash:1017",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "deepseek-v4-pro:0813",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "gpt-oss:120b",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "minimax-m3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "minimax-m3.1-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "nemotron-3-ultra",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "deepseek-v4.1-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "muse-spark-open",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "nemotron-3-super",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "deepseek-v4-pro",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "beam",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "gemma4:31b",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "kimi-k2.7-code",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "glm-5.3-flash",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "minimax-m2.7",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "glm-5.3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "kimi-k2.6",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "glm-5.2",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "gpt-oss:20b",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "nemotron-3-nano:30b",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "mistral-large-3:675b",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
+          "modelId": "kimi-k3",
+          "config": {
+            "enabled": true
+          }
+        },
+        {
+          "templateId": "ollama-cloud-responses",
           "modelId": "mistral-large-4",
           "config": {
             "enabled": true

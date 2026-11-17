@@ -48,12 +48,45 @@ ZCode 之前没有这家内置模板，用户只能手工建自定义 Provider�
   （builtin → synced → personal exact）。
 - 不新增 schema、RPC 或 UI 接口；新模板复用现有 Provider 添加流程。
 
+## 2026-11-17 三种接口格式（Chat / Anthropic / Responses）
+
+### 背景证据
+
+- Ollama 官方文档「Anthropic compatibility」：`https://ollama.com/v1/messages` 支持
+  Anthropic Messages 协议的一个子集；云端请求必须带 `Authorization: Bearer`，只发
+  `x-api-key` 会被拒；`anthropic-version` 用 `2023-06-01`。
+  ZCode 的 Anthropic 适配器本来就会在 `x-api-key` 之外补 `Authorization: Bearer`
+  （`withAnthropicAuthorizationHeader`），因此不需要额外配置。
+- Ollama 官方文档「OpenAI compatibility」列出 `/v1/responses`，注明**仅支持非有状态**
+  形式：`previous_response_id` 与 `conversation` 不可用。
+- 运行时探测：`https://ollama.com/v1/<伪路径>` 返回 404，`/v1/messages` 返回
+  Anthropic 形状的 `authentication_error`，`/v1/responses` 返回 OpenAI 形状的
+  `authentication_error`，三条路由都存在。
+
+### 产品规则
+
+1. 既有模板 ID `ollama-cloud` 保持不变，名字改为 `Ollama Cloud (Chat)`；新增
+   `ollama-cloud-messages`、`ollama-cloud-responses`。三者共用
+   `baseUrl = https://ollama.com/v1`、同一份 23 个模型清单和
+   `logo = { type: "builtin", key: "ollama" }`，只有 `api.type` 不同
+   （`openai-chat-completions` / `anthropic-messages` / `openai-responses`）。
+2. Anthropic 与 Responses 端点都是对同一份模型目录做的协议兼容层，上游没有按格式区分
+   模型，因此三张卡片使用同一份模型清单。
+3. `templateModelRules` 为两个新模板的 23 个模型各写一条 `enabled: true`。
+4. 新模板 ID 暂无远端分片，模型参数仍由 `modelRules` / `modelApiRules` 提供；
+   补齐分片属于 gist 侧变更，本次不推送。
+5. 内置 release `revision` 35 → 36。
+
 ## 验收场景
 
-1. 添加 Provider 时可选 `ollama-cloud`，模板卡片显示 Ollama 美洲驼 Logo，浅色 / 深色主题都可辨识。
-2. 默认模型数量为 23，`ollama-cloud:gpt-oss:120b`、`ollama-cloud:glm-5.3`、
-   `ollama-cloud:mistral-large-4` 的 `enabled = true`。
-3. 同步远端后，`ollama-cloud:gpt-oss:120b` → 131072 / 32768，`ollama-cloud:gemma4:31b` →
+1. 添加 Provider 时可选择 `ollama-cloud` / `ollama-cloud-messages` /
+   `ollama-cloud-responses`，卡片名分别为 `Ollama Cloud (Chat)` / `(Anthropic)` /
+   `(Responses)`，三张卡片都显示 Ollama 美洲驼 Logo，浅色 / 深色主题都可辨识。
+2. 三个模板的 `baseUrl` 相同，`api.type` 分别为 `openai-chat-completions` /
+   `anthropic-messages` / `openai-responses`；`builtinModelIds` 都是同一组 23 个模型。
+3. 默认模型数量为 23，`ollama-cloud:gpt-oss:120b`、`ollama-cloud:glm-5.3`、
+   `ollama-cloud:mistral-large-4` 的 `enabled = true`；两个新模板下同样为 `true`。
+4. 同步远端后，`ollama-cloud:gpt-oss:120b` → 131072 / 32768，`ollama-cloud:gemma4:31b` →
    262144 / 262144，`ollama-cloud:mistral-large-4` → 1048576 / 262144，且不再落兜底 200000/32000。
-4. `decodeZCodeBuiltinRelease` 通过，`revision = 35`；合并后的远端文件通过
+5. `decodeZCodeBuiltinRelease` 通过，`revision = 36`；合并后的远端文件通过
    `modelSmartConfigFileSchema`，manifest `revision = 5`。
