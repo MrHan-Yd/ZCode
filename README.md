@@ -21,6 +21,8 @@ ZCode 是 AI 编程工作台，提供桌面应用、浏览器界面和终端 Age
 
 ## 更新
 
+- 2026-11-17：更新至 ZCode v3.19.4 版本，模型设置里 CommandCode、ClinePass、Ollama Cloud 三家内置供应商按接口格式拆成「Chat / Anthropic / Responses」三张卡片，分别对接 Chat Completions、Anthropic Messages、OpenAI Responses 三种协议，同一条 API Key 可以按模型能力挑协议：CommandCode 的 11 个 Claude 模型只出现在 Anthropic 卡片，53 个同时支持 chat 与 responses 的开放模型在两张卡片里都能选，6 个只支持 chat 的模型不会出现在 Responses 卡片；原有卡片改名为「…(Chat)」，已保存的供应商不受影响。设置页新增「请求日志」：用「请求日志 / 供应商 / 模型」三个视图只读分页查看模型调用记录，可按今日 / 最近 7 天 / 最近 30 天以及成功、失败状态筛选，不记录请求与响应正文。
+
 - 2026-10-29：更新至 ZCode v3.19.2 版本，模型设置新增 Ollama Cloud 供应商：官方托管端点是 `https://ollama.com/v1`，内置 23 个模型（DeepSeek V4.1 / V4 Pro、GPT-OSS 120B / 20B、MiniMax M3 系列、Nemotron 3 系列、Kimi K3 / K2.6 / K2.7 Code、GLM 5.3 / 5.2、Gemma4、Mistral Large 3 / 4 等），API Key 在 `https://ollama.com/settings/keys` 申请；同时给 CommandCode、ClinePass 两家内置供应商补上官方 Logo，浅色与深色主题各用对应配色。这三家的推荐参数也已加入「模型智能配置」的远端同步库，点一次「同步」即可拿到准确的上下文窗口与最大输出，不再落到兜底值。
 
 - 2026-10-21：更新至 ZCode v3.18.8 版本，设置页新增「提示词库」，可以把常用提示词存起来重复使用：每条提示词支持名称、正文、标签和快捷键别名，列表可以搜索、置顶、删除（删除需二次确认），并记录最近使用时间。在聊天输入框里输入 `;`（中文输入法下的 `；` 也可以）就能唤出提示词面板，继续输入名称或标签筛选（也可以直接输入完整别名），选中后把正文插入输入框再发送；`;` 只在行首或空格后触发，正文里紧贴前文的分号不会被误判。提示词库也能像 MCP 一样同步到 GitHub 私有 Gist：设置页右上角「⋯」里可上传、下载或从本地备份还原，下载先预览再确认，应用前自动备份并在失败时回滚。
