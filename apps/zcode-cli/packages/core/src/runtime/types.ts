@@ -19,6 +19,9 @@ import type {
   StableForkTargetMetadata,
   WorkspaceHookBundleSnapshot,
   WorkspaceId,
+  OrchestrationArtifactStoragePort,
+  OrchestrationJournalPort,
+  OrchestrationRunOwner,
 } from "@zcode/contracts";
 import type {
   BuiltInSubagentModelSelectionOverrides,
@@ -220,6 +223,17 @@ export interface AgentRuntimeConfig {
    * false 会关闭十个工作流工具，不改变其他工具的注册策略。
    */
   dynamicWorkflowEnabled?: boolean;
+  /**
+   * 编排模式。默认关闭；只有 Host 明确下发 `enabled: true` 才注册规划工具并收窄主会话工具面。
+   * 子 runtime 不继承这段配置（见 subagent child 的显式 config 构造）。
+   */
+  orchestration?: {
+    enabled?: boolean;
+    /** 会话隔离的团队；缺省按 spec 使用 general-purpose / Explore / tester。 */
+    team?: readonly string[];
+    /** 默认 3，硬上限 8。 */
+    maxConcurrency?: number;
+  };
 
   // Context Builder config
   systemPrompt?: string;
@@ -372,6 +386,13 @@ export interface AgentRuntimeDeps {
   /** workflow run 的提交/观察/取消端口；存在即 CreateWorkflow 真启动，缺席则回占位诊断。 */
   dynamicWorkflowRunPort?: DynamicWorkflowRunPort;
   dynamicWorkflowSnippetPort?: DynamicWorkflowSnippetPort;
+  /**
+   * 编排 run journal 的工厂。缺省时编排工具仍按配置注册，但调用会明确返回
+   * capability_unavailable，而不是假装启动了 run。由 Host/bootstrap 用 adapters 实现注入。
+   */
+  orchestrationJournal?: (owner: OrchestrationRunOwner) => OrchestrationJournalPort;
+  /** 步骤产物存储工厂；与 journal 同门。 */
+  orchestrationArtifactStorage?: (owner: OrchestrationRunOwner) => OrchestrationArtifactStoragePort;
   /** 模型目录端口；缺席则 ListModels 报能力缺席，CreateWorkflow 的 subagent_model 被拒。 */
   modelCatalogPort?: ModelCatalogPort;
   runtimeTaskRegistry?: RuntimeTaskRegistry;

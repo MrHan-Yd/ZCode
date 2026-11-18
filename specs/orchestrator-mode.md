@@ -140,9 +140,24 @@ UI 草稿/会话意图
 - **内置角色定义**：`packages/shared/src/builtin-subagents.ts` 存纯展示元数据；CLI core 存 system prompt 与 `permissionMode/maxTurns`；services 消费同一份元数据，避免多处漂移。
 - **编排 run**：CLI 侧独立 run journal（`orchestration_runs` / `orchestration_steps` / `orchestration_events` 或等价 JSONL + snapshot），不修改 tasks-index 的冻结表结构。Host/UI 只读投影。
 
-### 3.1 Phase 2 的运行记录与派发边界
+### 3.1 Phase 2 / Phase 3 的运行记录与派发边界
 
-Phase 2 只提供 CLI core 的独立执行能力及公开接口；主会话工具、协议命令、completion 唤醒和 UI 入口分别在 Phase 3 / 5 接入。默认关闭的经典会话不会创建 run journal，也不会改变现有子代理派发路径。
+Phase 2 提供 CLI core 的独立执行能力及公开接口；Phase 3 在其上接入主会话工具面与 completion 唤醒。协议命令、UI 入口与 Host 下发仍分别在 Phase 5 / 6 接入。默认关闭的经典会话不会创建 run journal，也不会改变现有子代理派发路径。
+
+```text
+主会话工具调用
+  → OrchestrationService（计划校验 / 团队归一化 / runId 分配）
+  → RunStore.create（唯一写入入口，冻结计划与 generation）
+  → dispatcher.execute 异步驱动（不阻塞工具返回）
+  → 工具返回 { status: "async_launched", runId, ... }
+  → run 终态：RunStore 已提交 → 构造有界摘要
+  → enqueueBackgroundTaskNotification → 主会话下一轮汇总
+
+Amend → 取消旧 run（保留已完成产物）→ revision + 1 → 新建 run
+Cancel → RunStore.cancel + generation + 1 → stopTask → 迟到结果拒绝
+```
+
+编排主会话的配置所有权：Host 通过 `AgentRuntimeConfig.orchestration` 下发 `enabled / team / maxConcurrency`；`AgentRuntimeDeps.orchestrationJournal` 与 `orchestrationArtifactStorage` 提供存储工厂。缺少存储时工具仍按配置注册，但调用返回明确的 `capability_unavailable`，不静默降级成经典模式。
 
 - **状态所有者**：`OrchestrationRunStore` 是 run / step / attempt 的唯一写入入口，内部调用纯 scheduler。driver 只保留当前执行 Promise 与取消信号，不维护第二份可写 run 状态。
 - **模块接口**：CLI `contracts/src/orchestration` 声明 run / attempt / journal / artifact 的端口与持久记录校验；core 的 `orchestration` 只含状态机、用例和纯预算逻辑；`adapters/src/orchestration` 通过 `@zcode/shared/node` 的文件锁与私有原子写执行 IO。所有跨包依赖走公开入口，不从 adapters 反向导入 core。
@@ -262,13 +277,36 @@ cold restore → 校验 owner / snapshot → completed 不动，running 无证�
 
 ### Phase 3 — 主会话规划与工具面（6–9 人日）
 
-- [ ] 3.1 `CreateOrchestrationPlan` / `AmendOrchestrationPlan` / `CancelOrchestrationRun` 工具与 JSON schema。
-- [ ] 3.2 编排模式工具白名单 + executor 硬拒绝 Edit/Write/Bash。
-- [ ] 3.3 orchestrator system prompt 段（仿 workflowActor，不用 `customSystemPrompt`）。
-- [ ] 3.4 异步 run 生命周期：`async_launched`、completion notification、汇总唤醒。
-- [ ] 3.5 子代理强制 `agentRole=default`；禁止递归；Plan+编排=只读编排。
+- [x] 3.1 `CreateOrchestrationPlan` / `AmendOrchestrationPlan` / `CancelOrchestrationRun` 工具与 JSON schema。
+  - `core/src/orchestration/tools.ts` 提供三个工具入口；`OrchestrationService` 是工具面唯一用例入口，工具 handler 不直接接触 store / journal / dispatcher。
+  - 团队与并发上限来自会话配置（`AgentRuntimeConfig.orchestration`），工具入参只接受计划本身，模型不能自行改写团队。
+  - `AmendOrchestrationPlan` v1 语义：先取消旧 run，再以 `revision + 1` 启动新 run；已完成步骤产物保留在旧 journal，自动复用与 guide 注入属 Phase 4。
+- [x] 3.2 编排模式工具白名单 + executor 硬拒绝 Edit/Write/Bash。
+  - provider 边界：`resolveOrchestratorHiddenToolNames` 把 registry 中白名单之外的工具加入 turn 级 `toolDisallowlist`，模型请求只看到 `ORCHESTRATOR_ALLOWED_TOOL_NAMES`（三个规划工具、AskUserQuestion、TodoRead/TodoWrite、Read/Glob/Grep/WebFetch/WebSearch）。
+  - 执行边界：executor 的 `hardAllowedToolNames` 对白名单之外的任何调用（包括 Edit/Write/Bash/Agent/Task/js 与 MCP 工具）在 handler、hook、权限判定之前返回 `permission_denied`。
+  - registry 保持完整：DAG 子代理的 `allowedTools: ["*"]` 从父 runtime 的实际工具表继承，注册面若只剩只读工具会让 frontend/backend/tester 无法写文件。子代理的编排工具由 `includeOrchestration` 注册门与 `orchestration: { enabled: false }` 双重挡住。
+  - 编排主会话没有 Bash，`resolveRuntimeEmbeddedSearchEnabled` 直接返回 false，保留 Glob/Grep 只读检索。
+- [x] 3.3 orchestrator system prompt 段（仿 workflowActor，不用 `customSystemPrompt`）。
+  - `context/sections/orchestrator.ts` 追加稳定的 `orchestrator` section：工具面、团队、可写角色、DAG 规则、异步通知语义与 Plan 只读约束。
+  - 保留正常 Agent Identity；`customSystemPrompt` 仍是整段替换语义，不与编排段叠加。
+- [x] 3.4 异步 run 生命周期：`async_launched`、completion notification、汇总唤醒。
+  - 工具返回 `{ status: "async_launched", runId, planId, revision, stepCount, team }`；`OrchestrationService.launch` 异步驱动 dispatcher。
+  - run 结束后复用 `enqueueBackgroundTaskNotification` 投递结构化摘要（步骤状态、错误、artifact 引用，12 KiB 上限），唤醒主会话汇总；基础设施失败也会投递失败通知，不会让主会话无限等待。
+  - 通知刻意不注册 runtime task：停止语义只属于 `CancelOrchestrationRun`，避免出现第二个可停止身份。
+- [x] 3.5 子代理强制 `agentRole=default`；禁止递归；Plan+编排=只读编排。
+  - 子 runtime 的显式 config 中写入 `orchestration: { enabled: false }`；`isOrchestratorRuntimeConfig` 同时要求 `taskType !== "subagent_child"`，即使配置泄漏也拿不到编排工具面。
+  - `shouldForceOrchestrationReadOnly` 在父会话 plan / planEnabled 时把 DAG 子代理强制为 plan，覆盖 profile 自带的 `permissionMode: "auto"`。
+  - 子代理工具面完整：主会话 registry 不因编排白名单而收窄，child 的 `allowedTools: ["*"]` 继续继承 Edit/Write/Bash 等工作工具；Agent/Task 仍由既有 `isSubagentDispatchToolName` 过滤，禁止递归派发。
 - 验收：主会话无法直接改文件；计划外角色不可派发；run 完成后主会话收到结构化摘要。
 - 测试：工具 schema；主会话工具表；幻觉调用被 executor 拒绝；子代理工具完整；未选角色被拒；stale generation 结果丢弃。
+- 2026-11-18 验证记录：
+  - 工具白名单在 provider 边界用 turn 级隐藏实现，executor 用 `hardAllowedToolNames` 独立兜底；registry 保持完整，避免收窄 DAG 子代理的工具继承。`orchestrationRuntimePolicy.test.ts` 同时覆盖 hidden 名单、注册门与 executor 拒绝。
+  - 新增 `orchestrationRuntimePolicy.test.ts`（6 项）、`orchestrationTools.test.ts`（5 项）、`orchestrationService.test.ts`（5 项）、`orchestrationPrompt.test.ts`（3 项），共 19 项。
+  - 编排全量测试 95/95 通过（原 76 项 + 新增 19 项）。
+  - `pnpm --filter @zcode/core typecheck`（含 `tsconfig.orchestration-test.json`）通过。
+  - `pnpm lint`：0 errors / 70 warnings（与实现前一致）；`pnpm architecture:check --changed`：violations 0 / baseline 0 / new 0。
+  - 改用 `pnpm --dir apps/zcode-cli exec oxfmt --check ...` 定向检查，24 个改动文件全部通过；根 `pnpm fmt:check` 在该基线上会列出大量既有文件，不作为本轮信号。
+  - 装配边界：core 已消费 `AgentRuntimeConfig.orchestration` 与 `AgentRuntimeDeps.orchestrationJournal` / `orchestrationArtifactStorage`，但 Host/protocol 尚未下发该配置或注入工厂；用户可见入口、`setOrchestration` 命令与 UI 时间线仍属 Phase 5，冷恢复 entry 与 tasks-index 投影仍属 Phase 6。
 
 ### Phase 4 — 执行中插入消息（6–10 人日）
 

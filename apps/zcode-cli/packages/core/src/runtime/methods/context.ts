@@ -25,6 +25,12 @@ import { resolveEnabledProjectMemoryRoot } from "../helpers/project-memory.js";
 import { buildContextHistoryEntries } from "./context-history-entries.js";
 import { resolveRuntimeEmbeddedSearchEnabled } from "./embedded-search-branch.js";
 import { getContextSourceShellDisplayName } from "./session-shell-environment.js";
+import {
+  isOrchestratorRuntimeConfig,
+  ORCHESTRATOR_ALLOWED_TOOL_NAMES,
+  resolveOrchestrationTeamForPrompt,
+  resolveOrchestrationWritableRoles,
+} from "../../orchestration/tool-policy.js";
 
 export { buildContextHistoryEntries };
 
@@ -120,6 +126,9 @@ export function createContextBuilderFromSnapshot(
     });
   }
 
+  const orchestrationTeam = isOrchestratorRuntimeConfig(this.config)
+    ? resolveOrchestrationTeamForPrompt(this.config.orchestration?.team)
+    : undefined;
   const contextConfig: ContextBuilderConfig = {
     workingDirectory: snapshot.workingDirectory,
     envInfo,
@@ -136,10 +145,26 @@ export function createContextBuilderFromSnapshot(
     skillMetadataBudget: this.config.skillMetadataBudget,
     customSystemPrompt: this.config.systemPrompt,
     workflowActor: this.config.workflowActor,
+    ...(orchestrationTeam
+      ? {
+          orchestration: {
+            team: orchestrationTeam,
+            writableRoles: resolveOrchestrationWritableRoles(orchestrationTeam),
+          },
+        }
+      : {}),
     language: this.config.language,
     outputStyle: this.config.outputStyle,
     compact: this.config.compact,
-    guidanceToolNames: this.getTools(options.model).map((tool) => tool.name),
+    guidanceToolNames: this.getTools(options.model)
+      .map((tool) => tool.name)
+      // guidance 段描述的是「当前可用的内置能力」；编排主会话看不到的工具不能被点名，
+      // 否则模型会被告知一个 provider 根本不会收到的工具。
+      .filter(
+        (name) =>
+          !isOrchestratorRuntimeConfig(this.config) ||
+          ORCHESTRATOR_ALLOWED_TOOL_NAMES.includes(name),
+      ),
   };
 
   return createContextBuilder(contextConfig).setToolRegistry(this.registry);

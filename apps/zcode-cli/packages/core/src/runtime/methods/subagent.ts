@@ -55,6 +55,7 @@ import {
   type OfficialCuaPolicy,
 } from "../../subagent/computer-use-policy.js";
 import { computeOfficialCuaServerNames } from "./mcp.js";
+import { shouldForceOrchestrationReadOnly } from "../../orchestration/tool-policy.js";
 
 export function createDefaultSubagentPort(
   this: AgentRuntimeInternal,
@@ -169,9 +170,16 @@ export function createDefaultSubagentPort(
         childMcpAccess.snapshot?.tools.map((descriptor) => toMcpToolName(descriptor)) ?? [],
       );
       validateSubagentMcpRequirements(request, childToolAllowlist, childMcpAccess);
+      // Plan + 编排 = 只读编排：profile 自带的 permissionMode 不能把 DAG 子代理
+      // 提升成可写执行者，否则主会话的只读约束会被一次派发绕过。
+      const orchestrationReadOnly = shouldForceOrchestrationReadOnly({
+        orchestrationEnabled: this.config.orchestration?.enabled === true,
+        planEnabled: this.getPlanEnabled(),
+        parentMode: this.config.mode,
+      });
       const childMode = resolveSubagentPermissionMode(
-        this.getPlanEnabled() ? "plan" : this.config.mode,
-        request.permissionMode,
+        orchestrationReadOnly || this.getPlanEnabled() ? "plan" : this.config.mode,
+        orchestrationReadOnly ? "plan" : request.permissionMode,
         builtInExplore,
       );
       const childCuaPolicy = createOfficialCuaPolicy(
@@ -276,6 +284,9 @@ export function createDefaultSubagentPort(
           // 父 registry 可见的工具名）本来就够，但**自定义 agent profile 显式写
           // `allowedTools: ["CreateWorkflow"]` 时会跳过那次交集**，只剩这一道能挡住。
           dynamicWorkflowEnabled: this.config.dynamicWorkflowEnabled,
+          // 子代理永远是 default 角色：编排工具面只属于父会话。即使未来有人把整段
+          // config 展开进 child，这里也显式关掉，避免递归编排或恢复出第二个调度者。
+          orchestration: { enabled: false },
           // 默认 subagent 已从 Explore 调整为 general-purpose。
           // toolset 不能再依赖 DEFAULT_SUBAGENT_TYPE，否则默认通用 agent 会被误降级为只读搜索工具面。
           toolset: builtInExplore ? "explore" : "main",

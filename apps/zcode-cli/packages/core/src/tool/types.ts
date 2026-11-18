@@ -60,6 +60,7 @@ import type {
   PersistedReadFileStateTool,
 } from "./read-file-state-metadata.js";
 import type { RuntimeTaskRegistry } from "../runtime-task/registry.js";
+import type { OrchestrationToolPort } from "../orchestration/contract.js";
 
 // -----------------------------------------------
 // Tool Metadata
@@ -192,6 +193,8 @@ export interface ToolExecutionContext {
   deliveryKind?: "desktop-continuous" | "web-remote-replayable";
   memoryRoot?: string;
   runtimeScope?: ToolRuntimeScope;
+  /** 编排主会话的用例端口；只有启用了 orchestration 的主 runtime 注入。 */
+  orchestrationService?: OrchestrationToolPort;
   providerVisibleToolNames?: readonly string[];
   sessionId: SessionId;
   turnId?: TurnId;

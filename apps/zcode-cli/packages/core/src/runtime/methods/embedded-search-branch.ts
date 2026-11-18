@@ -7,8 +7,12 @@ import {
   resolveRuntimeDynamicWorkflowToolsIncluded,
 } from "../helpers/tool-allowlist.js";
 import { isToolNameDisallowed } from "../../tool/tool-visibility.js";
+import { isOrchestratorRuntimeConfig } from "../../orchestration/tool-policy.js";
 
 export function resolveRuntimeEmbeddedSearchEnabled(runtime: AgentRuntimeInternal): boolean {
+  // 编排主会话没有 Bash，内建搜索分支无法接管检索；必须保留 Glob/Grep，
+  // 否则主会话既不能改文件也不能查文件。
+  if (isOrchestratorRuntimeConfig(runtime.config)) return false;
   const builtInToolAllowlist = resolveBuiltInToolAllowlist(runtime.config);
   const decision = resolveEmbeddedSearchBranchCapability({
     bashAvailable:
@@ -39,6 +43,7 @@ export function refreshBranchAwareBuiltInTools(runtime: AgentRuntimeInternal): v
     includeDynamicWorkflow: resolveRuntimeDynamicWorkflowToolsIncluded(runtime.config),
     agentProfiles: runtime.config.subagents?.profiles,
     visibleProfiles: runtime.config.subagents?.visibleProfiles,
+    includeOrchestration: isOrchestratorRuntimeConfig(runtime.config),
     allowedTools: resolveBuiltInToolAllowlist(runtime.config),
     disallowedTools: runtime.config.toolDisallowlist,
     silentDuplicateWarnings: true,

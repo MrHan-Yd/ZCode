@@ -37,6 +37,7 @@ import type {
 import type { HookRunner } from "../../hooks/index.js";
 import type { PermissionService } from "../../permission/service.js";
 import type { RuntimeTaskRegistry } from "../../runtime-task/registry.js";
+import type { OrchestrationToolPort } from "../../orchestration/contract.js";
 import type { ToolRegistry } from "../registry.js";
 import type { ToolSchedule } from "../scheduler.js";
 import type {
@@ -128,6 +129,13 @@ export interface ToolExecutorOptions {
   clientMode?: "desktop-continuous" | "web-remote-replayable";
   deliveryKind?: "desktop-continuous" | "web-remote-replayable";
   runtimeScope?: ToolRuntimeScope;
+  /** 编排主会话的用例端口；缺席时编排工具返回明确的配置错误。 */
+  orchestrationService?: OrchestrationToolPort;
+  /**
+   * 编排模式的执行期白名单。注册面只能让模型「看不见」，幻觉调用仍会到达 executor；
+   * 这一层对白名单之外的工具统一拒绝，未来新增工具默认不可见。
+   */
+  hardAllowedToolNames?: readonly string[];
   getWorkingDirectory?: () => string;
   setWorkingDirectory?: (cwd: string) => Promise<void> | void;
   getWorkspaceRoot?: () => string;
@@ -235,6 +243,8 @@ export interface ToolExecutorDeps {
   deliveryKind?: "desktop-continuous" | "web-remote-replayable";
   getMemoryRoot?: () => string | undefined;
   runtimeScope: ToolRuntimeScope;
+  orchestrationService?: OrchestrationToolPort;
+  hardAllowedToolNames?: readonly string[];
   traceContext?: TraceContext;
   getMode: () => CollaborationMode;
   maxConcurrency: number;

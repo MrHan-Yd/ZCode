@@ -154,6 +154,34 @@ async function executeToolCallImpl(
 
   const mode = deps.getMode();
 
+  // 编排模式的执行边界：provider 边界已经把白名单之外的工具隐藏，但模型仍可能幻觉调用。
+  // 这里在 handler、hook、权限判定之前统一拒绝，保证「不可见」之外还有一层不可执行。
+  if (
+    deps.hardAllowedToolNames !== undefined &&
+    !deps.hardAllowedToolNames.includes(canonicalToolCall.name)
+  ) {
+    const denial = createCoreError(
+      CoreErrorType.PermissionDenied,
+      `Tool ${canonicalToolCall.name} is disabled in orchestration mode. Use the orchestration plan tools instead.`,
+      {
+        context: { toolCallId: canonicalToolCall.id, toolName: canonicalToolCall.name },
+        recoverable: true,
+      },
+    );
+    const result = createErrorResult(canonicalToolCall, denial);
+    await emitToolCallError(deps, canonicalToolCall.id, traceContext, turnId, result.error);
+    deps.logger?.warn("Tool call rejected by orchestration executor policy", {
+      ...traceContextToLogContext(traceContext),
+      event: "tool.call.orchestration_denied",
+      module: "core.tool.executor",
+      status: "failed",
+      toolCallId: canonicalToolCall.id,
+      toolName: canonicalToolCall.name,
+    });
+    telemetry?.finishDenied("policy_denied");
+    return result;
+  }
+
   if (options?.signal?.aborted) {
     const result = createErrorResult(
       canonicalToolCall,
@@ -433,6 +461,7 @@ async function executeToolCallImpl(
       deliveryKind: deps.deliveryKind,
       memoryRoot: deps.getMemoryRoot?.(),
       runtimeScope: deps.runtimeScope,
+      orchestrationService: deps.orchestrationService,
       providerVisibleToolNames: deps.registry
         .list()
         .filter((name) => deps.registry.getMetadata(name)?.providerVisible !== false),

@@ -67,6 +67,16 @@ import { evalWorkflowSnippetToolEntry } from "./eval-workflow-snippet.js";
 import { listWorkflowRunsToolEntry } from "./list-workflow-runs.js";
 import { getWorkflowRunToolEntry } from "./get-workflow-run.js";
 import { resumeWorkflowRunToolEntry } from "./resume-workflow-run.js";
+import {
+  amendOrchestrationPlanToolEntry,
+  cancelOrchestrationRunToolEntry,
+  createOrchestrationPlanToolEntry,
+} from "../../orchestration/tools.js";
+import {
+  AMEND_ORCHESTRATION_PLAN_TOOL_NAME,
+  CANCEL_ORCHESTRATION_RUN_TOOL_NAME,
+  CREATE_ORCHESTRATION_PLAN_TOOL_NAME,
+} from "../../orchestration/tool-policy.js";
 // import { workflowToolEntry } from "./workflow.js";
 import { createToolRuleNameSet } from "../tool-visibility.js";
 
@@ -133,6 +143,10 @@ export const builtInTools: ToolEntry[] = [
   // `subagent_model`。不进 WORKFLOW_CHILD_DISALLOWED_TOOLS
   // ——那条禁令的理由是 alwaysAsk 在 child 里无窗可弹，只读查询不适用。
   listModelsToolEntry,
+  // 编排主会话的三个规划工具。默认关闭；只有 orchestration 主会话按配置注册。
+  createOrchestrationPlanToolEntry,
+  amendOrchestrationPlanToolEntry,
+  cancelOrchestrationRunToolEntry,
   // workflowToolEntry,
 ];
 
@@ -187,8 +201,10 @@ interface RegisterBuiltInToolsOptions {
   includeBrowserUse?: boolean;
   embeddedSearchEnabled?: boolean;
   agentProfiles?: readonly AgentProfile[];
-  /** 编排会话只暴露选中的内置角色；缺省 = 经典模式的两个内置角色。 */
+  /** 编排模式只暴露选中的内置角色；缺省 = 经典模式的两个内置角色。 */
   visibleProfiles?: readonly string[];
+  /** 编排主会话：注册三个规划工具，并由 allowlist 收窄其余工具。 */
+  includeOrchestration?: boolean;
   allowedTools?: readonly string[];
   disallowedTools?: readonly string[];
   silentDuplicateWarnings?: boolean;
@@ -262,6 +278,14 @@ export function registerBuiltInTools(
       continue;
     }
     if (entry.metadata.name === "js" && options.includeNodeRepl !== true) {
+      continue;
+    }
+    if (
+      options.includeOrchestration !== true &&
+      (entry.metadata.name === CREATE_ORCHESTRATION_PLAN_TOOL_NAME ||
+        entry.metadata.name === AMEND_ORCHESTRATION_PLAN_TOOL_NAME ||
+        entry.metadata.name === CANCEL_ORCHESTRATION_RUN_TOOL_NAME)
+    ) {
       continue;
     }
     registry.register(resolveBuiltInToolEntryForBranch(entry, options), {

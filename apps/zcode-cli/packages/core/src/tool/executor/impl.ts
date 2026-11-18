@@ -78,6 +78,8 @@ export class ToolExecutorImpl implements ToolExecutor {
       deliveryKind: options.deliveryKind,
       getMemoryRoot: options.getMemoryRoot,
       runtimeScope: options.runtimeScope ?? "main",
+      orchestrationService: options.orchestrationService,
+      hardAllowedToolNames: options.hardAllowedToolNames,
       traceContext: options.traceContext,
       getMode: options.getMode ?? (() => options.mode ?? "build"),
       maxConcurrency: options.maxConcurrency ?? 10,

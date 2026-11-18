@@ -40,6 +40,7 @@ export type ContextSource =
   | "current_date" // 当前日期
   | "custom_system_prompt" // 自定义 stable system body
   | "workflow_actor_identity" // 动态工作流子代理身份：契约 + persona 叠加
+  | "orchestrator" // 编排主会话的调度者约束：工具面、团队、计划规则
   | "subagent_agent_prompt" // 子 agent 专属身份/任务 prompt
   | "subagent_notes" // 子 agent 通用操作提醒
   | "subagent_environment" // 子 agent 环境和模型上下文
@@ -121,6 +122,11 @@ export interface ContextBuilderConfig {
    * 而不是像 `customSystemPrompt` 那样整段替换。与 `customSystemPrompt` 互斥。
    */
   workflowActor?: WorkflowActorContext;
+  /**
+   * 编排主会话的追加段。存在时保留正常身份与动态段，只补一段稳定的调度者约束；
+   * 与 `customSystemPrompt` 同时存在时不追加（自定义 prompt 的语义是整段替换）。
+   */
+  orchestration?: OrchestratorContext;
   language?: string;
   outputStyle?: OutputStylePromptConfig;
   compact?: AutoCompactPolicyConfig;
@@ -134,6 +140,11 @@ export interface ContextBuilderConfig {
 export interface WorkflowActorContext {
   name?: string;
   persona?: string;
+}
+
+export interface OrchestratorContext {
+  team: readonly string[];
+  writableRoles: readonly string[];
 }
 
 export type ContextUserInstructionsRequest = UserInstructionsOptions;

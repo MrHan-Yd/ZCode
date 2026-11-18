@@ -22,6 +22,12 @@ import {
 import { isStaleBranchRuntimeTaskEvent } from "../methods/runtime-command-generation.js";
 import { resolveEnabledProjectMemoryRoot } from "./project-memory.js";
 import { sessionHasLoadedSkill } from "../../agent/loaded-skills.js";
+import { OrchestrationService } from "../../orchestration/service.js";
+import {
+  CREATE_ORCHESTRATION_PLAN_TOOL_NAME,
+  isOrchestratorRuntimeConfig,
+  ORCHESTRATOR_ALLOWED_TOOL_NAMES,
+} from "../../orchestration/tool-policy.js";
 
 const DEFAULT_SUBAGENT_BACKGROUND_BASH_MAX_MS = 3_600_000;
 const EMPTY_RUNTIME_HOOK_CONFIG = {
@@ -41,8 +47,11 @@ export function initializeRuntimeTooling(
   const refreshBuiltInTools = () => registerRuntimeBuiltInTools(runtime, deps, { silent: true });
   refreshBuiltInTools();
   const hookRunner = createRuntimeHookRunner(runtime, deps, sessionId);
+  const orchestrationService = createRuntimeOrchestrationService(runtime, deps);
   return {
-    executor: deps.toolExecutor ?? createRuntimeToolExecutor(runtime, deps, hookRunner),
+    executor:
+      deps.toolExecutor ??
+      createRuntimeToolExecutor(runtime, deps, hookRunner, orchestrationService),
     hookRunner,
     refreshBuiltInTools,
   };
@@ -88,6 +97,7 @@ function registerRuntimeBuiltInTools(
     embeddedSearchEnabled: resolveRuntimeEmbeddedSearchEnabled(runtime),
     agentProfiles: runtime.config.subagents?.profiles,
     visibleProfiles: runtime.config.subagents?.visibleProfiles,
+    includeOrchestration: isOrchestratorRuntimeConfig(runtime.config),
     allowedTools: resolveBuiltInToolAllowlist(runtime.config),
     // workflow_child 的结构性禁用（CreateWorkflow/SaveWorkflow 因 alwaysAsk 隐形挂起；
     // ResumeWorkflowRun 已免确认但因「child 内不得再编排」仍在列）在 helper
@@ -160,6 +170,7 @@ function createRuntimeToolExecutor(
   runtime: AgentRuntimeInternal,
   deps: AgentRuntimeDeps,
   hookRunner: HookRunner | undefined,
+  orchestrationService: OrchestrationService | undefined,
 ): ToolExecutor {
   const browserUseEnabled = resolveRuntimeBrowserUseEnabled(runtime, deps);
   return createToolExecutor({
@@ -233,12 +244,77 @@ function createRuntimeToolExecutor(
     getMemoryRoot: () =>
       deps.memoryRoot ?? resolveEnabledProjectMemoryRoot(runtime.config, runtime.workspaceRoot),
     runtimeScope: runtime.config.taskType === "subagent_child" ? "subagent" : "main",
+    orchestrationService,
+    hardAllowedToolNames: isOrchestratorRuntimeConfig(runtime.config)
+      ? ORCHESTRATOR_ALLOWED_TOOL_NAMES
+      : undefined,
     permissionTimeoutMs: runtime.config.permissionTimeoutMs,
     sessionId: runtime.sessionId,
     traceContext: runtime.rootTraceContext,
     getMode: () => runtime.config.mode ?? "build",
     maxConcurrency: runtime.config.toolConcurrency?.maxConcurrency,
   });
+}
+
+function createRuntimeOrchestrationService(
+  runtime: AgentRuntimeInternal,
+  deps: AgentRuntimeDeps,
+): OrchestrationService | undefined {
+  if (!isOrchestratorRuntimeConfig(runtime.config)) return undefined;
+
+  // 端口缺席是 Host 配置问题，不是「静默降级成经典模式」的理由：工具仍已注册，
+  // 调用时由 handler 返回明确的 capability_unavailable。
+  if (!deps.orchestrationJournal || !deps.orchestrationArtifactStorage || !runtime.subagentPort) {
+    runtime.logger?.warn("Orchestration is enabled without run storage or subagent capability", {
+      ...traceContextToLogContext(runtime.rootTraceContext),
+      event: "orchestration.runtime.unavailable",
+      module: "core.runtime",
+      status: "failed",
+    });
+    return undefined;
+  }
+
+  const owner = {
+    workspacePath: runtime.workspaceRoot,
+    ...(runtime.config.workspaceIdentity
+      ? { workspaceIdentity: runtime.config.workspaceIdentity.toString() }
+      : {}),
+    ...(runtime.config.remoteSessionId ? { remoteSessionId: runtime.config.remoteSessionId } : {}),
+    sessionId: String(runtime.sessionId),
+  };
+  try {
+    return new OrchestrationService({
+      sessionId: String(runtime.sessionId),
+      owner,
+      journal: deps.orchestrationJournal(owner),
+      artifactStorage: deps.orchestrationArtifactStorage(owner),
+      subagents: runtime.subagentPort,
+      ...(runtime.config.orchestration?.team ? { team: runtime.config.orchestration.team } : {}),
+      ...(runtime.config.orchestration?.maxConcurrency === undefined
+        ? {}
+        : { maxConcurrency: runtime.config.orchestration.maxConcurrency }),
+      notify: ({ text, traceContext }) => {
+        // 复用后台通知通道唤醒主会话；不注册 runtime task，避免把一次编排 run
+        // 误当成可单独停止的后台工具任务（停止语义只属于 CancelOrchestrationRun）。
+        runtime.enqueueBackgroundTaskNotification({
+          text,
+          toolName: CREATE_ORCHESTRATION_PLAN_TOOL_NAME,
+          traceContext,
+        });
+      },
+    });
+  } catch (error) {
+    runtime.logger?.error(
+      "Failed to initialize orchestration runtime",
+      error instanceof Error ? error : new Error(String(error)),
+      {
+        ...traceContextToLogContext(runtime.rootTraceContext),
+        event: "orchestration.runtime.init_failed",
+        module: "core.runtime",
+      },
+    );
+    return undefined;
+  }
 }
 
 function resolveRuntimeBrowserUseEnabled(

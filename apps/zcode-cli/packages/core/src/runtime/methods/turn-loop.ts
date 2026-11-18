@@ -34,6 +34,7 @@ import {
   recordCompactSuccess,
 } from "./turn-loop-state.js";
 import type { RegularTurnLoopState } from "./turn-loop-state.js";
+import { resolveOrchestratorHiddenToolNames } from "../../orchestration/tool-policy.js";
 import {
   appendTurnRequestEntries,
   commitTurnRequestEntries,
@@ -107,7 +108,12 @@ export async function runRegularTurnLoop(
     finishMcp();
     throwIfTurnAborted(state.turnAbortSignal);
     const finishTools = beginLocalTurnPreparation(state.turnTraceContext, "tools");
-    const turnDisallowedTools = buildTurnDisallowedTools(state);
+    // 编排主会话的 registry 保持完整（子代理继承需要），只在 provider 请求边界
+    // 隐藏白名单之外的工具；executor 另有独立白名单兜底幻觉调用。
+    const turnDisallowedTools = buildTurnDisallowedTools(
+      state,
+      resolveOrchestratorHiddenToolNames(this.registry.list(), this.config),
+    );
     // automation 派发到已 active 会话或重试恢复时，入口 metadata 可能没有带到
     // loop state；但 queryId 仍是 automation-*。provider 请求边界必须按 queryId 再硬过滤
     // automation 写工具，否则模型会先看到并创建、修改或删除任务定义。
@@ -218,8 +224,12 @@ export async function runRegularTurnLoop(
   }
 }
 
-function buildTurnDisallowedTools(state: RegularTurnLoopState): Set<string> | null {
+function buildTurnDisallowedTools(
+  state: RegularTurnLoopState,
+  extraDisallowed?: readonly string[],
+): Set<string> | null {
   const tools = new Set(state.toolDisallowlist ?? []);
+  for (const toolName of extraDisallowed ?? []) tools.add(toolName);
   if (isAutomationMutationRestrictedTurn(state)) {
     // 定时任务执行轮只应运行任务 prompt，不能反过来管理自己的定义。
     // 保留 CronList 供只读查询；所有 mutation 在 provider 请求边界统一隐藏。

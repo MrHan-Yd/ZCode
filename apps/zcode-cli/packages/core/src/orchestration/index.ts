@@ -4,6 +4,9 @@ export * from "./artifacts.js";
 export * from "./dispatch-port.js";
 export * from "./subagent-dispatch-adapter.js";
 export * from "./dispatcher.js";
+export * from "./service.js";
+export * from "./tool-policy.js";
+export * from "./tools.js";
 export {
   areDependenciesSatisfied,
   cancelRun,

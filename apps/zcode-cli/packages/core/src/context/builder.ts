@@ -15,6 +15,7 @@ import { estimateTokens } from "./utils.js";
 import { buildCliPrefixSection } from "./sections/cli-prefix.js";
 import { buildIdentitySection } from "./sections/identity.js";
 import { buildWorkflowActorIdentitySection } from "./sections/workflow-actor.js";
+import { buildOrchestratorSection } from "./sections/orchestrator.js";
 import { buildEnvInfoSection, buildGitSystemContextSection } from "./sections/env-info.js";
 import { buildSkillsSection } from "./sections/skills.js";
 import { buildRequestUserContextSection } from "./sections/request-user-context.js";
@@ -119,6 +120,12 @@ export class ContextBuilder {
       sections.push(buildWorkflowActorIdentitySection(workflowActor));
     } else {
       sections.push(buildIdentitySection(activeOutputStyle));
+    }
+
+    // 编排模式保留正常身份，只追加调度者约束。custom prompt 是整段替换语义，
+    // 不能再往里掺入运行时规则；workflow actor 是另一种身份，二者不会同时成立。
+    if (!hasCustomSystemPrompt && !isWorkflowActor && this.config.orchestration) {
+      sections.push(buildOrchestratorSection(this.config.orchestration));
     }
 
     // 3. Dynamic system context
