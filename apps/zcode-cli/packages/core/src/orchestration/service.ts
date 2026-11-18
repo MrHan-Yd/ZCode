@@ -9,9 +9,12 @@ import { OrchestrationArtifacts } from "./artifacts.js";
 import {
   OrchestrationStoreError,
   type OrchestrationArtifactStoragePort,
+  type OrchestrationAttemptOutcome,
+  type OrchestrationChildReference,
   type OrchestrationJournalPort,
   type OrchestrationRunOwner,
   type OrchestrationRunRecord,
+  type OrchestrationRunStorePort,
   type OrchestrationToolPort,
 } from "./contract.js";
 import type { OrchestrationDispatchContext } from "./dispatch-port.js";
@@ -28,6 +31,8 @@ import {
 
 const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled", "interrupted"]);
 const COMPLETION_NOTICE_MAX_BYTES = 12 * 1024;
+const PROMPT_STATE_MAX_BYTES = 4 * 1024;
+const PROMPT_STATE_MAX_ACTIVE_RUNS = 4;
 
 export interface OrchestrationServiceOptions {
   sessionId: string;
@@ -64,6 +69,11 @@ export class OrchestrationService implements OrchestrationToolPort {
   private readonly store: OrchestrationRunStore;
   private readonly dispatcher: OrchestrationDispatcher;
   private readonly executions = new Map<string, Promise<void>>();
+  /**
+   * 最近一次从 journal 读到的快照。prompt 装配是同步的，不能为了展示 run 状态
+   * 阻塞在文件锁上；所有 store 调用都经过带缓存的端口，保证这里至多落后一次提交。
+   */
+  private readonly records = new Map<string, OrchestrationRunRecord>();
 
   constructor(private readonly options: OrchestrationServiceOptions) {
     this.store = new OrchestrationRunStore({
@@ -72,7 +82,7 @@ export class OrchestrationService implements OrchestrationToolPort {
       ...(options.now ? { now: options.now } : {}),
     });
     this.dispatcher = new OrchestrationDispatcher({
-      store: this.store,
+      store: this.cachedStore(this.store),
       artifacts: new OrchestrationArtifacts({ storage: options.artifactStorage }),
       dispatch: new SubagentOrchestrationDispatchAdapter(options.subagents),
     });
@@ -80,6 +90,139 @@ export class OrchestrationService implements OrchestrationToolPort {
 
   get owner(): OrchestrationRunOwner {
     return this.store.owner;
+  }
+
+  /** 仍在驱动中的 run；顺序即启动顺序。 */
+  activeRunIds(): readonly string[] {
+    return [...this.executions.keys()];
+  }
+
+  activeRuns(): OrchestrationRunRecord[] {
+    const active: OrchestrationRunRecord[] = [];
+    for (const runId of this.executions.keys()) {
+      const record = this.records.get(runId);
+      if (record) active.push(structuredClone(record));
+    }
+    return active;
+  }
+
+  /**
+   * 停止并重排的执行件：先持久化取消（generation 递增、已完成产物留在旧 journal），
+   * 再显式停止 child。任一 run 停止失败都不能掩盖其他 run 的取消结果，因此汇总为
+   * AggregateError 交给调用方记录；用户消息本身不会被这条错误吞掉。
+   */
+  async cancelActiveRuns(): Promise<OrchestrationRunRecord[]> {
+    const runIds = [...this.executions.keys()];
+    if (runIds.length === 0) return [];
+    const results = await Promise.allSettled(runIds.map((runId) => this.dispatcher.cancel(runId)));
+    const cancelled: OrchestrationRunRecord[] = [];
+    const failures: unknown[] = [];
+    for (const result of results) {
+      if (result.status === "fulfilled") cancelled.push(result.value);
+      else failures.push(result.reason);
+    }
+    if (failures.length) {
+      throw new AggregateError(failures, "Orchestration could not stop all active runs.");
+    }
+    return cancelled;
+  }
+
+  /**
+   * 等待当前所有 run 收口。queue 语义用它决定何时把 held 输入提升为下一条 turn；
+   * 循环是必要的：等待期间模型可能通过新的工具调用启动后继 run。
+   */
+  async whenIdle(): Promise<void> {
+    while (this.executions.size > 0) {
+      await Promise.allSettled(this.executions.values());
+    }
+  }
+
+  /**
+   * 编排主会话 prompt 的 run 事实。只包含 run 级摘要，不回传步骤产物；内容上限
+   * 4 KiB，避免每次 context rebuild 把 journal 细节带进模型上下文。
+   */
+  promptState(): string | undefined {
+    const active = this.activeRuns().slice(-PROMPT_STATE_MAX_ACTIVE_RUNS);
+    const latestTerminal = this.latestTerminalRecord();
+    if (active.length === 0 && latestTerminal === undefined) return undefined;
+
+    const lines: string[] = [];
+    if (active.length) {
+      lines.push("Active runs:");
+      for (const record of active) lines.push(`- ${describeRun(record)}`);
+    } else {
+      lines.push("No orchestration run is currently active.");
+    }
+    if (latestTerminal) {
+      lines.push("Latest finished run:");
+      lines.push(`- ${describeRun(latestTerminal)}`);
+    }
+    return boundPromptState(lines.join("\n"));
+  }
+
+  private latestTerminalRecord(): OrchestrationRunRecord | undefined {
+    let latest: OrchestrationRunRecord | undefined;
+    for (const record of this.records.values()) {
+      if (!TERMINAL_RUN_STATUSES.has(record.status)) continue;
+      if (latest === undefined || record.state.updatedAt > latest.state.updatedAt) {
+        latest = record;
+      }
+    }
+    return latest;
+  }
+
+  private remember(record: OrchestrationRunRecord | undefined): void {
+    if (record) this.records.set(record.runId, structuredClone(record));
+  }
+
+  private cachedStore(store: OrchestrationRunStore): OrchestrationRunStorePort {
+    const remember = (record: OrchestrationRunRecord | undefined) => this.remember(record);
+    const refresh = async (runId: string) => remember(await store.get(runId));
+    return {
+      get owner() {
+        return store.owner;
+      },
+      create: async (input) => {
+        const record = await store.create(input);
+        remember(record);
+        return record;
+      },
+      get: async (runId) => {
+        const record = await store.get(runId);
+        remember(record);
+        return record;
+      },
+      claim: async (runId) => {
+        const claims = await store.claim(runId);
+        await refresh(runId);
+        return claims;
+      },
+      bindChild: async (runId: string, attemptKey: string, child: OrchestrationChildReference) => {
+        const bound = await store.bindChild(runId, attemptKey, child);
+        await refresh(runId);
+        return bound;
+      },
+      finish: async (
+        runId: string,
+        attemptKey: string,
+        generation: number,
+        outcome: OrchestrationAttemptOutcome,
+      ) => {
+        const finished = await store.finish(runId, attemptKey, generation, outcome);
+        await refresh(runId);
+        return finished;
+      },
+      cancel: async (runId) => {
+        const record = await store.cancel(runId);
+        remember(record);
+        return record;
+      },
+      recover: async (runId) => {
+        const record = await store.recover(runId);
+        remember(record);
+        return record;
+      },
+    } satisfies OrchestrationRunStorePort;
   }
 
   async start(input: StartOrchestrationRunInput): Promise<OrchestrationRunRecord> {
@@ -107,6 +250,7 @@ export class OrchestrationService implements OrchestrationToolPort {
     if (!previous) {
       throw new OrchestrationStoreError("not_found", "Orchestration run was not found.");
     }
+    this.remember(previous);
     const requested = this.preparePlan(input);
     const revision = Math.max(requested.plan.revision, previous.state.plan.revision + 1);
     if (!TERMINAL_RUN_STATUSES.has(previous.status)) {
@@ -125,7 +269,9 @@ export class OrchestrationService implements OrchestrationToolPort {
   }
 
   async get(runId: string): Promise<OrchestrationRunRecord | undefined> {
-    return this.store.get(runId);
+    const record = await this.store.get(runId);
+    this.remember(record);
+    return record;
   }
 
   private preparePlan(input: StartOrchestrationRunInput): {
@@ -248,6 +394,33 @@ function boundNotice(text: string): string {
     text,
     COMPLETION_NOTICE_MAX_BYTES,
     "\n[... orchestration summary truncated ...]",
+    "head",
+  );
+}
+
+function describeRun(record: OrchestrationRunRecord): string {
+  const summary = summarizeRun(record.state);
+  return [
+    `run \`${record.runId}\`, plan \`${record.state.plan.planId}\``,
+    `revision ${record.state.plan.revision}, generation ${record.state.generation}`,
+    `status ${record.status}`,
+    `${summary.completed}/${summary.total} completed`,
+    ...[
+      summary.running ? `${summary.running} running` : "",
+      summary.failed ? `${summary.failed} failed` : "",
+      summary.blocked ? `${summary.blocked} blocked` : "",
+      summary.cancelled ? `${summary.cancelled} cancelled` : "",
+      summary.interrupted ? `${summary.interrupted} interrupted` : "",
+    ].filter(Boolean),
+  ].join(", ");
+}
+
+function boundPromptState(text: string): string {
+  if (Buffer.byteLength(text, "utf8") <= PROMPT_STATE_MAX_BYTES) return text;
+  return fitContentWithSuffix(
+    text,
+    PROMPT_STATE_MAX_BYTES,
+    "\n[... orchestration run state truncated ...]",
     "head",
   );
 }

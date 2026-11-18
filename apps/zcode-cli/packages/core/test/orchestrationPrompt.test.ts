@@ -58,3 +58,33 @@ test("customSystemPrompt 是整段替换语义，不再叠加编排段", () => {
     false,
   );
 });
+
+test("活动 run 状态是独立的 dynamic 段，不污染稳定调度约束", () => {
+  const withRuns = new ContextBuilder({
+    workingDirectory: ENV.cwd,
+    envInfo: ENV,
+    orchestration: {
+      team: ["general-purpose", "Explore", "tester"],
+      writableRoles: ["general-purpose", "tester"],
+      runState: "Active runs:\n- run `orch-1`, plan `p`, revision 1, generation 0, status running",
+    },
+  }).build();
+  const sections = withRuns.sections.filter((section) => section.source === "orchestrator");
+  assert.equal(sections.length, 2);
+  assert.equal(sections[0]?.cacheHint, "stable");
+  assert.equal(sections[1]?.cacheHint, "dynamic");
+  assert.match(sections[1]?.content ?? "", /orch-1/);
+
+  const withoutRuns = new ContextBuilder({
+    workingDirectory: ENV.cwd,
+    envInfo: ENV,
+    orchestration: {
+      team: ["general-purpose", "Explore", "tester"],
+      writableRoles: ["general-purpose", "tester"],
+    },
+  }).build();
+  assert.equal(
+    withoutRuns.sections.filter((section) => section.source === "orchestrator").length,
+    1,
+  );
+});

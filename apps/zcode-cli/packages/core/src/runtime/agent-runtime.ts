@@ -84,6 +84,7 @@ import type {
   RuntimeBackgroundStopResult,
 } from "./methods/background.js";
 import { initializeRuntimeTooling } from "./helpers/runtime-tools.js";
+import type { OrchestrationService } from "../orchestration/service.js";
 import type {
   ActiveTurnInfo,
   ActiveForegroundExecutionState,
@@ -174,6 +175,7 @@ export class AgentRuntime {
   private mcpToolsRegistered = false;
   private subagentPort?: SubagentPort;
   private subagentProfilePort?: AgentRuntimeDeps["subagentProfilePort"];
+  private orchestrationService?: OrchestrationService;
   private refreshBuiltInTools?: () => void;
   private dynamicWorkflowRunPort?: DynamicWorkflowRunPort;
   private modelCatalogPort?: ModelCatalogPort;
@@ -302,6 +304,7 @@ export class AgentRuntime {
     this.refreshBuiltInTools = tooling.refreshBuiltInTools;
     this.workspaceHookAdmission = deps.workspaceHookAdmission;
     this.executor = tooling.executor;
+    this.orchestrationService = tooling.orchestrationService;
 
     this.contextBuilder = deps.contextBuilder ?? null;
     if (this.contextBuilder) {

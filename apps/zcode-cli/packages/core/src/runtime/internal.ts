@@ -57,6 +57,7 @@ import type { AgentRuntimeHookMethods } from "./internal-hook-methods.js";
 import type { ProjectMemoryExtractionScheduler } from "./helpers/project-memory-extraction.js";
 import type { RuntimeTelemetryFacade } from "../telemetry/runtime-telemetry.js";
 import type { WorkspaceHookRuntimeAdmissionPort } from "../hooks/workspace-hook-runtime-admission.js";
+import type { OrchestrationService } from "../orchestration/service.js";
 
 export interface AgentRuntimeInternal
   extends AgentRuntimeCoreMethods, AgentRuntimeTurnMethods, AgentRuntimeHookMethods {
@@ -103,6 +104,8 @@ export interface AgentRuntimeInternal
   mcpToolsRegistered: boolean;
   subagentPort?: SubagentPort;
   subagentProfilePort?: SubagentProfilePort;
+  /** 编排主会话的用例层；配置关闭或存储缺失时缺席。 */
+  orchestrationService?: OrchestrationService;
   /** 重新注册内置工具（Agent/Task 描述随 profile 变化）；由构造期绑定 deps 的闭包提供。 */
   refreshBuiltInTools?: () => void;
   dynamicWorkflowRunPort?: DynamicWorkflowRunPort;

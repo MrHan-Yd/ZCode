@@ -41,7 +41,12 @@ export function initializeRuntimeTooling(
   runtime: AgentRuntimeInternal,
   deps: AgentRuntimeDeps,
   sessionId: SessionId,
-): { executor: ToolExecutor; hookRunner?: HookRunner; refreshBuiltInTools: () => void } {
+): {
+  executor: ToolExecutor;
+  hookRunner?: HookRunner;
+  orchestrationService?: OrchestrationService;
+  refreshBuiltInTools: () => void;
+} {
   // 同一个 deps 闭包既做首次装配，也做 profile 变化后的重注册：
   // Agent/Task 的 provider description 在注册时烘焙，不能只改 config 数组。
   const refreshBuiltInTools = () => registerRuntimeBuiltInTools(runtime, deps, { silent: true });
@@ -53,6 +58,7 @@ export function initializeRuntimeTooling(
       deps.toolExecutor ??
       createRuntimeToolExecutor(runtime, deps, hookRunner, orchestrationService),
     hookRunner,
+    ...(orchestrationService ? { orchestrationService } : {}),
     refreshBuiltInTools,
   };
 }

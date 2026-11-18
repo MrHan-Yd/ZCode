@@ -310,13 +310,31 @@ cold restore → 校验 owner / snapshot → completed 不动，running 无证�
 
 ### Phase 4 — 执行中插入消息（6–10 人日）
 
-- [ ] 4.1 运行中发送菜单：追加指导 / 排队 / 停止并重排。
-- [ ] 4.2 guide 注入主会话规划上下文；`AmendOrchestrationPlan` 应用新 revision。
-- [ ] 4.3 停止并重排：cancel run、保留已完成产物、递增 generation、重规划。
-- [ ] 4.4 排队：复用现有 queue；run 完成后处理。
-- [ ] 4.5 幂等/顺序：每 step attempt 稳定键；取消/重试不重复写；用户消息不丢。
+- [x] 4.1 运行中发送菜单：追加指导 / 排队 / 停止并重排。
+  - Core 语义已落地：`PromptAdmissionOptions.orchestrationInput`（`guide` 默认 / `queue` / `interrupt`）由 `orchestration/input-policy.ts` 的纯决策表消费；未知值一律回落 guide，不会被猜成取消。
+  - 菜单渲染、发送框三态与 composer 接线仍属 Phase 5.5；本阶段只保证 CLI admission 对三种语义的行为确定。
+- [x] 4.2 guide 注入主会话规划上下文；`AmendOrchestrationPlan` 应用新 revision。
+  - 主会话 prompt 增加独立的 dynamic `Orchestration Run State` 段（`context/sections/orchestrator.ts`），每轮 context rebuild 从 `OrchestrationService.promptState()` 取 run 级摘要；稳定的调度约束仍保持 `cacheHint: "stable"`，不动 system prefix 缓存。
+  - 静态规则明确：活动 run 期间的新用户消息按 guidance 处理，只调整约束时用活动 runId 调 `AmendOrchestrationPlan`；latest run 已 cancelled/interrupted 且用户改方向时重新规划，不得把取消步骤报成完成。
+  - `amend` 继续保证 `revision = max(请求 revision, 旧 revision + 1)`，旧 run 的 journal 与已完成产物保留可查。
+  - 明确边界：本阶段不把旧 run 的 completed 步骤种子化进新 run。持久记录要求每个 completed 步骤都有 claim/complete 事件历史，跨 run 复用需要新增事件类型或记录版本，留给后续增量；旧产物仍保留在旧 journal。
+- [x] 4.3 停止并重排：cancel run、保留已完成产物、递增 generation、重规划。
+  - `OrchestrationService.cancelActiveRuns()` 对全部在飞 run 先持久化取消（`generation + 1`、在飞 attempt/step 收口 cancelled），再显式 `stopTask`；任一 child 停止失败汇总为 `AggregateError` 记录，不会吞掉触发它的用户消息。
+  - runtime 在 `interrupt` admission 先取消 run，再按正常路径接纳新消息；模型从 dynamic run 段看到 latest run 为 cancelled，并按新消息重新规划。旧 generation 的迟到结果继续由 RunStore fencing 拒绝。
+- [x] 4.4 排队：复用现有 queue；run 完成后处理。
+  - `queue` 在空闲主会话时不启动新 turn：写入既有 held queue（`TurnSteerQueued` + session input 账本），并注册 `whenIdle()` 提升；提升前先取 queue reservation（与 UI sendQueuedNow 同一把锁），再 `discardHeldPendingInputById(..., "promoted")` 摘除同一条目，最后走普通 admission，避免重复执行。
+  - 用户手动 sendQueuedNow / 删除后提升器发现条目已不在 held queue，直接跳过；run 在等待期间被取消也会正常提升，只有 session teardown 才放弃。
+  - 协议命令、Host 下发与 UI 队列行仍属 Phase 5；进程重启后的未消费消息恢复属 Phase 6.1。
+- [x] 4.5 幂等/顺序：每 step attempt 稳定键；取消/重试不重复写；用户消息不丢。
+  - attemptKey（runId / revision / generation / stepId / attempt）与 generation fencing 沿用 Phase 2 实现；新增测试确认 interrupt 取消后 generation 递增，已完成步骤的产物引用仍留在旧 journal。
+  - 排队消息以事件 + session input 账本为权威，提升是「先摘除、后 admission」的幂等顺序；admission 失败只记录日志，不丢弃队列事件。
 - 验收：插入“改用另一个方案”能停止并按新方案重排；插入“补充一点约束”能继续当前计划；选择排队不会打断。
 - 测试：guide 改写计划；interrupt 取消运行中步骤并保留完成产物；queue 顺序；generation fencing；进程重启后未消费消息恢复。
+- 2026-11-18 验证记录：
+  - 新增 `orchestrationInputPolicy.test.ts`（5 项）与 `orchestrationInterrupt.test.ts`（3 项），并在 `orchestrationPrompt.test.ts` 增加 dynamic run 段用例（+1）；编排全量测试 104/104 通过。
+  - `pnpm --filter @zcode/core typecheck`（含 `tsconfig.orchestration-test.json`）通过；`pnpm architecture:check --changed` violations 0 / baseline 0 / new 0。
+  - 定向 Lint 0 errors / 0 warnings；根 `pnpm lint` 仍为基线 0 errors / 70 warnings；`agent-runtime.ts` 的 max-lines 为既有超限（HEAD 675 行已超 400），本轮只增加 3 行。
+  - 仍未接线：Host/protocol 的 `orchestrationInput` 下发、发送框三态菜单与 `OrchestrationRunTimeline` 属 Phase 5；跨进程 held 恢复与 completed 产物种子化复用不在本阶段。
 
 ### Phase 5 — UI（8–12 人日）
 

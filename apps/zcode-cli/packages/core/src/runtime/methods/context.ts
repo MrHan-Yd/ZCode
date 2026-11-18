@@ -129,6 +129,11 @@ export function createContextBuilderFromSnapshot(
   const orchestrationTeam = isOrchestratorRuntimeConfig(this.config)
     ? resolveOrchestrationTeamForPrompt(this.config.orchestration?.team)
     : undefined;
+  // run 状态每轮重建 context 时同步取一次；service 只缓存 run 级摘要，
+  // 这里不会为了 prompt 去读 journal。
+  const orchestrationRunState = orchestrationTeam
+    ? this.orchestrationService?.promptState()
+    : undefined;
   const contextConfig: ContextBuilderConfig = {
     workingDirectory: snapshot.workingDirectory,
     envInfo,
@@ -150,6 +155,7 @@ export function createContextBuilderFromSnapshot(
           orchestration: {
             team: orchestrationTeam,
             writableRoles: resolveOrchestrationWritableRoles(orchestrationTeam),
+            ...(orchestrationRunState ? { runState: orchestrationRunState } : {}),
           },
         }
       : {}),

@@ -516,6 +516,12 @@ export type PromptAdmissionOptions = ExecuteTurnOptions & {
   expectedTurnId?: TurnId;
   /** busy 时的产品队列语义；附件或不可 steer 时由 Core 回退 queue。 */
   queueDelivery?: "guide" | "queue";
+  /**
+   * 编排运行中的用户输入语义。只在编排主会话且有活动 run 时生效：
+   * guide（默认）直接进入本轮；queue 等 run 收口后复用既有队列提升；
+   * interrupt 先显式取消 run，再用本条消息重新规划。
+   */
+  orchestrationInput?: "guide" | "queue" | "interrupt";
   /** queue promotion 等内部调用要求 admission 必须 idle，否则直接拒绝。 */
   requireIdle?: boolean;
 };

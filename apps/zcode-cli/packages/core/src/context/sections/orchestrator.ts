@@ -38,6 +38,9 @@ function buildRules(context: OrchestratorPromptContext): string {
     "- Downstream steps receive structured summaries and artifact references of their dependencies. Do not paste full prior output into the next task.",
     "- The tool returns `async_launched` immediately. Continue only after the completion notification arrives; then summarize per-step outcomes, artifacts, and any failed or blocked step for the user.",
     "- Use `AmendOrchestrationPlan` when the user changes direction, and `CancelOrchestrationRun` when they ask to stop. Do not guess which one they meant.",
+    "- While a run is active, a new user message is guidance for that run. If it adds or changes constraints, amend the active run; if it asks for status, answer from the run state instead of inventing step results.",
+    "- If the latest run is already cancelled or interrupted and the user gives a new direction, create a new plan from the new message. Completed artifacts remain available in the previous run's journal.",
+    "- Messages the user chose to queue are delivered after the current run finishes; they are not part of this turn.",
     "- In plan mode the children run read-only. Produce a design or review plan, not an implementation plan.",
     "- Keep one plan in flight per session unless the user explicitly asks for a second; a new run supersedes the previous one.",
   ].join("\n");
@@ -50,6 +53,31 @@ export function buildOrchestratorSection(context: OrchestratorPromptContext): Co
     source: "orchestrator",
     injectionTarget: "system",
     cacheHint: "stable",
+    chars: content.length,
+    tokens: estimateTokens(content),
+    content,
+    preview: content.slice(0, 100),
+  };
+}
+
+/**
+ * run 状态每轮都可能变化，必须单独成段并标记 dynamic；把这段混进稳定的
+ * 调度者约束会让整个 system prefix 每轮失效。内容由 OrchestrationService 提供，
+ * 这里只补「本轮如何解释用户消息」的固定语义。
+ */
+export function buildOrchestrationRunStateSection(runState: string): ContextSection {
+  const content = [
+    "# Orchestration run state",
+    runState,
+    "",
+    "Use the active runId above when the user's message only adjusts the current plan.",
+    "If the latest run was cancelled or interrupted and the user is redirecting the work, plan from their new message; do not report cancelled steps as completed.",
+  ].join("\n");
+  return {
+    name: "Orchestration Run State",
+    source: "orchestrator",
+    injectionTarget: "system",
+    cacheHint: "dynamic",
     chars: content.length,
     tokens: estimateTokens(content),
     content,

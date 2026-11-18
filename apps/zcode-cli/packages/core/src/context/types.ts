@@ -145,6 +145,11 @@ export interface WorkflowActorContext {
 export interface OrchestratorContext {
   team: readonly string[];
   writableRoles: readonly string[];
+  /**
+   * 每轮 context rebuild 时从 OrchestrationService 取得的 run 级摘要。
+   * 只做提示，不是事实源；没有活动/历史 run 时缺席。
+   */
+  runState?: string;
 }
 
 export type ContextUserInstructionsRequest = UserInstructionsOptions;
