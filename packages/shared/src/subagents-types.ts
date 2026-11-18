@@ -5,7 +5,29 @@ export type AgentScope = "built-in" | "workspace" | "user";
 
 export type AgentSource = "built-in" | "user" | "plugin";
 
-export type BuiltInSubagentName = "general-purpose" | "Explore";
+/**
+ * 内置子智能体的唯一名单。services 的保留名、agents-state.json 的覆盖解析、
+ * bootstrap 的插件裸名冲突判定和 UI 的模型覆盖控件都从这里派生，禁止再写第二份字面量。
+ */
+export const BUILT_IN_SUBAGENT_NAMES = [
+  "general-purpose",
+  "Explore",
+  "architect",
+  "frontend",
+  "backend",
+  "ui-designer",
+  "tester",
+  "reviewer",
+] as const;
+
+export type BuiltInSubagentName = (typeof BUILT_IN_SUBAGENT_NAMES)[number];
+
+export function isBuiltInSubagentName(value: unknown): value is BuiltInSubagentName {
+  return (
+    typeof value === "string" &&
+    (BUILT_IN_SUBAGENT_NAMES as readonly string[]).includes(value)
+  );
+}
 
 export type BuiltInSubagentModelSelectionOverrides = Partial<
   Record<BuiltInSubagentName, ModelSelection>

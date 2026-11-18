@@ -40,6 +40,10 @@ import {
   type SubagentWaitOptions,
   type TraceContext,
 } from "@zcode/contracts";
+import {
+  BUILT_IN_SUBAGENT_NAMES,
+  type BuiltInSubagentModelSelectionOverrides,
+} from "@zcode/shared";
 import { mkdir, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -122,9 +126,12 @@ export interface ExploreSubagentPortOptions {
    * 端口按调用读取，避免新增 Subagent 必须重启应用。优先于静态 profiles。
    */
   getProfiles?: () => readonly AgentProfile[] | undefined;
-  builtInModelSelectionOverrides?: Partial<
-    Record<"general-purpose" | "Explore", import("@zcode/shared").ModelSelection>
-  >;
+  /**
+   * 编排会话的可见内置角色；缺省 = 经典模式的两个内置角色。
+   * 只影响新派发与工具描述，SendMessage/恢复仍使用完整 profile 集合。
+   */
+  visibleProfiles?: readonly string[];
+  builtInModelSelectionOverrides?: BuiltInSubagentModelSelectionOverrides;
   runtimeTaskRegistry?: RuntimeTaskRegistry;
   createAgentId?: () => string;
   getAllowedTools?: (profile: AgentProfile) => readonly string[];
@@ -137,9 +144,17 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
   const registry = options.runtimeTaskRegistry ?? new InMemoryRuntimeTaskRegistry();
   const abortControllers = new Map<string, AbortController>();
   const borrowedForegroundAgentIds = new Set<string>();
-  const resolveProfiles = (): AgentProfile[] =>
+  const resolveLaunchProfiles = (): AgentProfile[] =>
     normalizeAgentProfiles(options.getProfiles?.() ?? options.profiles ?? [], {
       builtInModelSelectionOverrides: options.builtInModelSelectionOverrides,
+      visibleNames: options.visibleProfiles,
+    });
+  // 恢复已有 child 必须能看到全部内置角色，否则一个已被移出本轮团队的 agent
+  // 会无法通过 SendMessage 继续；可见性只限制新派发。
+  const resolveAllProfiles = (): AgentProfile[] =>
+    normalizeAgentProfiles(options.getProfiles?.() ?? options.profiles ?? [], {
+      builtInModelSelectionOverrides: options.builtInModelSelectionOverrides,
+      visibleNames: BUILT_IN_SUBAGENT_NAMES,
     });
   const autoBackgroundMs = normalizeAutoBackgroundMs(options.autoBackgroundMs);
 
@@ -148,7 +163,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       rawRequest: SubagentLaunchRequest,
       launchOptions?: SubagentLaunchOptions,
     ): Promise<AgentOutput> {
-      const { profile, request } = resolveAgentProfileForRequest(resolveProfiles(), rawRequest);
+      const { profile, request } = resolveAgentProfileForRequest(resolveLaunchProfiles(), rawRequest);
       const executionRequest = toSubagentExecutionRequest(request);
       const backgroundRequested =
         rawRequest.runInBackground === true || profile.background === true;
@@ -180,7 +195,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       rawRequest: SubagentRunRequest,
       runOptions?: SubagentRunOptions,
     ): Promise<AgentOutput> {
-      const { profile, request } = resolveAgentProfileForRequest(resolveProfiles(), rawRequest);
+      const { profile, request } = resolveAgentProfileForRequest(resolveLaunchProfiles(), rawRequest);
       const lifecycle = createSubagentLifecycle(options, request, profile);
       const startedAt = new Date(lifecycle.startedAt);
 
@@ -446,7 +461,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       rawRequest: SubagentStartRequest,
       startOptions?: SubagentStartOptions,
     ): Promise<AgentBackgroundedOutput> {
-      const { profile, request } = resolveAgentProfileForRequest(resolveProfiles(), rawRequest);
+      const { profile, request } = resolveAgentProfileForRequest(resolveLaunchProfiles(), rawRequest);
       const lifecycle = createSubagentLifecycle(options, request, profile);
       const startedAt = new Date(lifecycle.startedAt);
       const output = createAgentBackgroundedOutput(request, lifecycle);
@@ -577,7 +592,7 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
     ): Promise<SubagentSendMessageResult> {
       return sendMessageToLocalAgent(
         options,
-        resolveProfiles(),
+        resolveAllProfiles(),
         registry,
         abortControllers,
         request,

@@ -65,7 +65,9 @@ export const modelRequestLogRecordSchema = z
     cacheCreationTokens: countSchema,
     totalTokens: countSchema,
     cacheHitRate: z.number().min(0).max(1).nullable(),
-    tokensPerSecond: measurementSchema,
+    tokensPerSecond: measurementSchema.describe(
+      "Output tokens per second over the total request duration.",
+    ),
     timeToFirstTokenMs: measurementSchema,
     durationMs: measurementSchema,
     costUsd: measurementSchema,
@@ -83,7 +85,9 @@ export const modelRequestLogGroupSchema = z
     costUsd: measurementSchema,
     costKnownCount: countSchema,
     successRate: z.number().min(0).max(1),
-    tokensPerSecond: measurementSchema,
+    tokensPerSecond: measurementSchema.describe(
+      "Output tokens per second weighted by total request duration.",
+    ),
     timeToFirstTokenMs: measurementSchema,
   })
   .strict();
@@ -112,3 +116,21 @@ export type ModelRequestLogsSnapshot = z.infer<typeof modelRequestLogsSnapshotSc
 export type ModelRequestLogRange = ModelRequestLogsRequest["range"];
 export type ModelRequestLogView = ModelRequestLogsRequest["view"];
 export type ModelRequestLogStatus = NonNullable<ModelRequestLogsRequest["status"]>;
+
+/** 首内容可能晚于隐藏推理或缓冲输出，整轮输出必须除以整轮耗时，不能只除以首字后的尾段。 */
+export function calculateRequestLogAverageTps(
+  outputTokens: number | undefined,
+  durationMs: number | null,
+): number | null {
+  if (
+    outputTokens === undefined ||
+    !Number.isFinite(outputTokens) ||
+    outputTokens < 0 ||
+    durationMs === null ||
+    !Number.isFinite(durationMs) ||
+    durationMs <= 0
+  )
+    return null;
+  const tps = (outputTokens * 1_000) / durationMs;
+  return Number.isFinite(tps) ? tps : null;
+}

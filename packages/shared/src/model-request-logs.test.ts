@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   MODEL_REQUEST_LOG_MAX_PAGE_SIZE,
+  calculateRequestLogAverageTps,
   modelRequestLogGroupSchema,
   modelRequestLogRecordSchema,
   modelRequestLogsRequestSchema,
@@ -33,13 +34,33 @@ const record = {
   cacheCreationTokens: 0,
   totalTokens: 110,
   cacheHitRate: 0.8,
-  tokensPerSecond: 10,
+  tokensPerSecond: (10 * 1_000) / 1_500,
   timeToFirstTokenMs: 500,
   durationMs: 1_500,
   costUsd: null,
   httpStatus: null,
   retryCount: 0,
 } as const;
+
+test("请求日志平均速率使用整轮耗时，计量非法时保持未知", () => {
+  assert.equal(calculateRequestLogAverageTps(893, 36_490), (893 * 1_000) / 36_490);
+  assert.equal(calculateRequestLogAverageTps(3_454, 109_660), (3_454 * 1_000) / 109_660);
+  assert.equal(calculateRequestLogAverageTps(0, 1_500), 0);
+  for (const outputTokens of [undefined, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
+    assert.equal(calculateRequestLogAverageTps(outputTokens, 1_500), null);
+  }
+  for (const durationMs of [
+    null,
+    0,
+    -1,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+  ]) {
+    assert.equal(calculateRequestLogAverageTps(100, durationMs), null);
+  }
+  assert.equal(calculateRequestLogAverageTps(Number.MAX_VALUE, 1), null);
+});
 
 test("请求日志 query 严格限定视图、状态、时区与分页上限", () => {
   assert.deepEqual(modelRequestLogsRequestSchema.parse(query), query);

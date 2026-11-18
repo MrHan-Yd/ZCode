@@ -20,7 +20,10 @@ import type {
   WorkspaceHookBundleSnapshot,
   WorkspaceId,
 } from "@zcode/contracts";
-import type { ZCodeProviderAccountAccess } from "@zcode/shared";
+import type {
+  BuiltInSubagentModelSelectionOverrides,
+  ZCodeProviderAccountAccess,
+} from "@zcode/shared";
 import type { EffectiveModelSelectionResult } from "@zcode/shared/model-selection";
 import type { RuntimeMessageEntry } from "../agent/message-history.js";
 import type { SubagentProfilePort } from "../subagent/profile-port.js";
@@ -145,7 +148,12 @@ export interface AgentRuntimeConfig {
     maxTurns?: number;
     outputRootDir?: string;
     profiles?: readonly AgentProfile[];
-    builtInModelSelectionOverrides?: Partial<Record<"general-purpose" | "Explore", ModelSelection>>;
+    builtInModelSelectionOverrides?: BuiltInSubagentModelSelectionOverrides;
+    /**
+     * 只暴露给 Agent 工具的内置角色名单；缺省 = 经典模式的两个内置角色。
+     * 编排会话按团队写入；不影响子代理恢复（恢复仍使用完整 profile 集合）。
+     */
+    visibleProfiles?: readonly string[];
   };
   toolAllowlist?: readonly string[];
   toolDisallowlist?: readonly string[];

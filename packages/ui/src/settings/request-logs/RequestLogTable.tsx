@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, CircleHelp } from "lucide-react";
+import { ArrowDown, ArrowUp, CircleAlert, CircleHelp } from "lucide-react";
 import type { ModelRequestLogsSnapshot } from "@zcode/shared";
 import { Button } from "@/components/ui/button.js";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip.js";
@@ -32,7 +32,7 @@ function Header({
 }) {
   return (
     <th scope="col" className={`${numeric ? NUMERIC : CELL} font-medium text-foreground-subtle`}>
-      <span className="inline-flex items-center gap-1">
+      <span className="inline-flex items-center gap-0.5">
         {label}
         {hint ? (
           <Tooltip>
@@ -68,6 +68,8 @@ export function RequestLogTable({
 }) {
   const { intl, locale } = useZCodeIntl();
   const t = (key: string) => intl.formatMessage({ id: `settings.requestLogs.${key}` });
+  const retryLabel = (count: number) =>
+    intl.formatMessage({ id: "settings.requestLogs.retryCount" }, { count });
   const number = new Intl.NumberFormat(locale);
   const time = new Intl.DateTimeFormat(locale, {
     month: "2-digit",
@@ -95,7 +97,7 @@ export function RequestLogTable({
                 <Header label={t("time")} numeric={false} />
                 <Header label={t("model")} numeric={false} />
                 <Header label={t("input")} hint={t("inputHint")} />
-                <Header label={t("output")} />
+                <Header label={t("output")} hint={t("outputHint")} />
                 <Header label={t("cacheRead")} hint={t("cacheHint")} />
                 <Header label={t("speed")} hint={t("speedHint")} />
                 <Header label={t("firstToken")} hint={t("firstTokenHint")} />
@@ -163,18 +165,27 @@ export function RequestLogTable({
                   </td>
                   <td className={NUMERIC}>{formatRequestLogDuration(row.durationMs, locale)}</td>
                   <td className={CELL}>
-                    <span className={STATUS_COLORS[row.status]}>
-                      {t(row.status)}
-                      {row.httpStatus !== null ? ` (${row.httpStatus})` : ""}
-                    </span>
-                    {row.retryCount > 0 ? (
-                      <span className="block text-foreground-subtle">
-                        {intl.formatMessage(
-                          { id: "settings.requestLogs.retryCount" },
-                          { count: row.retryCount },
-                        )}
+                    {/* 重试信息收进感叹号提示里，状态列保持单行，避免第二行把行高和列宽撑开。 */}
+                    <span className="inline-flex items-center gap-1">
+                      <span className={STATUS_COLORS[row.status]}>
+                        {t(row.status)}
+                        {row.httpStatus !== null ? ` (${row.httpStatus})` : ""}
                       </span>
-                    ) : null}
+                      {row.retryCount > 0 ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              aria-label={retryLabel(row.retryCount)}
+                              className="cursor-help text-foreground-subtle hover:text-foreground"
+                            >
+                              <CircleAlert className="size-3" aria-hidden="true" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent>{retryLabel(row.retryCount)}</TooltipContent>
+                        </Tooltip>
+                      ) : null}
+                    </span>
                   </td>
                 </tr>
               ))

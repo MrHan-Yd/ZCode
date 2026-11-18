@@ -1,7 +1,7 @@
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 import type { ModelRequestLogsQueryInput } from "@zcode/contracts";
 import {
-  calculateOutputTps,
+  calculateRequestLogAverageTps,
   modelRequestLogsRequestSchema,
   type ModelRequestLogGroup,
   type ModelRequestLogRecord,
@@ -39,7 +39,7 @@ interface StoredGroup {
   costKnownCount: number;
   successCount: number;
   outputTokens: number;
-  generationMs: number;
+  durationMs: number;
   timeToFirstTokenMs: number | null;
 }
 
@@ -97,8 +97,8 @@ export async function queryModelRequestLogs(
       const byModel = request.view === "models";
       const modelColumn = byModel ? "model_id" : "null";
       const grouping = byModel ? "provider_id, model_id" : "provider_id";
-      const validSpeed =
-        "status = 'completed' and duration_ms > time_to_first_token_ms and time_to_first_token_ms >= 0 and output_tokens >= 0";
+      // 首字可能在推理或缓冲之后才出现；平均速率只要求整轮计量有效，分子和分母必须取同一批请求。
+      const validSpeed = `status = 'completed' and duration_ms > 0 and duration_ms <= ${Number.MAX_VALUE} and output_tokens >= 0 and output_tokens <= ${Number.MAX_VALUE}`;
       const rows = db
         .prepare(
           `select provider_id as providerId, ${modelColumn} as modelId,
@@ -108,7 +108,7 @@ export async function queryModelRequestLogs(
            count(case when cost_usd >= 0 then 1 end) as costKnownCount,
            count(case when status = 'completed' then 1 end) as successCount,
            coalesce(sum(case when ${validSpeed} then output_tokens else 0 end), 0) as outputTokens,
-           coalesce(sum(case when ${validSpeed} then duration_ms - time_to_first_token_ms else 0 end), 0) as generationMs,
+           coalesce(sum(case when ${validSpeed} then duration_ms else 0 end), 0) as durationMs,
            avg(case when status = 'completed' and time_to_first_token_ms >= 0 then time_to_first_token_ms end) as timeToFirstTokenMs
          from model_usage where ${where} group by ${grouping}
          order by requestCount ${direction}, provider_id asc${byModel ? ", model_id asc" : ""}
@@ -124,7 +124,7 @@ export async function queryModelRequestLogs(
           costUsd: measurement(row.costUsd),
           costKnownCount: integer(row.costKnownCount),
           successRate: row.requestCount > 0 ? row.successCount / row.requestCount : 0,
-          tokensPerSecond: calculateOutputTps(row.outputTokens, row.generationMs),
+          tokensPerSecond: calculateRequestLogAverageTps(row.outputTokens, row.durationMs),
           timeToFirstTokenMs: measurement(row.timeToFirstTokenMs),
         })),
       );
@@ -154,8 +154,6 @@ function toRequestRecord(row: StoredRequest): ModelRequestLogRecord {
   const cacheReadTokens = integer(row.cacheReadTokens);
   const durationMs = measurement(row.durationMs);
   const timeToFirstTokenMs = measurement(row.timeToFirstTokenMs);
-  const generationMs =
-    durationMs !== null && timeToFirstTokenMs !== null ? durationMs - timeToFirstTokenMs : null;
   return {
     id: row.id,
     sessionId: row.sessionId,
@@ -172,7 +170,9 @@ function toRequestRecord(row: StoredRequest): ModelRequestLogRecord {
     totalTokens: integer(row.providerTotalTokens ?? row.computedTotalTokens),
     cacheHitRate: inputTokens > 0 ? Math.min(1, cacheReadTokens / inputTokens) : null,
     tokensPerSecond:
-      row.status === "completed" ? calculateOutputTps(row.outputTokens, generationMs) : null,
+      row.status === "completed"
+        ? calculateRequestLogAverageTps(row.outputTokens, durationMs)
+        : null,
     durationMs,
     timeToFirstTokenMs,
     costUsd: measurement(row.costUsd),

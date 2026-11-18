@@ -71,6 +71,7 @@ export function createDefaultSubagentPort(
     outputRootDir: this.config.subagents?.outputRootDir,
     // 目录刷新会替换 config.subagents.profiles；端口按调用读取，不能捕获启动期数组。
     getProfiles: () => this.config.subagents?.profiles,
+    visibleProfiles: this.config.subagents?.visibleProfiles,
     builtInModelSelectionOverrides: this.config.subagents?.builtInModelSelectionOverrides,
     runtimeTaskRegistry: this.runtimeTaskRegistry,
     emitParentEvent: async (event, traceContext) => {

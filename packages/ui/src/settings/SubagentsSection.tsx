@@ -21,6 +21,8 @@ import {
   TID_SUBAGENT_ROW,
   ZCODE_AGENT_PROVIDER,
   testId,
+  getBuiltInSubagentDefinition,
+  isBuiltInSubagentName,
   type AgentColor,
   type AgentsCapability,
   type AgentsListResult,
@@ -205,7 +207,7 @@ function getBuiltInSubagentName(agent: AgentSummary): BuiltInSubagentName | null
   if (!isBuiltInAgent(agent)) {
     return null;
   }
-  return agent.name === "general-purpose" || agent.name === "Explore" ? agent.name : null;
+  return isBuiltInSubagentName(agent.name) ? agent.name : null;
 }
 
 function getKnownTools(values: readonly string[] | undefined): string[] {
@@ -539,6 +541,8 @@ function AgentListRow({
     agent.source === "plugin" && agent.name.includes(":")
       ? agent.name.slice(agent.name.indexOf(":") + 1)
       : agent.name;
+  const builtInDefinition = getBuiltInSubagentDefinition(agent.name);
+  const visibleTags = builtInDefinition?.tags.slice(0, 4) ?? [];
 
   return (
     <div
@@ -581,6 +585,23 @@ function AgentListRow({
         <p className="mt-0.5 line-clamp-2 text-ui-sm text-foreground-subtle">
           {agent.description || intl.formatMessage({ id: "settings.subagents.noDescription" })}
         </p>
+        {visibleTags.length > 0 ? (
+          <div className="mt-1 flex min-w-0 flex-wrap items-center gap-1">
+            {visibleTags.map((tag) => (
+              <span
+                key={tag}
+                className="rounded-sm bg-background px-1.5 py-0.5 text-ui-xs text-foreground-subtle"
+              >
+                {tag}
+              </span>
+            ))}
+            {builtInDefinition && builtInDefinition.tags.length > visibleTags.length ? (
+              <span className="text-ui-xs text-foreground-subtlest">
+                +{builtInDefinition.tags.length - visibleTags.length}
+              </span>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       <div

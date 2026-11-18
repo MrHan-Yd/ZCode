@@ -86,6 +86,23 @@ test("未知计量显示横杠，已知零值不丢失", () => {
   assert.equal(formatRequestLogSpeed(null, "en-US"), "—");
 });
 
+test("平均速率按一位小数展示，中英文明确总耗时与推理边界", () => {
+  for (const locale of ["zh-CN", "en-US"]) {
+    assert.equal(formatRequestLogSpeed((893 * 1_000) / 36_490, locale), "24.5 tok/s");
+    assert.equal(formatRequestLogSpeed((3_454 * 1_000) / 109_660, locale), "31.5 tok/s");
+  }
+  assert.equal(zhCN["settings.requestLogs.speed"], "平均速率");
+  assert.equal(enUS["settings.requestLogs.speed"], "Avg. rate");
+  assert.match(zhCN["settings.requestLogs.speedHint"]!, /输出 Tokens \/ 总耗时/);
+  assert.match(zhCN["settings.requestLogs.speedHint"]!, /不是模型纯生成速度/);
+  assert.match(enUS["settings.requestLogs.speedHint"]!, /Output tokens \/ total request duration/);
+  assert.match(enUS["settings.requestLogs.speedHint"]!, /not the model's decoding speed/);
+  assert.match(zhCN["settings.requestLogs.outputHint"]!, /推理/);
+  assert.match(enUS["settings.requestLogs.outputHint"]!, /reasoning/);
+  assert.match(zhCN["settings.requestLogs.firstTokenHint"]!, /首次观测/);
+  assert.match(enUS["settings.requestLogs.firstTokenHint"]!, /first observed/);
+});
+
 test("默认每页 20 条，减少长列表滚动", () => {
   assert.equal(initialModelRequestLogsQuery.pageSize, 20);
 });

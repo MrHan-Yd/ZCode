@@ -107,6 +107,8 @@ export * from "./subagent/index.js";
 // Runtime task components
 export * from "./runtime-task/index.js";
 
+export * from "./orchestration/index.js";
+
 // Workflow components
 export * from "./workflow/definition.js";
 export * from "./workflow/expert.js";

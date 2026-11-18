@@ -2456,7 +2456,7 @@ const enUS: Record<string, string> = {
   "settings.requestLogs.input": "New input",
   "settings.requestLogs.output": "Output",
   "settings.requestLogs.cacheRead": "Cache hit",
-  "settings.requestLogs.speed": "Speed",
+  "settings.requestLogs.speed": "Avg. rate",
   "settings.requestLogs.firstToken": "First token",
   "settings.requestLogs.duration": "Duration",
   "settings.requestLogs.requestCount": "Requests",
@@ -2472,10 +2472,12 @@ const enUS: Record<string, string> = {
   "settings.requestLogs.inputHint":
     "Total input minus cache reads, including cache writes. This is not the incremental context across turns.",
   "settings.requestLogs.cacheHint": "Cache-read tokens / total input tokens for this request.",
+  "settings.requestLogs.outputHint":
+    "Provider-reported output tokens for the full request, which may include hidden reasoning tokens, not just visible text.",
   "settings.requestLogs.speedHint":
-    "Output tokens / (duration − first-token latency). Groups use duration-weighted successful requests with complete measurements.",
+    "Output tokens / total request duration, including waiting, reasoning and internal retries; not the model's decoding speed. Only successful requests with valid output and duration measurements count. Groups are weighted by total request duration.",
   "settings.requestLogs.firstTokenHint":
-    "Time from request start to the first output token. Groups show the average for successful requests.",
+    "Time from request start to the first observed text, reasoning or tool-input content. Buffering may delay it; this is not when the model actually generated its first token. Groups average successful requests with measurements.",
   "settings.requestLogs.retryCount": "{count} internal retries",
   "settings.usageDescription":
     "Review rough activity and model usage aggregated from local sessions.",
@@ -4055,7 +4057,7 @@ const enUS: Record<string, string> = {
     "Plugin profiles are loaded from enabled plugins; only the model and reasoning effort can be overridden here.",
   "settings.subagents.group.builtIn": "Built-in subagents",
   "settings.subagents.group.builtIn.hint":
-    "Built-in profiles are runtime defaults and cannot be edited here.",
+    "Built-in roles are read-only. Override their models here; choose the orchestration team from the composer's Orchestrate entry.",
   "settings.configSync.inProgress": "Syncing…",
   "settings.configSync.statusGist": "Remote gist: {id}",
   "settings.configSync.statusScopeProject": "Project: {label}",

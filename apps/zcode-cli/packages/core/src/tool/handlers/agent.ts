@@ -92,11 +92,14 @@ function buildAgentProviderDescription(
   options: {
     embeddedSearchEnabled?: boolean;
     profiles?: readonly AgentProfile[];
+    /** 编排会话只暴露选中的内置角色；缺省保持经典模式的两个内置角色。 */
+    visibleProfiles?: readonly string[];
     dynamicWorkflowEnabled?: boolean;
   } = {},
 ): string {
   const agentList = formatAgentProfilesForPrompt(options.profiles ?? [], {
     embeddedSearchEnabled: options.embeddedSearchEnabled,
+    visibleNames: options.visibleProfiles,
   });
 
   return [
@@ -320,6 +323,8 @@ export function createAgentToolEntry(
   _options: {
     embeddedSearchEnabled?: boolean;
     profiles?: readonly AgentProfile[];
+    /** 编排会话只暴露选中的内置角色；缺省保持经典模式的两个内置角色。 */
+    visibleProfiles?: readonly string[];
     /** 见 buildAgentProviderDescription：缺省 true，只有灰度显式关闭时才去掉工作流那一行。 */
     dynamicWorkflowEnabled?: boolean;
   } = {},
@@ -337,6 +342,7 @@ export function createTaskToolEntry(
   options: {
     embeddedSearchEnabled?: boolean;
     profiles?: readonly AgentProfile[];
+    visibleProfiles?: readonly string[];
     /** Task 是 Agent 的兼容别名，描述整段内嵌 Agent 的，因此同一道门一起传下去。 */
     dynamicWorkflowEnabled?: boolean;
   } = {},

@@ -1,17 +1,19 @@
 import { basename } from "node:path";
+import {
+  type BuiltInSubagentModelSelectionOverrides,
+  type ModelSelection,
+} from "@zcode/shared";
+import { createBuiltInAgentProfiles } from "./builtin-agents.js";
 import { GENERAL_PURPOSE_AGENT_TYPE, buildGeneralPurposeSystemPrompt } from "./general-purpose.js";
 import { EXPLORE_AGENT_TYPE } from "./explore.js";
 import { formatExploreAllowedToolsForAgentDescription } from "./explore-tools.js";
 import { parseAgentFrontmatter, splitMarkdownFrontmatter } from "./profile-frontmatter.js";
 import { filterSubagentChildToolNames } from "./tool-policy.js";
-import type { ModelSelection } from "@zcode/shared";
 import { resolveProfileModelSelection } from "./profile-model-selection.js";
 
 export const DEFAULT_SUBAGENT_TYPE = GENERAL_PURPOSE_AGENT_TYPE;
 
-export type BuiltInSubagentModelSelectionOverrides = Partial<
-  Record<typeof DEFAULT_SUBAGENT_TYPE | typeof EXPLORE_AGENT_TYPE, ModelSelection>
->;
+export type { BuiltInSubagentModelSelectionOverrides } from "@zcode/shared";
 
 export type AgentPermissionMode = "auto" | "plan";
 
@@ -118,22 +120,23 @@ export function normalizeAgentProfiles(
   profiles: readonly AgentProfile[],
   options: {
     builtInModelSelectionOverrides?: BuiltInSubagentModelSelectionOverrides;
+    /**
+     * 只暴露这些内置角色；缺省保持经典模式的两个内置角色。
+     * 编排会话传入选中的团队；general-purpose 始终补回作为兜底。
+     */
+    visibleNames?: readonly string[];
   } = {},
 ): AgentProfile[] {
   const overrides = options.builtInModelSelectionOverrides ?? {};
+  const visible = options.visibleNames
+    ? new Set<string>(options.visibleNames)
+    : new Set<string>([DEFAULT_SUBAGENT_TYPE, EXPLORE_AGENT_TYPE]);
+  // 兜底执行角色必须保留；否则模型省略 subagent_type 时 Agent 工具会回退到不存在的 profile。
+  visible.add(DEFAULT_SUBAGENT_TYPE);
   const active = new Map<string, AgentProfile>();
-  active.set(
-    DEFAULT_SUBAGENT_TYPE,
-    createBuiltInGeneralPurposeAgentProfile({
-      modelSelection: overrides[DEFAULT_SUBAGENT_TYPE],
-    }),
-  );
-  active.set(
-    EXPLORE_AGENT_TYPE,
-    createBuiltInExploreAgentProfile({
-      modelSelection: overrides[EXPLORE_AGENT_TYPE],
-    }),
-  );
+  for (const profile of createBuiltInAgentProfiles(overrides)) {
+    if (visible.has(profile.name)) active.set(profile.name, profile);
+  }
   for (const profile of profiles) {
     active.set(profile.name, profile);
   }
@@ -159,9 +162,16 @@ export function createBuiltInGeneralPurposeAgentProfile(
 
 export function formatAgentProfilesForPrompt(
   profiles: readonly AgentProfile[],
-  options: { embeddedSearchEnabled?: boolean } = {},
+  options: {
+    embeddedSearchEnabled?: boolean;
+    builtInModelSelectionOverrides?: BuiltInSubagentModelSelectionOverrides;
+    visibleNames?: readonly string[];
+  } = {},
 ): string | null {
-  const active = normalizeAgentProfiles(profiles);
+  const active = normalizeAgentProfiles(profiles, {
+    builtInModelSelectionOverrides: options.builtInModelSelectionOverrides,
+    visibleNames: options.visibleNames,
+  });
   if (active.length === 0) return null;
 
   return [

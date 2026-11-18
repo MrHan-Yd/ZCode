@@ -88,7 +88,132 @@ test("明细分页保持完整计数、稳定时间/ID 排序且不返回内部�
   }
 });
 
-test("聚合区分同名模型的供应商，速度加权、失败/取消不污染计量", async () => {
+test("平均速率使用整轮耗时，不把推理和等待期间的输出挤入末尾时间", async () => {
+  const db = createDb();
+  try {
+    await write(db, "short-tail", {
+      outputTokens: 893,
+      reasoningTokens: 700,
+      durationMs: 36_490,
+      timeToFirstTokenMs: 36_125,
+      retryCount: 2,
+    });
+    await write(db, "long-reasoning", {
+      outputTokens: 3_454,
+      reasoningTokens: 3_000,
+      durationMs: 109_660,
+      timeToFirstTokenMs: 109_130,
+    });
+    const result = await queryModelRequestLogs(db, query);
+    const short = result.requests.find((row) => row.id === "short-tail")!;
+    const long = result.requests.find((row) => row.id === "long-reasoning")!;
+    assert.equal(short.outputTokens, 893);
+    assert.equal(short.tokensPerSecond, (893 * 1_000) / 36_490);
+    assert.equal(short.retryCount, 2);
+    assert.equal(long.outputTokens, 3_454);
+    assert.equal(long.tokensPerSecond, (3_454 * 1_000) / 109_660);
+    assert.equal(long.timeToFirstTokenMs, 109_130);
+    assert.equal(long.durationMs, 109_660);
+    modelRequestLogsSnapshotSchema.parse(result);
+  } finally {
+    db.close();
+  }
+});
+
+test("平均速率不依赖首字缺失、为零或不早于请求结束", async () => {
+  const db = createDb();
+  try {
+    const firstTokens = [undefined, 0, 1_500, 2_000];
+    for (const [index, timeToFirstTokenMs] of firstTokens.entries()) {
+      await write(db, `ttft-${index}`, { timeToFirstTokenMs });
+    }
+    const result = await queryModelRequestLogs(db, { ...query, pageSize: 50 });
+    for (const row of result.requests) {
+      assert.equal(row.tokensPerSecond, (10 * 1_000) / 1_500, row.id);
+    }
+    assert.equal(result.requests.find((row) => row.id === "ttft-0")?.timeToFirstTokenMs, null);
+    for (const view of ["providers", "models"] as const) {
+      const groups = await queryModelRequestLogs(db, { ...query, view });
+      assert.equal(groups.groups[0]?.tokensPerSecond, (40 * 1_000) / 6_000);
+      assert.equal(groups.groups[0]?.timeToFirstTokenMs, 3_500 / 3);
+      modelRequestLogsSnapshotSchema.parse(groups);
+    }
+  } finally {
+    db.close();
+  }
+});
+
+test("非法总耗时和非成功请求不参与平均速率，零输出与未知计量分开", async () => {
+  const db = createDb();
+  try {
+    const durations = [
+      undefined,
+      0,
+      -1,
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+    ];
+    for (const [index, durationMs] of durations.entries()) {
+      await write(db, `invalid-duration-${index}`, { durationMs });
+    }
+    for (const status of ["error", "cancelled", "running"] as const) {
+      await write(db, status, { status, outputTokens: 1_000 });
+    }
+    const result = await queryModelRequestLogs(db, { ...query, pageSize: 50 });
+    for (const row of result.requests) assert.equal(row.tokensPerSecond, null, row.id);
+    const unknown = await queryModelRequestLogs(db, { ...query, view: "providers" });
+    assert.equal(unknown.groups[0]?.tokensPerSecond, null);
+
+    await write(db, "zero-output", { outputTokens: 0 });
+    const zero = await queryModelRequestLogs(db, { ...query, view: "models" });
+    assert.equal(zero.groups[0]?.tokensPerSecond, 0);
+    await write(db, "valid", {
+      outputTokens: 10,
+      durationMs: 2_000,
+      timeToFirstTokenMs: undefined,
+    });
+    for (const view of ["providers", "models"] as const) {
+      const groups = await queryModelRequestLogs(db, { ...query, view });
+      assert.equal(groups.groups[0]?.tokensPerSecond, (10 * 1_000) / 3_500);
+      modelRequestLogsSnapshotSchema.parse(groups);
+    }
+    const details = await queryModelRequestLogs(db, { ...query, pageSize: 50 });
+    assert.equal(details.requests.find((row) => row.id === "zero-output")?.tokensPerSecond, 0);
+    assert.equal(details.requests.find((row) => row.id === "valid")?.tokensPerSecond, 5);
+  } finally {
+    db.close();
+  }
+});
+
+test("非法历史输出不污染分组平均速率的分子或分母", async () => {
+  const db = createDb();
+  try {
+    for (const [index, outputTokens] of [-1, Number.POSITIVE_INFINITY].entries()) {
+      const id = `invalid-output-${index}`;
+      await write(db, id);
+      db.prepare("update model_usage set output_tokens = ? where id = ?").run(outputTokens, id);
+    }
+    await write(db, "valid");
+    const result = await queryModelRequestLogs(db, { ...query, pageSize: 50 });
+    assert.equal(
+      result.requests.find((row) => row.id === "invalid-output-0")?.tokensPerSecond,
+      null,
+    );
+    assert.equal(
+      result.requests.find((row) => row.id === "invalid-output-1")?.tokensPerSecond,
+      null,
+    );
+    for (const view of ["providers", "models"] as const) {
+      const groups = await queryModelRequestLogs(db, { ...query, view });
+      assert.equal(groups.groups[0]?.tokensPerSecond, (10 * 1_000) / 1_500);
+    }
+  } finally {
+    db.close();
+  }
+});
+
+test("聚合区分同名模型的供应商，平均速率按总耗时加权、失败/取消不污染计量", async () => {
   const db = createDb();
   try {
     await write(db, "r1", { costUsd: 0.01 });
@@ -114,7 +239,8 @@ test("聚合区分同名模型的供应商，速度加权、失败/取消不污�
     assert.equal(group.modelId, "same-model");
     assert.equal(group.requestCount, 4);
     assert.equal(group.successRate, 0.5);
-    assert.equal(group.tokensPerSecond, 10);
+    assert.equal(group.tokensPerSecond, (100 * 1_000) / 11_000);
+    assert.notEqual(group.tokensPerSecond, ((10 * 1_000) / 1_500 + (90 * 1_000) / 9_500) / 2);
     assert.equal(group.timeToFirstTokenMs, 500);
     assert.equal(group.costUsd, 0.01);
     assert.equal(group.costKnownCount, 2);

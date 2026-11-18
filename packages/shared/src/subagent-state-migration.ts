@@ -5,8 +5,11 @@ import {
 } from "./legacy-model-provider-identity.js";
 import { parseSubagentMarkdownSelection } from "./subagent-markdown-selection.js";
 import {
+  BUILT_IN_SUBAGENT_NAMES,
+  isBuiltInSubagentName,
   parsePluginSubagentModelSelectionOverrides,
   type BuiltInSubagentModelSelectionOverrides,
+  type BuiltInSubagentName,
   type PluginSubagentModelSelectionOverrides,
 } from "./subagents-types.js";
 
@@ -25,10 +28,16 @@ export function importSubagentStateSelections(input: Record<string, unknown>): R
   pluginAgentModelSelectionOverrides: PluginSubagentModelSelectionOverrides;
 } {
   const current = Object.hasOwn(input, "builtInModelSelectionOverrides");
+  const currentOverrides = record(input.builtInModelSelectionOverrides);
+  // 正式 map 已存在时按其中的键迁移，不能只认两个旧内置名，否则新增角色（architect
+  // / frontend 等）的模型覆盖会在每次 migrateSubagentStateFile 时被静默删除。
+  const names: readonly BuiltInSubagentName[] = current
+    ? Object.keys(currentOverrides).filter(isBuiltInSubagentName)
+    : BUILT_IN_SUBAGENT_NAMES;
   const selections: BuiltInSubagentModelSelectionOverrides = {};
-  for (const name of ["Explore", "general-purpose"] as const) {
+  for (const name of names) {
     const selection = current
-      ? modelSelectionSchema.safeParse(record(input.builtInModelSelectionOverrides)[name]).data
+      ? modelSelectionSchema.safeParse(currentOverrides[name]).data
       : parseSubagentMarkdownSelection({
           model: record(input.builtInModelOverrides)[name],
           thoughtLevel: record(input.builtInThoughtLevelOverrides)[name],

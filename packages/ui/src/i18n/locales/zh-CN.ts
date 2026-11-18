@@ -2308,7 +2308,7 @@ const zhCN: Record<string, string> = {
   "settings.requestLogs.input": "新增输入",
   "settings.requestLogs.output": "输出",
   "settings.requestLogs.cacheRead": "缓存命中",
-  "settings.requestLogs.speed": "速度",
+  "settings.requestLogs.speed": "平均速率",
   "settings.requestLogs.firstToken": "首字",
   "settings.requestLogs.duration": "总耗时",
   "settings.requestLogs.requestCount": "请求数",
@@ -2323,10 +2323,12 @@ const zhCN: Record<string, string> = {
   "settings.requestLogs.sortCount": "按请求数排序",
   "settings.requestLogs.inputHint": "本次总输入减去缓存读取，包含缓存写入；不是跨轮上下文增量。",
   "settings.requestLogs.cacheHint": "缓存读取 Tokens / 本次总输入 Tokens。",
+  "settings.requestLogs.outputHint":
+    "供应商上报的整轮输出 Tokens，可能包含未展示的推理 Tokens，不等于正文长度。",
   "settings.requestLogs.speedHint":
-    "输出 Tokens /（总耗时 − 首字延迟）。分组只统计成功且计量完整的请求，按生成时长加权。",
+    "输出 Tokens / 总耗时，包含等待、推理与内部重试，不是模型纯生成速度。仅统计成功且输出和总耗时计量有效的请求；分组按总耗时加权。",
   "settings.requestLogs.firstTokenHint":
-    "请求开始到首个输出 Token 的延迟；分组为成功请求的平均值。",
+    "请求开始到首次观测到文本、思考或工具参数内容的延迟，可能受缓冲影响；不是模型实际生成首个 Token 的时刻。分组为成功且有计量请求的平均值。",
   "settings.requestLogs.retryCount": "内部重试 {count} 次",
   "settings.usageDescription": "查看会话活跃度与模型用量的粗略统计。",
   "resourceManager.storage.summaryTotal": "ZCode 总占用",
@@ -3787,7 +3789,8 @@ const zhCN: Record<string, string> = {
   "settings.subagents.group.plugin.hint":
     "插件 profile 来自已启用插件，可覆盖模型与推理档位，其余字段只读。",
   "settings.subagents.group.builtIn": "内置子智能体",
-  "settings.subagents.group.builtIn.hint": "内置 profile 是运行时默认能力，当前不可在这里编辑。",
+  "settings.subagents.group.builtIn.hint":
+    "内置角色只读，可在这里覆盖模型；编排团队在输入框的“编排”入口选择。",
   "settings.configSync.inProgress": "正在同步…",
   "settings.configSync.statusGist": "远端 Gist：{id}",
   "settings.configSync.statusScopeProject": "项目：{label}",

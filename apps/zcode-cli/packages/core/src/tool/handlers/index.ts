@@ -187,6 +187,8 @@ interface RegisterBuiltInToolsOptions {
   includeBrowserUse?: boolean;
   embeddedSearchEnabled?: boolean;
   agentProfiles?: readonly AgentProfile[];
+  /** 编排会话只暴露选中的内置角色；缺省 = 经典模式的两个内置角色。 */
+  visibleProfiles?: readonly string[];
   allowedTools?: readonly string[];
   disallowedTools?: readonly string[];
   silentDuplicateWarnings?: boolean;
@@ -288,6 +290,7 @@ function resolveBuiltInToolEntryForBranch(
     return createAgentToolEntry({
       embeddedSearchEnabled: options.embeddedSearchEnabled,
       profiles: options.agentProfiles,
+      visibleProfiles: options.visibleProfiles,
       dynamicWorkflowEnabled: options.includeDynamicWorkflow !== false,
     });
   }
@@ -295,6 +298,7 @@ function resolveBuiltInToolEntryForBranch(
     return createTaskToolEntry({
       embeddedSearchEnabled: options.embeddedSearchEnabled,
       profiles: options.agentProfiles,
+      visibleProfiles: options.visibleProfiles,
       dynamicWorkflowEnabled: options.includeDynamicWorkflow !== false,
     });
   }

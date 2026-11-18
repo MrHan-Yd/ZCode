@@ -2,8 +2,11 @@
 import { access, lstat, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import {
+  BUILT_IN_SUBAGENT_DEFINITIONS,
+  BUILT_IN_SUBAGENT_NAMES,
   createAgentStateId,
   createPluginAgentStateId,
+  isBuiltInSubagentName,
   parsePluginSubagentModelSelectionOverrides,
   DEFAULT_ENABLED_OFFICIAL_PLUGIN_IDS,
   ZCODE_OFFICIAL_PLUGIN_MARKETPLACE_ID,
@@ -91,7 +94,7 @@ interface PluginAgentDiscovery {
   runtimeAgents: AgentSummary[];
 }
 
-const BUILT_IN_AGENT_NAMES = new Set(["general-purpose", "Explore"]);
+const BUILT_IN_AGENT_NAMES = new Set<string>(BUILT_IN_SUBAGENT_NAMES);
 const PLUGIN_MANIFEST_PATHS = [
   join(".zcode-plugin", "plugin.json"),
   join(".claude-plugin", "plugin.json"),
@@ -101,52 +104,36 @@ const PLUGIN_MANIFEST_PATHS = [
 function createBuiltInAgents(
   modelSelectionOverrides: BuiltInSubagentModelSelectionOverrides = {},
 ): AgentSummary[] {
-  const generalPurposeOverride = modelSelectionOverrides["general-purpose"];
-  const exploreOverride = modelSelectionOverrides.Explore;
-  return [
-    {
+  return BUILT_IN_SUBAGENT_DEFINITIONS.map((definition) => {
+    const override = modelSelectionOverrides[definition.name];
+    return {
       id: createAgentStateId({
-        name: "general-purpose",
+        name: definition.name,
         scope: "built-in",
         source: "built-in",
       }),
-      name: "general-purpose",
-      description:
-        "General-purpose agent for researching complex questions, searching for code, and executing multi-step tasks.",
-      // 内置子智能体使用显式身份色，避免 UI 按名称 hash 后把 general-purpose 显示为红色。
-      color: "blue",
-      injectAgentsMd: true,
-      modelSelection: generalPurposeOverride,
-      modelSelectionOverride: generalPurposeOverride,
+      name: definition.name,
+      description: definition.description,
+      color: definition.color,
+      injectAgentsMd: definition.injectAgentsMd,
+      modelSelection: override,
+      modelSelectionOverride: override,
       systemPrompt: "",
-      tools: ["*"],
-      path: "built-in:general-purpose",
-      scope: "built-in",
-      source: "built-in",
+      tools: [...definition.tools],
+      path: `built-in:${definition.name}`,
+      scope: "built-in" as const,
+      source: "built-in" as const,
       enabled: true,
+      // 内置 profile 不允许在设置页改文件；这里的 readOnly 是“配置只读”，
+      // 不是“角色不可写文件”。角色能否写文件由 tools / permissionMode 决定。
       readOnly: true,
-    },
-    {
-      id: createAgentStateId({
-        name: "Explore",
-        scope: "built-in",
-        source: "built-in",
-      }),
-      name: "Explore",
-      description: "Read-only search agent for broad fan-out searches.",
-      color: "cyan",
-      injectAgentsMd: false,
-      modelSelection: exploreOverride,
-      modelSelectionOverride: exploreOverride,
-      systemPrompt: "",
-      tools: ["Bash", "Glob", "Grep", "Read", "WebFetch", "WebSearch", "TodoWrite"],
-      path: "built-in:Explore",
-      scope: "built-in",
-      source: "built-in",
-      enabled: true,
-      readOnly: true,
-    },
-  ];
+      ...(definition.disallowedTools
+        ? { disallowedTools: [...definition.disallowedTools] }
+        : {}),
+      ...(definition.permissionMode ? { permissionMode: definition.permissionMode } : {}),
+      ...(definition.maxTurns ? { maxTurns: definition.maxTurns } : {}),
+    } satisfies AgentSummary;
+  });
 }
 
 function emptyAgentsState(): AgentsStateFile {
@@ -544,10 +531,12 @@ function normalizeBuiltInSelectionOverrides(
 ): BuiltInSubagentModelSelectionOverrides {
   const result: BuiltInSubagentModelSelectionOverrides = {};
   const structuredRecord = isRecord(structured) ? structured : {};
-  const generalPurpose = modelSelectionSchema.safeParse(structuredRecord["general-purpose"]).data;
-  const explore = modelSelectionSchema.safeParse(structuredRecord.Explore).data;
-  if (generalPurpose) result["general-purpose"] = generalPurpose;
-  if (explore) result.Explore = explore;
+  // 按共享名单解析，不能再硬编码两个名字；新增内置角色时只需要改 shared 的常量。
+  for (const [name, value] of Object.entries(structuredRecord)) {
+    if (!isBuiltInSubagentName(name)) continue;
+    const selection = modelSelectionSchema.safeParse(value).data;
+    if (selection) result[name] = selection;
+  }
   return result;
 }
 

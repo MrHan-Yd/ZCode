@@ -73,6 +73,8 @@ export * from "./plugins/index.js";
 // Workflow
 export * from "./workflow/index.js";
 
+export * from "./orchestration/index.js";
+
 // Logging
 export * from "./logging/logger.js";
 
