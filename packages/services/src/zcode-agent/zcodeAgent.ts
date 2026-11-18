@@ -107,6 +107,7 @@ import type {
   V4ConversationWorkflowRunNodeResultResult,
   V4ConversationWorkflowRunWorkspaceResult,
   V4ConversationWorkflowRunsResult,
+  V4ConversationOrchestrationStateResult,
   V4ConversationRowsRangeResult,
   V4ConversationResyncResult,
   V4ConversationSubscribeResult,
@@ -408,6 +409,11 @@ export interface ZCodeAgentConversationWorkflowRunEventsParams extends ZCodeAgen
 
 /** dwf run 的枚举（重启后的发现查询）。 */
 export interface ZCodeAgentConversationWorkflowRunsParams extends ZCodeAgentSessionTarget {
+  limit?: number;
+}
+
+/** 编排状态查询：配置 + 活动/最近 run（有界投影）。 */
+export interface ZCodeAgentConversationOrchestrationStateParams extends ZCodeAgentSessionTarget {
   limit?: number;
 }
 
@@ -786,6 +792,10 @@ export interface IZCodeAgentService {
   conversationWorkflowRunsV4(
     params: ZCodeAgentConversationWorkflowRunsParams,
   ): Promise<V4ConversationWorkflowRunsResult>;
+  /** 编排状态：配置 + 活动/最近 run；只读、无状态、超时重发安全。 */
+  conversationOrchestrationStateV4(
+    params: ZCodeAgentConversationOrchestrationStateParams,
+  ): Promise<V4ConversationOrchestrationStateResult>;
   /** workflow run 的用户面产物清单；与 plans 同族（只读、无状态、超时重发安全）。 */
   conversationWorkflowRunArtifactsV4(
     params: ZCodeAgentConversationWorkflowRunArtifactsParams,

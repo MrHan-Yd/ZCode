@@ -6,6 +6,7 @@ import { fileRewindHandlers } from "./file-rewind.js";
 import { goalCompactHandlers } from "./goal-compact.js";
 import { interactionBackgroundHandlers } from "./interaction-background.js";
 import { modelConfigHandlers } from "./model-config.js";
+import { orchestrationHandlers } from "./orchestration.js";
 import { queueHandlers } from "./queue.js";
 import { sessionFlowHandlers } from "./session-flow.js";
 import { sessionMgmtHandlers } from "./session-mgmt.js";
@@ -19,6 +20,7 @@ export const NATIVE_HANDLERS = {
   ...selectionSideSessionHandlers,
   ...goalCompactHandlers,
   ...modelConfigHandlers,
+  ...orchestrationHandlers,
   ...interactionBackgroundHandlers,
   ...forkEditRetryHandlers,
   ...fileRewindHandlers,

@@ -338,14 +338,37 @@ cold restore → 校验 owner / snapshot → completed 不动，running 无证�
 
 ### Phase 5 — UI（8–12 人日）
 
-- [ ] 5.1 `OrchestrationTrigger`：复合触发器，主按钮切开关，chevron 开团队选择器。
-- [ ] 5.2 `OrchestrationTeamPicker`：桌面 448px popover；手机 bottom sheet；推荐组合；标签搜索；软/硬上限；不可用角色。
-- [ ] 5.3 草稿/会话接线：draft store、submission、snapshot、restore、queue、`setOrchestration`。
-- [ ] 5.4 `OrchestrationRunTimeline`：步骤状态、依赖“等待 X”、并行组、失败/重试、查看子会话、停止、重排。
-- [ ] 5.5 发送框运行中三态菜单与状态条；运行数仍由后台徽标显示，不重复。
-- [ ] 5.6 每角色模型显示“继承默认/模型名”，编辑跳设置页。
+Phase 5 设计（实现前先固定所有权与接线）：
+
+- **唯一事实源**：编排配置（`enabled / team / maxConcurrency`）由 CLI runtime 的 `config.orchestration` 持有，并持久化到 session entry `runtime/orchestration`；`OrchestrationService` 仍是 run/step 的唯一写入者。UI 草稿只保存“下一次提交意图”，不复制 run 状态。
+- **配置命令**：新增 v4 `setOrchestration`（`{ enabled, team, maxConcurrency? }`）与 `cancelOrchestrationRun`（`{ runId }`）。`createSession.config.orchestration` 走与 `setOrchestration` 完全相同的 app 入口，不新增第二条应用路径。命令只更新 runtime 配置并重注册工具面；活动 run 不受影响，下一轮 turn 生效。
+- **状态读取**：新增只读查询 `v4/conversation/orchestrationState`，返回 `{ config, runs }`，`runs` 含活动 run 与最近终态 run（上限 8），步骤投影含 `status / dependsOn / attempts / childSessionId / artifactUri`。Host capability `orchestrationState` 用于旧端 fail-closed 隐藏入口。不把 runs 放进 snapshot 投影，避免第二份可变状态与增量帧复杂度；UI 在会话打开和发送 ACK 后读取，活动 run 期间低频轮询。
+- **执行中插入**：`sendText.orchestrationInput`（`guide` 默认 / `queue` / `interrupt`）由 UI 状态条写入；Core 的 `decideOrchestrationInput` 继续是唯一裁决者。无活动 run 时字段被忽略。
+- **团队选择**：`general-purpose` 强制保留；软上限 6、硬上限 8；首次开启自动补默认团队并弹出选择器一次（按 workspace 记录已提示）。停用编排时团队保留在草稿，不删除用户选择。
+- **角色模型**：选择器只展示“继承默认 / 具体模型名”，读取 `SubagentsService.list()` 的 `modelSelectionOverride`；编辑跳转设置页 `subagents`，不在此处写模型。
+- **组件边界**：`OrchestrationTrigger` 与选择器/时间线拆成 `packages/ui/src/v4/composer/` 的纯展示件；选择/上限/预设/搜索逻辑放 `orchestrationTeamModel.ts` 纯函数，直接测试。运行时间线只读查询结果，停止走 `cancelOrchestrationRun`，重排只把输入语义切到 `interrupt` 并聚焦输入框，不伪造用户消息。
+
+- [x] 5.1 `OrchestrationTrigger`：复合触发器，主按钮切开关，chevron 开团队选择器。
+  - `packages/ui/src/v4/composer/OrchestrationTrigger.tsx`：ghost 主按钮 + chevron；`data-composer-collapse-priority="4"`，紧凑态折叠为图标；首次开启且团队为空时自动打开选择器。
+- [x] 5.2 `OrchestrationTeamPicker`：桌面 448px popover；手机 bottom sheet；推荐组合；标签搜索；软/硬上限；不可用角色。
+  - 内容组件 `OrchestrationTeamPicker.tsx` 由桌面 `PopoverContent`（`w-[min(448px,calc(100vw-2rem))]`）与手机底部 `DialogContent` 共用；纯逻辑在 `orchestrationTeamModel.ts`（预设、搜索、上限、general-purpose 锁定、不可用角色、模型标签）。
+- [x] 5.3 草稿/会话接线：draft store、submission、snapshot、restore、queue、`setOrchestration`。
+  - `V4ComposerDraft` 新增 `orchestrationEnabled / subagentPool / orchestrationInputMode / orchestrationTouched`；`createComposerSubmissionConfig` 携带 createSession 的 orchestration 配置与 `orchestrationInput`。
+  - 协议新增 `setOrchestration` / `cancelOrchestrationRun` / `sendText.orchestrationInput` / `createSession.config.orchestration`；CLI runtime 更新 `config.orchestration`、按需创建 service、重注册工具并持久化 `runtime/orchestration` entry。
+  - 状态恢复走只读查询 `v4/conversation/orchestrationState`（`useOrchestrationState`），会话打开时按运行时配置种子草稿；用户显式操作后（touched）不再覆盖。
+- [x] 5.4 `OrchestrationRunTimeline`：步骤状态、依赖“等待 X”、并行组、失败/重试、查看子会话、停止、重排。
+  - `OrchestrationRunBar.tsx` 内含时间线 Dialog；步骤状态、`dependsOn` 等待项、并行运行数、attempts、child session 入口、停止与重排均来自只读投影；停止发 `cancelOrchestrationRun`，重排只切 `interrupt` 语义并聚焦输入框，不代发消息。
+- [x] 5.5 发送框运行中三态菜单与状态条；运行数仍由后台徽标显示，不重复。
+  - 活动 run 时在输入框上方显示 `OrchestrationRunBar`；三态菜单写 `orchestrationInputMode`，提交时随 `sendText` 下发；运行数没有新增计数器。
+- [x] 5.6 每角色模型显示“继承默认/模型名”，编辑跳设置页。
+  - 选择器读取 `SubagentsService.list()` 的 `modelSelectionOverride`，显示“继承默认模型 / Model: {model}”；编辑按钮跳 Settings → `subagents`（分区级定位）。
 - 验收：默认关闭无视觉变化；首次开启弹推荐团队；运行中能看到顺序与并行；手机可用；切会话隔离。
 - 测试：纯模型测试（选择/预设/上限/空池）、draft 持久化、config picker 互斥、i18n 对齐；外部 E2E harness 场景（仓库内无 E2E 框架）。
+- 2026-11-18 验证记录：
+  - 新增 `packages/ui/test/orchestrationTeamModel.test.ts`（7 项）与 `orchestrationI18n.test.ts`（2 项），覆盖预设/搜索/上限/不可用角色/模型标签与中英文键对齐；新增 `apps/zcode-cli/packages/core/test/orchestrationServiceState.test.ts`（2 项），覆盖 service 配置热更新与 run/step 投影。
+  - 编排全量 core 测试 106/106 通过；`pnpm typecheck` 通过本次改动文件（其余仍是既有的 3 个 `packages/server/src/remote/*` TS7006）；`pnpm exec tsc -p packages/services/tsconfig.test.json` 通过。
+  - `pnpm lint`：0 errors / 70 warnings（与基线一致）；改动文件定向 oxlint 无新增 warning；`pnpm architecture:check --changed` violations 0 / baseline 0 / new 0；改动文件 `oxfmt --check` 通过。
+  - 未做：真实模型 / Desktop / Mobile 的编排 E2E（仓库无 E2E 框架）；冷恢复 entry、tasks-index meta 投影、旧 bundle/远程降级仍属 Phase 6。
 
 ### Phase 6 — 恢复、兼容、回归（4–6 人日）
 

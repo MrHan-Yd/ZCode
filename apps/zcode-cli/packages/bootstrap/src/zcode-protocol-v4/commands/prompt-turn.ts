@@ -27,6 +27,8 @@ interface StartPromptTurnParamsBase {
   requireIdle?: boolean;
   /** Bot 入站 turn 的稳定回推地址；仅在本 turn 内暴露给 CronCreate。 */
   botDeliveryTarget?: ZCodeAutomationBotDeliveryTarget;
+  /** 编排运行中的发送语义；交给 Core admission 唯一裁决。 */
+  orchestrationInput?: SendInputOptions["orchestrationInput"];
 }
 
 type StartPromptTurnParams = StartPromptTurnParamsBase & TurnBackgroundAttribution;
@@ -133,6 +135,9 @@ export async function startPromptTurn(
         ...(params.sharedContextRefs ? { sharedContextRefs: params.sharedContextRefs } : {}),
         ...(turnToolDisallowlist ? { toolDisallowlist: turnToolDisallowlist } : {}),
         ...(params.requireIdle ? { requireIdle: true } : {}),
+        ...(params.orchestrationInput
+          ? { orchestrationInput: params.orchestrationInput }
+          : {}),
         queryId: params.inputId as SendInputOptions["queryId"],
       },
     );

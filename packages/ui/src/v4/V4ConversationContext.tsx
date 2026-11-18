@@ -31,6 +31,8 @@ import type {
   V4ConversationWorkflowRunsParams,
   V4ConversationWorkflowRunEventsResult,
   V4ConversationWorkflowRunsResult,
+  V4ConversationOrchestrationStateParams,
+  V4ConversationOrchestrationStateResult,
 } from "@zcode/shared/zcode-protocol-v4";
 import type { IServiceAccessor } from "@zcode/services";
 import { ServiceProvider } from "@/hooks/useServices.js";
@@ -61,6 +63,10 @@ export interface V4ConversationContextValue {
   ): Promise<V4ConversationWorkflowRunEventsResult>;
   /** workflow run 枚举（journal-backed 的重启后发现面）。 */
   workflowRuns(params: V4ConversationWorkflowRunsParams): Promise<V4ConversationWorkflowRunsResult>;
+  /** 编排配置 + 活动/最近 run；只读、无状态。 */
+  orchestrationState(
+    params: V4ConversationOrchestrationStateParams,
+  ): Promise<V4ConversationOrchestrationStateResult>;
   /**
    * workflow run 的**用户面产物**清单（冷恢复的 durable 读法）。⚠ 术语：artifact = 脚本经
    * `artifact.*` 发布给用户看的产出，不是 run 的顶层返回值。
@@ -156,6 +162,8 @@ function ReadyV4ConversationProvider({
       workflowRunNodeResult: (params: V4ConversationWorkflowRunNodeResultParams) =>
         transport.workflowRunNodeResult(params),
       workflowRuns: (params: V4ConversationWorkflowRunsParams) => transport.workflowRuns(params),
+      orchestrationState: (params: V4ConversationOrchestrationStateParams) =>
+        transport.orchestrationState(params),
       attachmentPut: (params: V4AttachmentPutParams, options?: AttachmentUploadOptions) =>
         transport.attachmentPut(params, options),
       attachmentRead: (params) => transport.attachmentRead(params),
@@ -323,6 +331,8 @@ function ReadyV4PaneConversationProvider({
           lease.transport.workflowRunNodeResult(params),
         workflowRuns: (params: V4ConversationWorkflowRunsParams) =>
           lease.transport.workflowRuns(params),
+        orchestrationState: (params: V4ConversationOrchestrationStateParams) =>
+          lease.transport.orchestrationState(params),
         attachmentPut: (params: V4AttachmentPutParams, options?: AttachmentUploadOptions) =>
           lease.transport.attachmentPut(params, options),
         attachmentRead: (params) => lease.transport.attachmentRead(params),

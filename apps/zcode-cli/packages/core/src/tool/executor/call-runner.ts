@@ -156,10 +156,8 @@ async function executeToolCallImpl(
 
   // 编排模式的执行边界：provider 边界已经把白名单之外的工具隐藏，但模型仍可能幻觉调用。
   // 这里在 handler、hook、权限判定之前统一拒绝，保证「不可见」之外还有一层不可执行。
-  if (
-    deps.hardAllowedToolNames !== undefined &&
-    !deps.hardAllowedToolNames.includes(canonicalToolCall.name)
-  ) {
+  const hardAllowedToolNames = deps.getHardAllowedToolNames?.() ?? deps.hardAllowedToolNames;
+  if (hardAllowedToolNames !== undefined && !hardAllowedToolNames.includes(canonicalToolCall.name)) {
     const denial = createCoreError(
       CoreErrorType.PermissionDenied,
       `Tool ${canonicalToolCall.name} is disabled in orchestration mode. Use the orchestration plan tools instead.`,
@@ -461,7 +459,7 @@ async function executeToolCallImpl(
       deliveryKind: deps.deliveryKind,
       memoryRoot: deps.getMemoryRoot?.(),
       runtimeScope: deps.runtimeScope,
-      orchestrationService: deps.orchestrationService,
+      orchestrationService: deps.getOrchestrationService?.() ?? deps.orchestrationService,
       providerVisibleToolNames: deps.registry
         .list()
         .filter((name) => deps.registry.getMetadata(name)?.providerVisible !== false),

@@ -131,11 +131,15 @@ export interface ToolExecutorOptions {
   runtimeScope?: ToolRuntimeScope;
   /** 编排主会话的用例端口；缺席时编排工具返回明确的配置错误。 */
   orchestrationService?: OrchestrationToolPort;
+  /** 运行中开启编排后动态取当前 service；优先于静态字段。 */
+  getOrchestrationService?: () => OrchestrationToolPort | undefined;
   /**
    * 编排模式的执行期白名单。注册面只能让模型「看不见」，幻觉调用仍会到达 executor；
    * 这一层对白名单之外的工具统一拒绝，未来新增工具默认不可见。
    */
   hardAllowedToolNames?: readonly string[];
+  /** 运行中切换编排配置后动态取白名单；优先于静态字段。 */
+  getHardAllowedToolNames?: () => readonly string[] | undefined;
   getWorkingDirectory?: () => string;
   setWorkingDirectory?: (cwd: string) => Promise<void> | void;
   getWorkspaceRoot?: () => string;
@@ -244,7 +248,11 @@ export interface ToolExecutorDeps {
   getMemoryRoot?: () => string | undefined;
   runtimeScope: ToolRuntimeScope;
   orchestrationService?: OrchestrationToolPort;
+  /** 运行中开启编排后动态取当前 service；优先于静态字段。 */
+  getOrchestrationService?: () => OrchestrationToolPort | undefined;
   hardAllowedToolNames?: readonly string[];
+  /** 运行中切换编排配置后动态取白名单；优先于静态字段。 */
+  getHardAllowedToolNames?: () => readonly string[] | undefined;
   traceContext?: TraceContext;
   getMode: () => CollaborationMode;
   maxConcurrency: number;

@@ -117,6 +117,8 @@ import {
   v4ConversationWorkflowRunEventsResultSchema,
   v4ConversationWorkflowRunsParamsSchema,
   v4ConversationWorkflowRunsResultSchema,
+  v4ConversationOrchestrationStateParamsSchema,
+  v4ConversationOrchestrationStateResultSchema,
   v4ConversationRowsRangeParamsSchema,
   v4ConversationResyncParamsSchema,
   v4ConversationSubscribeParamsSchema,
@@ -392,6 +394,15 @@ export interface V4GatewayHost {
     sessionId: string,
     input: { limit?: number },
   ): Promise<DynamicWorkflowRunSessionSummary[]>;
+  /**
+   * 编排状态查询（配置 + 活动/最近 run 的有界投影）。缺席 = 该会话 runtime
+   * 不支持编排状态读取；gateway 回结构化能力不支持错误。
+   */
+  getOrchestrationState?(
+    sessionId: string,
+  ):
+    | import("@zcode/shared/zcode-protocol-v4").V4ConversationOrchestrationStateResult
+    | Promise<import("@zcode/shared/zcode-protocol-v4").V4ConversationOrchestrationStateResult>;
   /**
    * workflow run 的**用户面产物**读面。三条一起在场、
    * 一起缺席（app 侧同一个条件注册）。缺席条件同 {@link listDynamicWorkflowRunEvents}。
@@ -1647,6 +1658,26 @@ export class ConversationV4Gateway {
       ...(params.limit === undefined ? {} : { limit: params.limit }),
     });
     return v4ConversationWorkflowRunsResultSchema.parse({ runs });
+  }
+
+  /**
+   * 编排状态：配置 + 活动/最近 run。只读、无状态、超时重发安全；与 workflowRuns 同族。
+   * 不进入 conversation projection：配置属于 session runtime，runs 由 journal 投影，
+   * 二者都不应产生第二份可写快照状态。
+   */
+  async orchestrationState(
+    rawParams: unknown,
+  ): Promise<import("@zcode/shared/zcode-protocol-v4").V4ConversationOrchestrationStateResult> {
+    const params = v4ConversationOrchestrationStateParamsSchema.parse(rawParams);
+    if (!this.host.getOrchestrationState) {
+      throw new V4CapabilityUnsupportedError("getOrchestrationState", params.sessionId);
+    }
+    await this.ensureHostRecordForJournalRead(params.sessionId);
+    const state = await this.host.getOrchestrationState(params.sessionId);
+    return v4ConversationOrchestrationStateResultSchema.parse({
+      config: state.config,
+      runs: params.limit === undefined ? state.runs : state.runs.slice(0, params.limit),
+    });
   }
 
   /**

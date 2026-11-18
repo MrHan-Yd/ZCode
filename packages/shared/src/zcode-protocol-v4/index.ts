@@ -32,6 +32,8 @@ export * from "./coalesce.js";
 export * from "./profiles.js";
 export * from "./apply.js";
 export * from "./transport.js";
+// 编排模式状态查询与 run/step 只读投影；配置命令仍在 command.js。
+export * from "./orchestration-state.js";
 export * from "./wire.js";
 export * from "./wire-codec.js";
 export * from "./wire-reassembly.js";

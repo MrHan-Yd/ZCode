@@ -1,4 +1,12 @@
-import { BUILT_IN_SUBAGENT_DEFINITIONS, getBuiltInSubagentDefinition } from "@zcode/shared";
+import {
+  BUILT_IN_SUBAGENT_DEFINITIONS,
+  getBuiltInSubagentDefinition,
+  ORCHESTRATION_DEFAULT_MAX_CONCURRENCY,
+  ORCHESTRATION_DEFAULT_TEAM,
+  ORCHESTRATION_MAX_CONCURRENCY,
+  ORCHESTRATION_MAX_TEAM_SIZE,
+  ORCHESTRATION_SOFT_TEAM_SIZE,
+} from "@zcode/shared";
 import { OrchestrationStoreError } from "./contract.js";
 
 /**
@@ -53,16 +61,15 @@ export const ORCHESTRATOR_HARD_DENIED_TOOL_NAMES: readonly string[] = [
   "js",
 ];
 
-export const DEFAULT_ORCHESTRATION_TEAM: readonly string[] = [
-  "general-purpose",
-  "Explore",
-  "tester",
-];
-
-export const ORCHESTRATION_MAX_TEAM_SIZE = 8;
-export const ORCHESTRATION_SOFT_TEAM_SIZE = 6;
-export const ORCHESTRATION_DEFAULT_MAX_CONCURRENCY = 3;
-export const ORCHESTRATION_MAX_CONCURRENCY = 8;
+export {
+  ORCHESTRATION_DEFAULT_MAX_CONCURRENCY,
+  ORCHESTRATION_DEFAULT_TEAM,
+  ORCHESTRATION_MAX_CONCURRENCY,
+  ORCHESTRATION_MAX_TEAM_SIZE,
+  ORCHESTRATION_SOFT_TEAM_SIZE,
+};
+/** 兼容既有调用方与测试；语义与共享常量一致。 */
+export const DEFAULT_ORCHESTRATION_TEAM = ORCHESTRATION_DEFAULT_TEAM;
 
 /** 只有主会话可以承担编排角色；child / workflow actor 一律视为 default。 */
 export function isOrchestratorRuntimeConfig(config: {

@@ -8,6 +8,12 @@ import { attachmentRefSchema } from "./attachment-ref.js";
 import { v4ConversationFileRewindPreviewResultSchema } from "./transport.js";
 import { modelSelectionSchema } from "../model-selection.js";
 import { modelExecutionSchema } from "../model-execution.js";
+import {
+  ORCHESTRATION_MAX_CONCURRENCY,
+  orchestrationInputModeSchema,
+  orchestrationTeamSchema,
+} from "../orchestration.js";
+import { orchestrationConfigStateSchema } from "./orchestration-state.js";
 import { submissionModeSchema } from "./submission.js";
 import { zcodeAutomationBotDeliveryTargetSchema } from "../bots.js";
 import {
@@ -38,6 +44,12 @@ const createSessionRequestedConfigSchema = z.object({
   // 会把“没传 mode”误变成“请求切回 build”，覆盖 workspace 默认 yolo。
   mode: z.string().optional(),
   planEnabled: z.boolean().optional(),
+  // 编排配置与 setOrchestration 共用同一 app 入口；首个 turn 之前应用。
+  orchestration: orchestrationConfigStateSchema
+    .extend({
+      maxConcurrency: z.number().int().min(1).max(ORCHESTRATION_MAX_CONCURRENCY).optional(),
+    })
+    .optional(),
 });
 
 // ── 命令 payload 全集 ──
@@ -98,6 +110,11 @@ export const commandPayloadSchemas = {
       modelSelection: modelSelectionSchema.optional(),
       mode: submissionModeSchema.optional(),
       planEnabled: z.boolean().optional(),
+      /**
+       * 编排运行中的发送语义：guide 默认 / queue / interrupt。没有活动 run 时被忽略；
+       * CLI/Core 的 `decideOrchestrationInput` 是唯一裁决者。
+       */
+      orchestrationInput: orchestrationInputModeSchema.optional(),
       // 本次执行仍使用上面的标准 Selection；这里只携带不持久化语义、动态鉴权和 child 策略。
       // 仅 idle startNow 接受，防止 Secret/Ticket 进入普通 CommandInbox。
       modelExecution: modelExecutionSchema.optional(),
@@ -216,6 +233,26 @@ export const commandPayloadSchemas = {
     mode: z.enum(["build", "edit", "plan", "yolo"]),
   }),
   setFollowupMode: z.object({ mode: z.enum(["queue", "guide"]) }),
+  // 编排模式配置：只改 session runtime；活动 run 不收影响，下一轮 turn 生效。
+  // 关闭时 team 可缺席（保留草稿选择由 UI 负责），开启时必须有至少一个角色。
+  setOrchestration: z
+    .object({
+      enabled: z.boolean(),
+      team: orchestrationTeamSchema.optional(),
+      maxConcurrency: z.number().int().min(1).max(ORCHESTRATION_MAX_CONCURRENCY).optional(),
+    })
+    .strict()
+    .superRefine((payload, context) => {
+      if (payload.enabled && (!payload.team || payload.team.length === 0)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "enabled orchestration requires a non-empty team",
+          path: ["team"],
+        });
+      }
+    }),
+  // 时间线“停止”只取消指定 run；已完成产物留在旧 journal。
+  cancelOrchestrationRun: z.object({ runId: z.string().min(1) }).strict(),
   pauseGoal: z.object({}),
   resumeGoal: z.object({}),
   cancelBackgroundWork: z.object({ workId: z.string() }),

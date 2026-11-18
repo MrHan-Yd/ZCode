@@ -19,12 +19,15 @@ import { Hand } from "lucide-react";
 import {
   BUILTIN_MODEL_PROVIDER_IDS,
   buildCustomSupplierKey,
+  normalizeOrchestrationTeamSelection,
   TID_CHAT_EMPTY,
+  TID_V4_COMPOSER_INPUT,
   TID_V4_SESSION_PANE,
   testId,
   ZCODE_AGENT_PROVIDER,
 } from "@zcode/shared";
 import type {
+  AgentSummary,
   ConversationShareAccessMode,
   GitChangeSourceId,
   GitRepositorySummary,
@@ -64,6 +67,15 @@ import { WORKSPACE_FILE_DRAG_MIME } from "@/lib/workspaceFileDrag.js";
 import { buildChatSessionScrollMemoryKey } from "@/lib/chatSessionScrollMemory.js";
 import type { MessageFileLinkTarget } from "@/components/ai-elements/message.js";
 import { useServices } from "@/hooks/useServices.js";
+import { useOrchestrationState } from "@/v4/useOrchestrationState.js";
+import {
+  ORCHESTRATION_TEAM_PRESETS,
+  applyOrchestrationPreset,
+  buildOrchestrationRoleViews,
+  toggleOrchestrationRole,
+  type OrchestrationTeamPreset,
+} from "@/v4/composer/orchestrationTeamModel.js";
+import type { OrchestrationComposerControls } from "@/v4/composer/OrchestrationControls.js";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
 import type { SessionOpenTrigger } from "@/lib/sessionOpenArmsTelemetry.js";
 import { useDynamicWorkflowAvailability } from "@/hooks/useDynamicWorkflowAvailability.js";
@@ -558,8 +570,13 @@ export function SessionPane({
     tailPreview,
   } = useV4Conversation();
   const platform = useOptionalPlatform();
-  const { conversationShareService, modelSelectionService, zcodeSessionService, zcodeTaskService } =
-    useServices();
+  const {
+    conversationShareService,
+    modelSelectionService,
+    zcodeSessionService,
+    zcodeTaskService,
+    subagentsService,
+  } = useServices();
   const { intl, locale } = useZCodeIntl();
   const slashCommands = useSlashCommands(workspacePath, workspaceIdentity);
   const baseWorkspaceServices = useBaseWorkspaceServices();
@@ -1253,6 +1270,10 @@ export function SessionPane({
     handleDraftSelectModel,
     handleDraftSelectThought,
     handleDraftSwitchMode,
+    handleDraftSetOrchestrationEnabled,
+    handleDraftSetOrchestrationTeam,
+    handleDraftSetOrchestrationInputMode,
+    handleDraftSeedOrchestration,
     promoteComposerDraft,
     captureAcceptedModelSelection,
     replaceComposerDraft,
@@ -1292,14 +1313,99 @@ export function SessionPane({
     useZCodeSessionStore.getState().invalidateDraftRuntime(workspacePath, workspaceIdentity);
   }, [draftConfigRef, modelSelectionView?.revision, sessionId, workspaceIdentity, workspacePath]);
   const recommendStartPlan = useStartPlanRecommendation(modelSelectionView);
-  const createSubmissionFromComposer = useCallback(
-    () => createComposerSubmissionConfig(draftConfigRef.current, modelSelectionView),
-    [draftConfigRef, modelSelectionView],
-  );
+  const createSubmissionFromComposer = useCallback(() => {
+    const intent = orchestrationIntentRef.current;
+    return createComposerSubmissionConfig(
+      {
+        ...draftConfigRef.current,
+        orchestrationEnabled: intent.orchestrationEnabled,
+        subagentPool: intent.subagentPool,
+        orchestrationInputMode: intent.orchestrationInputMode,
+      },
+      modelSelectionView,
+    );
+  }, [draftConfigRef, modelSelectionView]);
   const composerSubmissionReady = useMemo(
     () => createComposerSubmissionConfig(draftConfig, modelSelectionView) !== null,
     [draftConfig, modelSelectionView],
   );
+
+  // ── 编排：草稿意图 + 运行时只读投影 ──
+  const [orchestrationRefreshKey, setOrchestrationRefreshKey] = useState(0);
+  const [orchestrationAgents, setOrchestrationAgents] = useState<AgentSummary[]>([]);
+  const orchestrationStateView = useOrchestrationState({
+    sessionId,
+    enabled: !readOnly && sessionId !== null,
+    refreshKey: orchestrationRefreshKey,
+  });
+  const orchestrationRoles = useMemo(
+    () => buildOrchestrationRoleViews(orchestrationAgents),
+    [orchestrationAgents],
+  );
+  const orchestrationTeam = useMemo(
+    () => normalizeOrchestrationTeamSelection(composerDraft.subagentPool),
+    [composerDraft.subagentPool],
+  );
+  const orchestrationEnabled = composerDraft.orchestrationEnabled === true;
+  const orchestrationInputMode = composerDraft.orchestrationInputMode ?? "guide";
+  const orchestrationAvailable = !readOnly && orchestrationStateView.status !== "unsupported";
+  // 现有会话首次打开时以运行时配置为种子；用户显式改过（touched）后不再覆盖。
+  const runtimeOrchestrationTeamKey = orchestrationStateView.config.team.join("\u0000");
+  useEffect(() => {
+    if (readOnly || !sessionId || orchestrationStateView.status !== "ready") return;
+    if (composerDraft.orchestrationTouched === true) return;
+    handleDraftSeedOrchestration({
+      enabled: orchestrationStateView.config.enabled,
+      team: orchestrationStateView.config.team,
+    });
+  }, [
+    composerDraft.orchestrationTouched,
+    handleDraftSeedOrchestration,
+    orchestrationStateView.config.enabled,
+    orchestrationStateView.status,
+    readOnly,
+    runtimeOrchestrationTeamKey,
+    sessionId,
+  ]);
+  // 只有开启/操作过编排才加载角色目录，经典会话不额外发 RPC。
+  const shouldLoadOrchestrationAgents =
+    !readOnly && (orchestrationEnabled || composerDraft.orchestrationTouched === true);
+  useEffect(() => {
+    if (!shouldLoadOrchestrationAgents) return;
+    let alive = true;
+    void subagentsService
+      .list({
+        workspacePath,
+        ...(workspaceIdentity ? { workspaceIdentity } : {}),
+        provider,
+        mode: "allRuntimeScopes",
+      })
+      .then((result) => {
+        if (alive) setOrchestrationAgents(result.agents);
+      })
+      .catch((error: unknown) => {
+        logger.warn("[orchestration] 读取角色目录失败", {
+          error: error instanceof Error ? error.message : String(error),
+          workspacePath,
+        });
+      });
+    return () => {
+      alive = false;
+    };
+  }, [provider, shouldLoadOrchestrationAgents, subagentsService, workspaceIdentity, workspacePath]);
+  const orchestrationIntentRef = useRef({
+    orchestrationEnabled,
+    subagentPool: orchestrationTeam,
+    orchestrationInputMode,
+  });
+  orchestrationIntentRef.current = {
+    orchestrationEnabled,
+    subagentPool: orchestrationTeam,
+    orchestrationInputMode,
+  };
+  const orchestrationRuntimeConfigRef = useRef(orchestrationStateView.config);
+  orchestrationRuntimeConfigRef.current = orchestrationStateView.config;
+
   const codingPlanUpgradeDialog = useOptionalCodingPlanUpgradeDialog();
   const openSettingsTab = useOptionalTabStore((state) => state.openSettingsTab);
   const promoteGroupedDraftTask = useZCodeSessionStore((state) => state.promoteGroupedDraftTask);
@@ -1595,6 +1701,42 @@ export function SessionPane({
       workspaceIdentity,
       workspacePath,
     ],
+  );
+
+  /**
+   * 发送前把草稿团队同步到目标会话。
+   *
+   * setOrchestration 不走 CAS：配置是最后一次写入生效，且必须在 sendText 之前完成。
+   * 相同配置直接跳过，经典会话不会多发一次命令。
+   */
+  const syncOrchestrationBeforeSend = useCallback(
+    async (targetSessionId: string | null) => {
+      if (!targetSessionId) return;
+      const intent = orchestrationIntentRef.current;
+      const desired = {
+        enabled: intent.orchestrationEnabled === true,
+        team: [...intent.subagentPool],
+      };
+      const current = orchestrationRuntimeConfigRef.current;
+      const same =
+        current.enabled === desired.enabled &&
+        current.team.length === desired.team.length &&
+        current.team.every((role, index) => role === desired.team[index]);
+      if (same) return;
+      const ack = await dispatchCommand(
+        "setOrchestration",
+        {
+          enabled: desired.enabled,
+          ...(desired.team.length > 0 ? { team: desired.team } : {}),
+        },
+        targetSessionId,
+      );
+      if (ack.status !== "accepted") {
+        throw new Error(ack.reasonCode ?? "setOrchestration 被拒绝");
+      }
+      setOrchestrationRefreshKey((value) => value + 1);
+    },
+    [dispatchCommand],
   );
 
   const handleFetchFileChanges = useCallback(
@@ -2723,10 +2865,18 @@ export function SessionPane({
             throw error;
           }
         }
-        const draftConfigPayload = buildDraftCreateConfigPayload(
+        const draftConfigPayloadBase = buildDraftCreateConfigPayload(
           { ...draftConfigRef.current, modelSelection: submission.modelSelection },
           appFollowupMode,
         );
+        const draftConfigPayload = submission.orchestration
+          ? {
+              config: {
+                ...draftConfigPayloadBase.config,
+                orchestration: submission.orchestration,
+              },
+            }
+          : draftConfigPayloadBase;
         const createAck = await dispatchSubmissionCommand(
           "createSession",
           { workspaceId: workspaceKey, ...draftConfigPayload },
@@ -2758,6 +2908,7 @@ export function SessionPane({
         const prewarm = prewarmBindingRef.current;
         if (prewarm?.beginPromotion()) {
           try {
+            await syncOrchestrationBeforeSend(prewarm.sessionId);
             const ack = await dispatchSubmissionCommand(
               "sendText",
               {
@@ -2804,10 +2955,18 @@ export function SessionPane({
         // createSession 携带（CLI 归并请求与 runtime 缺省，首发即用草稿选择）。
         // fallback 有 prewarm 投影时必须以 Agent 当前配置为 base；只有从未拿到投影
         // 才使用冻结的初始化元组。否则 provider fallback 后会把 localStorage 旧模型重新写回。
-        const draftConfigPayload = buildDraftCreateConfigPayload(
+        const draftConfigPayloadBase = buildDraftCreateConfigPayload(
           { ...draftConfigRef.current, modelSelection: submission.modelSelection },
           appFollowupMode,
         );
+        const draftConfigPayload = submission.orchestration
+          ? {
+              config: {
+                ...draftConfigPayloadBase.config,
+                orchestration: submission.orchestration,
+              },
+            }
+          : draftConfigPayloadBase;
         if (readyAttachments.length === 0 && !sharedContextRefs?.length) {
           const ack = await dispatchSubmissionCommand(
             "createSession",
@@ -2854,6 +3013,7 @@ export function SessionPane({
           throw new Error("createSession 缺少 sessionId");
         }
         const newSessionId = createResult.sessionId;
+        await syncOrchestrationBeforeSend(newSessionId);
         const sendAck = await dispatchSubmissionCommand(
           "sendText",
           {
@@ -2879,6 +3039,7 @@ export function SessionPane({
         return;
       }
       // 附件 ref 已在 composer 预传状态机中收口。
+      await syncOrchestrationBeforeSend(sessionId);
       const ack = await dispatchSubmissionCommand(
         "sendText",
         {
@@ -2914,6 +3075,7 @@ export function SessionPane({
     },
     [
       dispatchCommand,
+      syncOrchestrationBeforeSend,
       recommendStartPlan,
       captureAcceptedModelSelection,
       dispatchSlashCommand,
@@ -3551,6 +3713,174 @@ export function SessionPane({
       handleDraftSwitchMode(mode);
     },
     [handleDraftSwitchMode],
+  );
+
+  /**
+   * 把编排配置下发到当前会话。
+   *
+   * 只在已有 session 时调用；草稿会话由 createSession.config.orchestration 承担。
+   * 命令不需要 baseRevision：配置是“最后一次写入生效”，与对话行顺序无关。
+   */
+  const sendOrchestrationConfig = useCallback(
+    (input: { enabled: boolean; team: readonly string[] }) => {
+      if (!sessionId) return;
+      void dispatchCommand(
+        "setOrchestration",
+        { enabled: input.enabled, team: [...input.team] },
+        sessionId,
+      )
+        .then((ack) => {
+          if (ack.status !== "accepted") {
+            logger.warn("[orchestration] setOrchestration 未被接受", {
+              reasonCode: ack.reasonCode,
+              sessionId,
+              status: ack.status,
+            });
+          }
+          setOrchestrationRefreshKey((value) => value + 1);
+        })
+        .catch((error: unknown) => {
+          logger.warn("[orchestration] setOrchestration 失败", {
+            error: error instanceof Error ? error.message : String(error),
+            sessionId,
+          });
+        });
+    },
+    [dispatchCommand, sessionId],
+  );
+
+  const handleToggleOrchestration = useCallback(() => {
+    const nextEnabled = !orchestrationEnabled;
+    const nextTeam =
+      nextEnabled && orchestrationTeam.length === 0
+        ? applyOrchestrationPreset(ORCHESTRATION_TEAM_PRESETS[0]!, orchestrationRoles)
+        : orchestrationTeam;
+    handleDraftSetOrchestrationEnabled(nextEnabled);
+    if (nextTeam !== orchestrationTeam) handleDraftSetOrchestrationTeam(nextTeam);
+    sendOrchestrationConfig({ enabled: nextEnabled, team: nextTeam });
+  }, [
+    handleDraftSetOrchestrationEnabled,
+    handleDraftSetOrchestrationTeam,
+    orchestrationEnabled,
+    orchestrationRoles,
+    orchestrationTeam,
+    sendOrchestrationConfig,
+  ]);
+
+  const handleToggleOrchestrationRole = useCallback(
+    (role: string) => {
+      const result = toggleOrchestrationRole(orchestrationTeam, role, orchestrationRoles);
+      if (result.reason) {
+        logger.warn("[orchestration] 角色选择被拒绝", {
+          reason: result.reason,
+          role,
+        });
+        return;
+      }
+      handleDraftSetOrchestrationTeam(result.team);
+      if (orchestrationEnabled) {
+        sendOrchestrationConfig({ enabled: true, team: result.team });
+      }
+    },
+    [
+      handleDraftSetOrchestrationTeam,
+      orchestrationEnabled,
+      orchestrationRoles,
+      orchestrationTeam,
+      sendOrchestrationConfig,
+    ],
+  );
+
+  const handleApplyOrchestrationPreset = useCallback(
+    (preset: OrchestrationTeamPreset) => {
+      const team = applyOrchestrationPreset(preset, orchestrationRoles);
+      handleDraftSetOrchestrationTeam(team);
+      if (orchestrationEnabled) sendOrchestrationConfig({ enabled: true, team });
+    },
+    [
+      handleDraftSetOrchestrationTeam,
+      orchestrationEnabled,
+      orchestrationRoles,
+      sendOrchestrationConfig,
+    ],
+  );
+
+  const handleOpenOrchestrationRoleSettings = useCallback(
+    (_role?: string) => {
+      // 设置页目前只支持分区级定位；角色模型覆盖都在 subagents 段。
+      setPendingSettingsSectionIntent("subagents");
+      openSettingsTab();
+    },
+    [openSettingsTab],
+  );
+
+  const handleStopOrchestrationRun = useCallback(
+    (runId: string) => {
+      if (!sessionId) return;
+      void dispatchCommand("cancelOrchestrationRun", { runId }, sessionId)
+        .then(() => setOrchestrationRefreshKey((value) => value + 1))
+        .catch((error: unknown) => {
+          logger.warn("[orchestration] 停止 run 失败", {
+            error: error instanceof Error ? error.message : String(error),
+            runId,
+            sessionId,
+          });
+        });
+    },
+    [dispatchCommand, sessionId],
+  );
+
+  const handleViewOrchestrationChild = useCallback(
+    (childSessionId: string) => {
+      handleOpenSubagentSession({
+        parentSessionId: sessionId ?? rootSessionId ?? childSessionId,
+        childSessionId,
+        subagentType: "general-purpose",
+        title: childSessionId,
+      });
+    },
+    [handleOpenSubagentSession, rootSessionId, sessionId],
+  );
+
+  const handleRequestOrchestrationReplan = useCallback(() => {
+    handleDraftSetOrchestrationInputMode("interrupt");
+    document.querySelector<HTMLElement>(`[data-testid="${TID_V4_COMPOSER_INPUT}"]`)?.focus();
+  }, [handleDraftSetOrchestrationInputMode]);
+
+  const orchestrationControls = useMemo<OrchestrationComposerControls>(
+    () => ({
+      available: orchestrationAvailable,
+      enabled: orchestrationEnabled,
+      team: orchestrationTeam,
+      roles: orchestrationRoles,
+      runs: orchestrationStateView.runs,
+      activeRuns: orchestrationStateView.runs.filter((run) => run.active),
+      inputMode: orchestrationInputMode,
+      onToggleEnabled: handleToggleOrchestration,
+      onToggleRole: handleToggleOrchestrationRole,
+      onApplyPreset: handleApplyOrchestrationPreset,
+      onOpenRoleSettings: handleOpenOrchestrationRoleSettings,
+      onInputModeChange: handleDraftSetOrchestrationInputMode,
+      onStopRun: handleStopOrchestrationRun,
+      onViewChild: handleViewOrchestrationChild,
+      onRequestReplan: handleRequestOrchestrationReplan,
+    }),
+    [
+      handleApplyOrchestrationPreset,
+      handleDraftSetOrchestrationInputMode,
+      handleOpenOrchestrationRoleSettings,
+      handleRequestOrchestrationReplan,
+      handleStopOrchestrationRun,
+      handleToggleOrchestration,
+      handleToggleOrchestrationRole,
+      handleViewOrchestrationChild,
+      orchestrationAvailable,
+      orchestrationEnabled,
+      orchestrationInputMode,
+      orchestrationRoles,
+      orchestrationStateView.runs,
+      orchestrationTeam,
+    ],
   );
 
   // context usage 面板的压缩入口（命令文本 = "/compact"，复用 slash 解析路径）。
@@ -4468,6 +4798,7 @@ export function SessionPane({
       suppressGoalCommands={selectionSideChat}
       appSlashCommands={appSlashCommands}
       onDropTargetControllerChange={handleDropTargetControllerChange}
+      orchestrationControls={orchestrationControls}
     />
   );
   const pendingGuideProjection = snapshot ? projectPendingGuideQueue(snapshot.queue) : null;

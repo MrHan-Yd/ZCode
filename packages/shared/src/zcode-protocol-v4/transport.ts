@@ -39,6 +39,8 @@ export const hostCapabilitiesSchema = z.object({
    * `state.updated`，并且先经 `clampWorkflowRunsForLegacy` 裁到旧界。
    */
   workflowRunDeltas: z.boolean().optional(),
+  /** 本 Host 支持 `conversationOrchestrationState` 与编排配置命令；旧端据此隐藏入口。 */
+  orchestrationState: z.boolean().optional(),
 });
 export type HostCapabilities = z.infer<typeof hostCapabilitiesSchema>;
 
@@ -355,6 +357,9 @@ export const V4_METHODS = {
   // 新方法天然偏斜安全——旧桌面根本不会调用它。
   conversationWorkflowRunEvents: "v4/conversation/workflowRunEvents",
   conversationWorkflowRuns: "v4/conversation/workflowRuns",
+  // 编排模式状态查询：配置 + 活动/最近 run 的有界只读投影。与 workflowRuns 同族
+  // （只读、无状态、超时重发安全）；旧桌面不会调用它，天然偏斜安全。
+  conversationOrchestrationState: "v4/conversation/orchestrationState",
   // workflow run 的用户面产物。三条同族：
   // 只读、无状态、超时重发安全；schema 在 workflow-artifacts.ts（那边还有术语消歧）。
   //   Artifacts    产物清单（冷恢复与中枢详情的 durable 读法）
@@ -613,9 +618,7 @@ export const v4ConversationTailPreviewParamsSchema = z
     limit: z.number().int().min(1).max(80).optional(),
   })
   .strict();
-export type V4ConversationTailPreviewParams = z.infer<
-  typeof v4ConversationTailPreviewParamsSchema
->;
+export type V4ConversationTailPreviewParams = z.infer<typeof v4ConversationTailPreviewParamsSchema>;
 
 export const v4ConversationTailPreviewMessageSchema = z
   .object({
@@ -639,9 +642,7 @@ export const v4ConversationTailPreviewResultSchema = z
     messages: z.array(v4ConversationTailPreviewMessageSchema),
   })
   .strict();
-export type V4ConversationTailPreviewResult = z.infer<
-  typeof v4ConversationTailPreviewResultSchema
->;
+export type V4ConversationTailPreviewResult = z.infer<typeof v4ConversationTailPreviewResultSchema>;
 
 // ── workflow run 事件日志──
 // 形态与 rows/range、plans 同族：只读、无状态、超时重发安全。cursor = journal sequence

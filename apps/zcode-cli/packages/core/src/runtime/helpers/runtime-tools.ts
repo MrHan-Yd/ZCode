@@ -26,6 +26,7 @@ import { OrchestrationService } from "../../orchestration/service.js";
 import {
   CREATE_ORCHESTRATION_PLAN_TOOL_NAME,
   isOrchestratorRuntimeConfig,
+  ORCHESTRATION_TOOL_NAMES,
   ORCHESTRATOR_ALLOWED_TOOL_NAMES,
 } from "../../orchestration/tool-policy.js";
 
@@ -45,6 +46,7 @@ export function initializeRuntimeTooling(
   executor: ToolExecutor;
   hookRunner?: HookRunner;
   orchestrationService?: OrchestrationService;
+  ensureOrchestrationService: () => OrchestrationService | undefined;
   refreshBuiltInTools: () => void;
 } {
   // 同一个 deps 闭包既做首次装配，也做 profile 变化后的重注册：
@@ -52,13 +54,23 @@ export function initializeRuntimeTooling(
   const refreshBuiltInTools = () => registerRuntimeBuiltInTools(runtime, deps, { silent: true });
   refreshBuiltInTools();
   const hookRunner = createRuntimeHookRunner(runtime, deps, sessionId);
-  const orchestrationService = createRuntimeOrchestrationService(runtime, deps);
+  const orchestrationService = isOrchestratorRuntimeConfig(runtime.config)
+    ? createRuntimeOrchestrationService(runtime, deps)
+    : undefined;
+  // 运行中开启编排时按需创建：service 依赖的 owner/端口在构造期已固定，闭包只做一次创建。
+  const ensureOrchestrationService = (): OrchestrationService | undefined => {
+    if (runtime.orchestrationService) return runtime.orchestrationService;
+    const created = createRuntimeOrchestrationService(runtime, deps);
+    if (created) runtime.orchestrationService = created;
+    return created;
+  };
   return {
     executor:
       deps.toolExecutor ??
       createRuntimeToolExecutor(runtime, deps, hookRunner, orchestrationService),
     hookRunner,
     ...(orchestrationService ? { orchestrationService } : {}),
+    ensureOrchestrationService,
     refreshBuiltInTools,
   };
 }
@@ -110,6 +122,10 @@ function registerRuntimeBuiltInTools(
     // 里与 turn 级名单合并，见 tool-allowlist.ts 的根因注释。
     disallowedTools: resolveRuntimeDisallowedTools(runtime.config),
   });
+  // 关闭编排后必须真正下架规划工具：注册函数只跳过新注册，不会移除上一轮已注册的条目。
+  if (!isOrchestratorRuntimeConfig(runtime.config)) {
+    for (const name of ORCHESTRATION_TOOL_NAMES) runtime.registry.unregister(name);
+  }
 }
 
 function createRuntimeHookRunner(
@@ -251,9 +267,10 @@ function createRuntimeToolExecutor(
       deps.memoryRoot ?? resolveEnabledProjectMemoryRoot(runtime.config, runtime.workspaceRoot),
     runtimeScope: runtime.config.taskType === "subagent_child" ? "subagent" : "main",
     orchestrationService,
-    hardAllowedToolNames: isOrchestratorRuntimeConfig(runtime.config)
-      ? ORCHESTRATOR_ALLOWED_TOOL_NAMES
-      : undefined,
+    // 运行中开启/关闭编排不能靠构造期捕获：executor 每次调用都读 runtime 的当前事实。
+    getOrchestrationService: () => runtime.orchestrationService,
+    getHardAllowedToolNames: () =>
+      isOrchestratorRuntimeConfig(runtime.config) ? ORCHESTRATOR_ALLOWED_TOOL_NAMES : undefined,
     permissionTimeoutMs: runtime.config.permissionTimeoutMs,
     sessionId: runtime.sessionId,
     traceContext: runtime.rootTraceContext,

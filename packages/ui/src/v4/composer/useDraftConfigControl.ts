@@ -97,6 +97,14 @@ interface DraftConfigControl {
   handleDraftSelectModel: (modelProvider: string, model: string) => void;
   handleDraftSelectThought: (thought: string) => void;
   handleDraftSwitchMode: (mode: string) => void;
+  /** 编排开关；显式操作后不再被运行时查询结果覆盖。 */
+  handleDraftSetOrchestrationEnabled: (enabled: boolean) => void;
+  /** 团队选择；调用方负责先做 general-purpose / 上限归一化。 */
+  handleDraftSetOrchestrationTeam: (team: readonly string[]) => void;
+  /** 运行中发送语义（guide / queue / interrupt）。 */
+  handleDraftSetOrchestrationInputMode: (mode: "guide" | "queue" | "interrupt") => void;
+  /** 从运行时查询种子恢复；用户显式操作后不再覆盖。 */
+  handleDraftSeedOrchestration: (input: { enabled: boolean; team: readonly string[] }) => void;
 }
 
 export function useDraftConfigControl(params: {
@@ -480,6 +488,57 @@ export function useDraftConfigControl(params: {
     [updateComposerDraft],
   );
 
+  const handleDraftSetOrchestrationEnabled = useCallback(
+    (enabled: boolean) => {
+      updateComposerDraft((current) => ({
+        ...current,
+        orchestrationEnabled: enabled,
+        orchestrationTouched: true,
+        initializeFromNewTask: undefined,
+      }));
+    },
+    [updateComposerDraft],
+  );
+
+  const handleDraftSetOrchestrationTeam = useCallback(
+    (team: readonly string[]) => {
+      updateComposerDraft((current) => ({
+        ...current,
+        subagentPool: [...team],
+        orchestrationTouched: true,
+        initializeFromNewTask: undefined,
+      }));
+    },
+    [updateComposerDraft],
+  );
+
+  const handleDraftSetOrchestrationInputMode = useCallback(
+    (mode: "guide" | "queue" | "interrupt") => {
+      updateComposerDraft((current) => ({ ...current, orchestrationInputMode: mode }));
+    },
+    [updateComposerDraft],
+  );
+
+  const handleDraftSeedOrchestration = useCallback(
+    (input: { enabled: boolean; team: readonly string[] }) => {
+      updateComposerDraft((current) => {
+        if (current.orchestrationTouched === true) return current;
+        const sameEnabled = (current.orchestrationEnabled ?? false) === input.enabled;
+        const currentTeam = current.subagentPool ?? [];
+        const sameTeam =
+          currentTeam.length === input.team.length &&
+          currentTeam.every((role, index) => role === input.team[index]);
+        if (sameEnabled && sameTeam) return current;
+        return {
+          ...current,
+          orchestrationEnabled: input.enabled,
+          ...(input.team.length > 0 ? { subagentPool: [...input.team] } : {}),
+        };
+      });
+    },
+    [updateComposerDraft],
+  );
+
   return {
     modelSelectionRead,
     draftConfig,
@@ -493,6 +552,10 @@ export function useDraftConfigControl(params: {
     handleDraftSelectModel,
     handleDraftSelectThought,
     handleDraftSwitchMode,
+    handleDraftSetOrchestrationEnabled,
+    handleDraftSetOrchestrationTeam,
+    handleDraftSetOrchestrationInputMode,
+    handleDraftSeedOrchestration,
   };
 }
 

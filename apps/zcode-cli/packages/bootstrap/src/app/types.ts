@@ -22,6 +22,8 @@ import type {
   WorkspaceHookPolicyProvider,
 } from "@zcode/core";
 import type {
+  OrchestrationConfigState,
+  V4ConversationOrchestrationStateResult,
   WorkspaceHookReviewDecision,
   WorkspaceHookTrustRevokeTarget,
 } from "@zcode/shared/zcode-protocol-v4";
@@ -243,6 +245,8 @@ export type SendInputOptions = SubmitPromptOptions & {
   requireIdle?: boolean;
   expectedTurnId?: TurnId;
   commandKind?: "sendText" | "sendGoalCommand" | "compact";
+  /** 编排运行中的发送语义；无活动 run 时被 Core 忽略。 */
+  orchestrationInput?: "guide" | "queue" | "interrupt";
 };
 
 export interface UserPromptInput {
@@ -615,6 +619,16 @@ export interface ZCodeApp {
     previousMode: CollaborationMode;
     traceId: TraceContext["traceId"];
   }>;
+  /** 编排配置；与 createSession.config.orchestration 共用同一条应用路径。 */
+  setOrchestration(input: {
+    enabled: boolean;
+    team?: readonly string[];
+    maxConcurrency?: number;
+  }): Promise<OrchestrationConfigState>;
+  /** 时间线读取面；只读、无副作用。 */
+  getOrchestrationState(): V4ConversationOrchestrationStateResult;
+  /** 取消单个 run；返回取消后的记录（不存在时 undefined）。 */
+  cancelOrchestrationRun?(runId: string): Promise<unknown>;
   setModelIoFullRetentionEnabled?(enabled: boolean): void;
   setModel(
     modelId: string | ModelSelection,

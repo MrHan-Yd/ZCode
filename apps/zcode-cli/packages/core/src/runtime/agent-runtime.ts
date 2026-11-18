@@ -85,6 +85,11 @@ import type {
 } from "./methods/background.js";
 import { initializeRuntimeTooling } from "./helpers/runtime-tools.js";
 import type { OrchestrationService } from "../orchestration/service.js";
+import type { OrchestrationRunRecord } from "../orchestration/contract.js";
+import type {
+  OrchestrationConfigState,
+  V4ConversationOrchestrationStateResult,
+} from "@zcode/shared/zcode-protocol-v4";
 import type {
   ActiveTurnInfo,
   ActiveForegroundExecutionState,
@@ -176,6 +181,7 @@ export class AgentRuntime {
   private subagentPort?: SubagentPort;
   private subagentProfilePort?: AgentRuntimeDeps["subagentProfilePort"];
   private orchestrationService?: OrchestrationService;
+  private ensureOrchestrationService?: () => OrchestrationService | undefined;
   private refreshBuiltInTools?: () => void;
   private dynamicWorkflowRunPort?: DynamicWorkflowRunPort;
   private modelCatalogPort?: ModelCatalogPort;
@@ -305,6 +311,7 @@ export class AgentRuntime {
     this.workspaceHookAdmission = deps.workspaceHookAdmission;
     this.executor = tooling.executor;
     this.orchestrationService = tooling.orchestrationService;
+    this.ensureOrchestrationService = tooling.ensureOrchestrationService;
 
     this.contextBuilder = deps.contextBuilder ?? null;
     if (this.contextBuilder) {
@@ -359,6 +366,15 @@ export interface AgentRuntime {
     input: { mode?: string; planEnabled?: boolean },
     traceContext?: TraceContext,
   ): Promise<void>;
+  /** 编排配置的唯一应用入口；活动 run 不受影响，工具面从下一轮 turn 生效。 */
+  setOrchestrationConfig(
+    input: { enabled: boolean; team?: readonly string[]; maxConcurrency?: number },
+    traceContext?: TraceContext,
+  ): Promise<OrchestrationConfigState>;
+  /** 时间线读取面：配置 + 活动/最近 run 的只读投影。 */
+  getOrchestrationState(): V4ConversationOrchestrationStateResult;
+  /** 取消单个 run；不停止主会话 turn。 */
+  cancelOrchestrationRun(runId: string): Promise<OrchestrationRunRecord | undefined>;
   getSessionModelSelection(): ModelSelection | undefined;
   setSessionModelSelection(selection: ModelSelection | undefined): void;
   getProjectId(): ProjectId;

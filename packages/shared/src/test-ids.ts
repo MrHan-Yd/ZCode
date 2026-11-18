@@ -639,6 +639,23 @@ export const TID_V4_COMPOSER_INPUT = "v4-composer-input";
 export const TID_V4_COMPOSER_BACKGROUND_WORK_TRIGGER = "v4-composer-background-work-trigger";
 /** v4 composer 电脑操作（CUA）常驻入口按钮 */
 export const TID_V4_COMPOSER_CUA_ENTRY = "v4-composer-cua-entry";
+/** v4 composer 编排入口主按钮（切换开关） */
+export const TID_V4_COMPOSER_ORCHESTRATION_TRIGGER = "v4-composer-orchestration-trigger";
+/** v4 composer 编排入口 chevron（打开团队选择器） */
+export const TID_V4_COMPOSER_ORCHESTRATION_PICKER_TRIGGER =
+  "v4-composer-orchestration-picker-trigger";
+/** v4 编排团队选择器 */
+export const TID_V4_ORCHESTRATION_TEAM_PICKER = "v4-orchestration-team-picker";
+/** v4 编排团队选择器角色行（动态后缀为角色名） */
+export const TID_V4_ORCHESTRATION_TEAM_ROLE = "v4-orchestration-team-role";
+/** v4 编排运行中状态条 */
+export const TID_V4_ORCHESTRATION_RUN_BAR = "v4-orchestration-run-bar";
+/** v4 编排运行时间线 */
+export const TID_V4_ORCHESTRATION_RUN_TIMELINE = "v4-orchestration-run-timeline";
+/** v4 编排时间线步骤行（动态后缀为 stepId） */
+export const TID_V4_ORCHESTRATION_RUN_STEP = "v4-orchestration-run-step";
+/** v4 编排时间线停止按钮（动态后缀为 runId） */
+export const TID_V4_ORCHESTRATION_RUN_STOP = "v4-orchestration-run-stop";
 /** v4 composer 发送按钮 */
 export const TID_V4_COMPOSER_SEND = "v4-composer-send";
 /** v4 composer 提示词增强按钮 */

@@ -4,6 +4,10 @@ import {
   createNodeToolArtifactStore,
 } from "@zcode/adapters/storage";
 import { createNodeLoggerFactory } from "@zcode/adapters/logging";
+import {
+  NodeOrchestrationArtifactStorage,
+  NodeOrchestrationJournal,
+} from "@zcode/adapters/orchestration";
 import { createConfig, resolvePath } from "@zcode/adapters/config";
 import {
   createNodeExecutionAdapter,
@@ -799,6 +803,12 @@ export async function createZCodeApp(options: ZCodeAppOptions): Promise<ZCodeApp
       modelCatalogPort,
       automationPort: options.automationPort,
       offPeakPort: options.offPeakPort,
+      // 编排 run journal 与产物落在 CLI data root 下，按 owner（identity + session）隔离；
+      // 工厂只在编排真正开启时才被调用，经典会话不会创建任何目录。
+      orchestrationJournal: (owner) =>
+        new NodeOrchestrationJournal({ rootDirectory: storageRoot, owner }),
+      orchestrationArtifactStorage: (owner) =>
+        new NodeOrchestrationArtifactStorage({ rootDirectory: storageRoot, owner }),
       appVersion,
       traceContext,
     });

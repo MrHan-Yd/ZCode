@@ -271,6 +271,9 @@ async function sendText(
       // 立即发送切换了 runtime turn，导致运行中用户输入遗漏 human 提示。
       // 只按 Core 的实际抢占回执标记纯文本；空闲及附件输入保留原路径。
       ...(preempted && !attachments?.length ? { inputPresentation: "user_steer" as const } : {}),
+      ...(payload.orchestrationInput
+        ? { orchestrationInput: payload.orchestrationInput }
+        : {}),
       intent,
       ...(payload.context_refs ? { sharedContextRefs: payload.context_refs } : {}),
       ...turnBackgroundAttributionOf(payload),

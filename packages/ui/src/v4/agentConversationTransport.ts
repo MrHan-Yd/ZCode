@@ -38,6 +38,7 @@ import {
 import type { ConversationTransport } from "@/v4/transport.js";
 import { ensureAgentV4ConnectionHandshake } from "@/v4/agentV4ConnectionHandshake.js";
 import { createWorkflowRunTransportMethods } from "@/v4/agentConversationTransportWorkflowRuns.js";
+import { createOrchestrationTransportMethods } from "@/v4/agentConversationTransportOrchestration.js";
 import { createAckActivationBarrier } from "@/v4/ackActivationBarrier.js";
 import { createTopicWireDecoder } from "@/v4/topicWireDecoder.js";
 import { logger } from "@/logger.js";
@@ -66,6 +67,7 @@ type ConversationV4AgentService = Pick<
   | "conversationPlansV4"
   | "conversationWorkflowRunEventsV4"
   | "conversationWorkflowRunsV4"
+  | "conversationOrchestrationStateV4"
   | "conversationWorkflowRunArtifactsV4"
   | "conversationWorkflowRunArtifactDataV4"
   | "conversationWorkflowRunArtifactReadV4"
@@ -393,6 +395,7 @@ export function createAgentConversationTransport(
     },
     // dwf journal 的两个只读查询拆在 agentConversationTransportWorkflowRuns.ts（max-lines 边界）。
     ...createWorkflowRunTransportMethods({ agentService, ensureHandshake, workspace }),
+    ...createOrchestrationTransportMethods({ agentService, ensureHandshake, workspace }),
     async fileChanges(
       params: V4ConversationFileChangesParams,
     ): Promise<V4ConversationFileChangesResult> {

@@ -35,6 +35,11 @@ import type {
   ExecutionShellSelection,
 } from "./deps.js";
 import type { BackgroundResultOriginMeta, ContextUsageBreakdownItem } from "@zcode/contracts";
+import type {
+  OrchestrationConfigState,
+  V4ConversationOrchestrationStateResult,
+} from "@zcode/shared/zcode-protocol-v4";
+import type { OrchestrationRunRecord } from "../orchestration/contract.js";
 import type { RuntimeCommand, RuntimeCommandId } from "./command-queue.js";
 import type { RuntimeMessageEntry } from "../agent/message-history.js";
 import type {
@@ -79,6 +84,12 @@ export interface AgentRuntimeCoreMethods {
     input: { mode?: string; planEnabled?: boolean },
     traceContext?: TraceContext,
   ): Promise<void>;
+  setOrchestrationConfig(
+    input: { enabled: boolean; team?: readonly string[]; maxConcurrency?: number },
+    traceContext?: TraceContext,
+  ): Promise<OrchestrationConfigState>;
+  getOrchestrationState(): V4ConversationOrchestrationStateResult;
+  cancelOrchestrationRun(runId: string): Promise<OrchestrationRunRecord | undefined>;
   getSessionModelSelection(): ModelSelection | undefined;
   setSessionModelSelection(selection: ModelSelection | undefined): void;
   getProjectId(): ProjectId;

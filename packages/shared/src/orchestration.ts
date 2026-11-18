@@ -17,6 +17,49 @@ export {
 export const ORCHESTRATION_MAX_STEPS = 32;
 export const ORCHESTRATION_MAX_ATTEMPTS = 5;
 
+/** 默认团队：至少一个可写执行兜底 + 只读检索 + 测试。 */
+export const ORCHESTRATION_DEFAULT_TEAM: readonly string[] = [
+  "general-purpose",
+  "Explore",
+  "tester",
+];
+/** 软上限只用于 UI 提示；硬上限由 CLI 校验并拒绝超限团队。 */
+export const ORCHESTRATION_SOFT_TEAM_SIZE = 6;
+export const ORCHESTRATION_MAX_TEAM_SIZE = 8;
+export const ORCHESTRATION_DEFAULT_MAX_CONCURRENCY = 3;
+export const ORCHESTRATION_MAX_CONCURRENCY = 8;
+
+export const orchestrationTeamSchema = z
+  .array(z.string().trim().min(1).max(80))
+  .min(1)
+  .max(ORCHESTRATION_MAX_TEAM_SIZE);
+
+export const orchestrationInputModeSchema = z.enum(["guide", "queue", "interrupt"]);
+export type OrchestrationInputMode = z.infer<typeof orchestrationInputModeSchema>;
+
+/**
+ * UI 侧的乐观归一化：去空、去重、保留 general-purpose 并限制到硬上限。
+ *
+ * 它不是权威校验（CLI `resolveOrchestrationTeam` 仍会拒绝非法团队），只保证草稿和
+ * 选择器在本地操作时不会出现空角色、重复项或超过硬上限这种确定无效的状态。
+ */
+export function normalizeOrchestrationTeamSelection(team: readonly string[] | undefined): string[] {
+  const seen = new Set<string>();
+  const resolved: string[] = [];
+  for (const candidate of team ?? []) {
+    const name = typeof candidate === "string" ? candidate.trim() : "";
+    if (!name || seen.has(name)) continue;
+    if (resolved.length >= ORCHESTRATION_MAX_TEAM_SIZE) break;
+    seen.add(name);
+    resolved.push(name);
+  }
+  if (!seen.has("general-purpose")) {
+    resolved.unshift("general-purpose");
+    while (resolved.length > ORCHESTRATION_MAX_TEAM_SIZE) resolved.pop();
+  }
+  return resolved;
+}
+
 const stepIdSchema = z
   .string()
   .trim()

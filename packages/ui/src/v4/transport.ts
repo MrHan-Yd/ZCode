@@ -36,6 +36,8 @@ import type {
   V4ConversationWorkflowRunsParams,
   V4ConversationWorkflowRunEventsResult,
   V4ConversationWorkflowRunsResult,
+  V4ConversationOrchestrationStateParams,
+  V4ConversationOrchestrationStateResult,
   ConversationResyncParams,
   V4ConversationResyncResult,
   V4ConversationSubscribeResult,
@@ -70,6 +72,10 @@ export interface ConversationTransport {
   ): Promise<V4ConversationWorkflowRunEventsResult>;
   /** v4/conversation/workflowRuns：workflow run 枚举（journal-backed 的重启后发现面）。 */
   workflowRuns(params: V4ConversationWorkflowRunsParams): Promise<V4ConversationWorkflowRunsResult>;
+  /** v4/conversation/orchestrationState：编排配置 + 活动/最近 run 的有界只读投影。 */
+  orchestrationState(
+    params: V4ConversationOrchestrationStateParams,
+  ): Promise<V4ConversationOrchestrationStateResult>;
   /**
    * v4/conversation/workflowRunArtifacts：workflow run 的**用户面产物**清单（冷恢复的 durable 读法）。
    *

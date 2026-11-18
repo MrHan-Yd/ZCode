@@ -24,6 +24,8 @@ import { summarizeRun } from "./scheduler.js";
 import { SubagentOrchestrationDispatchAdapter } from "./subagent-dispatch-adapter.js";
 import { fitContentWithSuffix } from "../tool/executor/result-content-projection.js";
 import {
+  ORCHESTRATION_DEFAULT_MAX_CONCURRENCY,
+  ORCHESTRATION_DEFAULT_TEAM,
   resolveOrchestrationMaxConcurrency,
   resolveOrchestrationTeam,
   resolveOrchestrationWritableRoles,
@@ -69,6 +71,9 @@ export class OrchestrationService implements OrchestrationToolPort {
   private readonly store: OrchestrationRunStore;
   private readonly dispatcher: OrchestrationDispatcher;
   private readonly executions = new Map<string, Promise<void>>();
+  /** 会话配置可在运行中更新；只影响后续新建的 run，已在飞的 run 冻结自己的 team。 */
+  private team: readonly string[] | undefined;
+  private maxConcurrency: number | undefined;
   /**
    * 最近一次从 journal 读到的快照。prompt 装配是同步的，不能为了展示 run 状态
    * 阻塞在文件锁上；所有 store 调用都经过带缓存的端口，保证这里至多落后一次提交。
@@ -76,6 +81,8 @@ export class OrchestrationService implements OrchestrationToolPort {
   private readonly records = new Map<string, OrchestrationRunRecord>();
 
   constructor(private readonly options: OrchestrationServiceOptions) {
+    this.team = options.team;
+    this.maxConcurrency = options.maxConcurrency;
     this.store = new OrchestrationRunStore({
       owner: options.owner,
       journal: options.journal,
@@ -90,6 +97,38 @@ export class OrchestrationService implements OrchestrationToolPort {
 
   get owner(): OrchestrationRunOwner {
     return this.store.owner;
+  }
+
+  /** 当前会话冻结的团队；UI 只读投影与后续 run 共用同一个解析结果。 */
+  currentTeam(): readonly string[] {
+    return this.team ?? ORCHESTRATION_DEFAULT_TEAM;
+  }
+
+  currentMaxConcurrency(): number {
+    return this.maxConcurrency ?? ORCHESTRATION_DEFAULT_MAX_CONCURRENCY;
+  }
+
+  /**
+   * 更新会话级配置。活动 run 的 journal 已冻结 team，这里不会回写它们；只影响
+   * `preparePlan` 之后新建的 run。
+   */
+  updateConfiguration(input: { team?: readonly string[]; maxConcurrency?: number }): void {
+    if (input.team !== undefined) this.team = input.team;
+    if (input.maxConcurrency !== undefined) this.maxConcurrency = input.maxConcurrency;
+  }
+
+  /**
+   * 时间线读取面：活动 run 在前，其余按 updatedAt 倒序，最多 `limit` 条。
+   * 只返回内存缓存；未加载过的历史 run 不在这里伪造（冷恢复属于 Phase 6）。
+   */
+  listRuns(limit = 8): OrchestrationRunRecord[] {
+    const bounded = Math.max(1, Math.min(limit, 8));
+    const active = this.activeRuns();
+    const activeIds = new Set(active.map((record) => record.runId));
+    const terminal = [...this.records.values()]
+      .filter((record) => !activeIds.has(record.runId))
+      .sort((left, right) => right.state.updatedAt - left.state.updatedAt);
+    return [...active, ...terminal].slice(0, bounded).map((record) => structuredClone(record));
   }
 
   /** 仍在驱动中的 run；顺序即启动顺序。 */
@@ -287,7 +326,7 @@ export class OrchestrationService implements OrchestrationToolPort {
         `Orchestration plan is malformed: ${formatZodIssues(parsed.error.issues)}`,
       );
     }
-    const team = resolveOrchestrationTeam(input.team ?? this.options.team);
+    const team = resolveOrchestrationTeam(input.team ?? this.team);
     const writableRoles = resolveOrchestrationWritableRoles(team);
     const validation = validateOrchestrationPlan(parsed.data, { team, writableRoles });
     if (validation.issues.length > 0) {
@@ -301,7 +340,7 @@ export class OrchestrationService implements OrchestrationToolPort {
       team,
       writableRoles,
       maxConcurrency: resolveOrchestrationMaxConcurrency(
-        input.maxConcurrency ?? this.options.maxConcurrency,
+        input.maxConcurrency ?? this.maxConcurrency,
       ),
     };
   }

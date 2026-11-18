@@ -1735,6 +1735,14 @@ export function createConversationV4Gateway(
       // 经 app 调用（不可解构：实现可能依赖 this 绑定）。
       return record.app.listDynamicWorkflowRuns(input);
     },
+    // 编排状态：runtime 是唯一所有者；这里只做会话查找与能力转交。
+    getOrchestrationState: (sessionId) => {
+      const record = context.sessions.get(sessionId);
+      if (!record) {
+        throw new Error(`fault.orchestration.sessionNotFound: ${sessionId}`);
+      }
+      return record.app.getOrchestrationState();
+    },
     // dwf 用户面产物的三个读面：能力条件同上。
     // ⚠ 术语：artifact = 脚本经 `artifact.*` 发布给用户看的产出，不是 run 的顶层返回值。
     listDynamicWorkflowRunArtifacts: async (sessionId, input) => {

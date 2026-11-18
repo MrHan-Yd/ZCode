@@ -262,6 +262,18 @@ export async function applyRequestedSessionConfig(
   if (config.followupMode && config.followupMode !== "queue") {
     await record.app.setFollowupMode(config.followupMode);
   }
+
+  // 编排配置与 setOrchestration 命令共用同一个 app 入口；必须在 firstInput 之前应用，
+  // 否则首轮工具表仍是经典模式。
+  if (config.orchestration) {
+    await record.app.setOrchestration({
+      enabled: config.orchestration.enabled,
+      ...(config.orchestration.team ? { team: config.orchestration.team } : {}),
+      ...(config.orchestration.maxConcurrency === undefined
+        ? {}
+        : { maxConcurrency: config.orchestration.maxConcurrency }),
+    });
+  }
 }
 
 export const modelConfigHandlers = { switchModelConfig, switchCollaborationMode };

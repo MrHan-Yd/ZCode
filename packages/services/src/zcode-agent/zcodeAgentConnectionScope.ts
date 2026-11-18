@@ -221,6 +221,8 @@ function createHello(context: ZCodeAgentV4ConnectionContext): HelloMessage {
       // 本 Host 会转发 `workflowRun.*` 键级增量；客户端见到它才能在 clientHello 里回声明
       // （那个 capabilities 是 .strict() 的，反过来会让老 Host 握不上手）。
       workflowRunDeltas: true,
+      // 编排状态查询由 Host 通用转发；旧 CLI 会对该方法回 −32601，UI 按能力缺席处理。
+      orchestrationState: true,
     },
     auth: {},
   };

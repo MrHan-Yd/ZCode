@@ -156,6 +156,12 @@ export class ReplaceableConversationTransport implements ConversationTransport {
     return this.current.workflowRuns(params);
   }
 
+  orchestrationState(
+    params: Parameters<ConversationTransport["orchestrationState"]>[0],
+  ): ReturnType<ConversationTransport["orchestrationState"]> {
+    return this.current.orchestrationState(params);
+  }
+
   // workflow 用户面产物的三条读接口必须在此转发；遗漏时 service proxy 上的方法为
   // undefined，侧板调用就会抛错。
   workflowRunArtifacts(

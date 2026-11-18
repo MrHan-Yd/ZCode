@@ -72,6 +72,9 @@ type SessionFacade = Pick<
   | "readTarget"
   | "setCustomSessionTitle"
   | "setMode"
+  | "setOrchestration"
+  | "getOrchestrationState"
+  | "cancelOrchestrationRun"
   | "setModel"
   | "setThoughtLevel"
   | "setLocale"
@@ -455,8 +458,14 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
         traceId: deps.traceContext.traceId,
       };
     },
-    setModel: async (modelId, options) => {
-      // 配置命令已提交完整 Selection；转成字符串会丢档位。先整体校验再一次
+    setOrchestration: async (input) => {
+      return await deps.runtime.setOrchestrationConfig(input, deps.traceContext);
+    },
+    getOrchestrationState: () => deps.runtime.getOrchestrationState(),
+    cancelOrchestrationRun: async (runId: string) => {
+      return await deps.runtime.cancelOrchestrationRun(runId);
+    },
+    setModel: async (modelId, options) => {      // 配置命令已提交完整 Selection；转成字符串会丢档位。先整体校验再一次
       // 更新/保存，非法档位不能留下已换模型的半次修改。旧字符串入口保留只改身份语义。
       const registrySelection =
         typeof modelId === "string"

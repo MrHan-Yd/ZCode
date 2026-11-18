@@ -28,6 +28,11 @@ import { startSavedWorkflowRun } from "./dynamic-workflow-run-start.js";
 import { amendWorkflowRunSettings } from "./dynamic-workflow-run-settings.js";
 import { getProjection } from "./config.js";
 import { getSessionId } from "./config.js";
+import {
+  cancelOrchestrationRun,
+  getOrchestrationState,
+  setOrchestrationConfig,
+} from "./orchestration.js";
 import { enqueueDeferredInput } from "./steering.js";
 import { steerTurn } from "./steering.js";
 import { beginActiveTurn } from "./steering.js";
@@ -202,6 +207,9 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   const proto = ctor.prototype as Record<string, unknown>;
   proto.updateConfig = updateConfig;
   proto.setExecutionState = setExecutionState;
+  proto.setOrchestrationConfig = setOrchestrationConfig;
+  proto.getOrchestrationState = getOrchestrationState;
+  proto.cancelOrchestrationRun = cancelOrchestrationRun;
   proto.grantPermissionFullAccess = grantPermissionFullAccess;
   proto.initializeSessionShellEnvironmentIfNeeded = initializeSessionShellEnvironmentIfNeeded;
   proto.getSessionShellSelection = getSessionShellSelection;

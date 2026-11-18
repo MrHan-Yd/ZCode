@@ -156,6 +156,9 @@ import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import { useConversationSelectionReferences } from "@/v4/composer/useConversationSelectionReferences.js";
 import { ConversationBackgroundWorkTrigger } from "@/v4/composer/ConversationBackgroundWorkTrigger.js";
 import { V4ComposerCuaEntry } from "@/v4/composer/V4ComposerCuaEntry.js";
+import { OrchestrationTrigger } from "@/v4/composer/OrchestrationTrigger.js";
+import { OrchestrationRunBar } from "@/v4/composer/OrchestrationRunBar.js";
+import type { OrchestrationComposerControls } from "@/v4/composer/OrchestrationControls.js";
 import { V4ComposerPromptEnhanceButton } from "@/v4/composer/V4ComposerPromptEnhanceButton.js";
 import {
   V4ComposerModeSwitch,
@@ -479,6 +482,8 @@ interface ConversationComposerProps {
   appSlashCommands?: readonly AppSlashCommand[];
   /** 把 composer 的 drop 路由暴露给整个对话 pane / 桌面草稿标题栏。 */
   onDropTargetControllerChange?: (controller: ConversationDropTargetController | null) => void;
+  /** 编排入口 / 团队 / 运行时间线；缺席或 available=false 时不渲染任何入口。 */
+  orchestrationControls?: OrchestrationComposerControls;
 }
 
 function formatAttachmentLineCount(attachment: ChatComposerAttachment, locale: string): string {
@@ -541,6 +546,7 @@ function ConversationComposerImpl({
   suppressGoalCommands = false,
   appSlashCommands,
   onDropTargetControllerChange,
+  orchestrationControls,
 }: ConversationComposerProps) {
   const { intl, locale } = useZCodeIntl();
   const services = useOptionalServices();
@@ -2033,10 +2039,7 @@ function ConversationComposerImpl({
   const liveOutputTokenReaderRef = useRef<LiveOutputTokenReader | null>(null);
   liveOutputTokenReaderRef.current ??= createLiveOutputTokenReader();
   liveOutputTokenReaderRef.current.setSnapshot(snapshot, composerPhase === "running");
-  const readLiveOutputTokens = useCallback(
-    () => liveOutputTokenReaderRef.current?.read() ?? 0,
-    [],
-  );
+  const readLiveOutputTokens = useCallback(() => liveOutputTokenReaderRef.current?.read() ?? 0, []);
   const handleSelectModelTrace = useCallback(
     (nextProvider: string, nextModel: string, sourceModel: ModelSelectionSource | null) =>
       runUserAction({
@@ -2199,6 +2202,9 @@ function ConversationComposerImpl({
           onConfigPickerOpenChange={handleConfigPickerOpenChange}
           onSwitchMode={onSwitchMode}
         />
+        {orchestrationControls ? (
+          <OrchestrationTrigger controls={orchestrationControls} disabled={disabled} />
+        ) : null}
         {/* 附件画廊重构曾整段覆盖 leadingActions，误删 CUA 常驻入口。
             入口自身继续负责平台、远程与设置可见性，不在 composer 重复判定。 */}
         <V4ComposerCuaEntry
@@ -2224,6 +2230,7 @@ function ConversationComposerImpl({
       backgroundWorkOpenTarget,
       onOpenRunningBackgroundWorks,
       onSwitchMode,
+      orchestrationControls,
       provider,
       remoteSessionId,
       runningSubagentCount,
@@ -2296,6 +2303,7 @@ function ConversationComposerImpl({
             })}
           </div>
         ) : null}
+        {orchestrationControls ? <OrchestrationRunBar controls={orchestrationControls} /> : null}
         <ChatPromptEditor
           workspacePath={workspacePath}
           workspaceIdentity={workspaceIdentity}

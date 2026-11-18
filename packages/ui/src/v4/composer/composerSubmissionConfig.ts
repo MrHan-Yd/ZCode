@@ -1,18 +1,38 @@
-import { resolveExecutionState, type ModelSelection } from "@zcode/shared";
+import {
+  normalizeOrchestrationTeamSelection,
+  resolveExecutionState,
+  type ModelSelection,
+} from "@zcode/shared";
 import { submissionModeSchema, type SubmissionMode } from "@zcode/shared/zcode-protocol-v4";
 import type { ModelSelectionView } from "@zcode/services";
 import { validateModelSelectionOptions } from "@zcode/provider";
+
+export interface ComposerOrchestrationSubmissionConfig {
+  enabled: boolean;
+  team: string[];
+}
 
 export interface ComposerSubmissionConfig {
   modelSelection: ModelSelection;
   mode: SubmissionMode;
   planEnabled: boolean;
+  /** 仅 createSession.config 消费；已有会话由 setOrchestration 单独下发。 */
+  orchestration?: ComposerOrchestrationSubmissionConfig;
+  /** 运行中发送语义；交给 Core admission 裁决，无活动 run 时忽略。 */
+  orchestrationInput?: "guide" | "queue" | "interrupt";
 }
 
 /** 在点击提交的瞬间，把 Composer 意图冻结成本次 Submission 的执行配置。 */
 export function createComposerSubmissionConfig(
   composer:
-    | { mode?: string; planEnabled?: boolean; modelSelection?: ModelSelection }
+    | {
+        mode?: string;
+        planEnabled?: boolean;
+        modelSelection?: ModelSelection;
+        orchestrationEnabled?: boolean;
+        subagentPool?: readonly string[];
+        orchestrationInputMode?: "guide" | "queue" | "interrupt";
+      }
     | null
     | undefined,
   view: ModelSelectionView | null,
@@ -40,5 +60,16 @@ export function createComposerSubmissionConfig(
       modelId: selection.modelId,
       options: Object.freeze({ reasoningLevel: selection.options!.reasoningLevel! }),
     }),
+    ...(composer.orchestrationEnabled === true
+      ? {
+          orchestration: Object.freeze({
+            enabled: true,
+            team: normalizeOrchestrationTeamSelection(composer.subagentPool),
+          }),
+        }
+      : {}),
+    ...(composer.orchestrationInputMode
+      ? { orchestrationInput: composer.orchestrationInputMode }
+      : {}),
   });
 }

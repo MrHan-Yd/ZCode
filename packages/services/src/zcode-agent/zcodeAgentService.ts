@@ -222,6 +222,7 @@ import type {
   ZCodeAgentConversationWorkflowRunNodeResultParams,
   ZCodeAgentConversationWorkflowRunWorkspaceParams,
   ZCodeAgentConversationWorkflowRunsParams,
+  ZCodeAgentConversationOrchestrationStateParams,
   ZCodeAgentConversationResyncParams,
   ZCodeAgentConversationSubscribeParams,
   ZCodeAgentConversationUnsubscribeParams,
@@ -273,6 +274,7 @@ import {
   v4ConversationWorkflowRunNodeResultResultSchema,
   v4ConversationWorkflowRunWorkspaceResultSchema,
   v4ConversationWorkflowRunsResultSchema,
+  v4ConversationOrchestrationStateResultSchema,
   v4ConversationResyncResultSchema,
   v4ConversationSubscribeResultSchema,
   v4ConversationUsageResultSchema,
@@ -5387,6 +5389,19 @@ export function createZCodeAgentService(
           ...(params.limit !== undefined ? { limit: params.limit } : {}),
         },
         v4ConversationWorkflowRunsResultSchema,
+      );
+    },
+
+    // 编排状态：配置 + 活动/最近 run；与 workflowRuns 同族（只读、无状态、超时重发安全）。
+    async conversationOrchestrationStateV4(params: ZCodeAgentConversationOrchestrationStateParams) {
+      const client = await getReadOnlyClient(params);
+      return client.request(
+        V4_METHODS.conversationOrchestrationState,
+        {
+          sessionId: params.sessionId,
+          ...(params.limit !== undefined ? { limit: params.limit } : {}),
+        },
+        v4ConversationOrchestrationStateResultSchema,
       );
     },
 

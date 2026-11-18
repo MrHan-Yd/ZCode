@@ -531,6 +531,9 @@ export class ZCodeProtocolAgentServer {
       // dwf run 枚举（重启后的发现查询）。
       case V4_METHODS.conversationWorkflowRuns:
         return await this.requireV4Gateway().workflowRuns(request.params);
+      // 编排状态（配置 + 活动/最近 run）：只读查询，与 workflowRuns 同族。
+      case V4_METHODS.conversationOrchestrationState:
+        return await this.requireV4Gateway().orchestrationState(request.params);
       // dwf 用户面产物的三个读面。同族：只读、无状态、
       // 超时重发安全；ArtifactRead 的授权在宿主端口侧，网关只校参数与分块。
       case V4_METHODS.conversationWorkflowRunArtifacts:
