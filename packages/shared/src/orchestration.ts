@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { GENERIC_SUBAGENT_NAMES } from "./subagents-types.js";
 import { normalizeWriteScopes, normalizedWriteScopesOverlap } from "./orchestration-write-scope.js";
 export {
   normalizeWriteScope,
@@ -17,11 +18,10 @@ export {
 export const ORCHESTRATION_MAX_STEPS = 32;
 export const ORCHESTRATION_MAX_ATTEMPTS = 5;
 
-/** 默认团队：至少一个可写执行兜底 + 只读检索 + 测试。 */
+/** 默认精简团队：通用执行/检索按需可用，仅增加审阅专业角色。 */
 export const ORCHESTRATION_DEFAULT_TEAM: readonly string[] = [
-  "general-purpose",
-  "Explore",
-  "tester",
+  ...GENERIC_SUBAGENT_NAMES,
+  "reviewer",
 ];
 /** 软上限只用于 UI 提示；硬上限由 CLI 校验并拒绝超限团队。 */
 export const ORCHESTRATION_SOFT_TEAM_SIZE = 6;
@@ -38,24 +38,21 @@ export const orchestrationInputModeSchema = z.enum(["guide", "queue", "interrupt
 export type OrchestrationInputMode = z.infer<typeof orchestrationInputModeSchema>;
 
 /**
- * UI 侧的乐观归一化：去空、去重、保留 general-purpose 并限制到硬上限。
+ * UI 侧的乐观归一化：默认保留通用子代理，专业选择去空、去重并限制到硬上限。
  *
  * 它不是权威校验（CLI `resolveOrchestrationTeam` 仍会拒绝非法团队），只保证草稿和
  * 选择器在本地操作时不会出现空角色、重复项或超过硬上限这种确定无效的状态。
  */
 export function normalizeOrchestrationTeamSelection(team: readonly string[] | undefined): string[] {
-  const seen = new Set<string>();
-  const resolved: string[] = [];
+  // 通用角色不再由用户勾选；归一化旧草稿时也必须保留它们，不能被专业选择挤出。
+  const seen = new Set<string>(GENERIC_SUBAGENT_NAMES);
+  const resolved: string[] = [...GENERIC_SUBAGENT_NAMES];
   for (const candidate of team ?? []) {
     const name = typeof candidate === "string" ? candidate.trim() : "";
     if (!name || seen.has(name)) continue;
     if (resolved.length >= ORCHESTRATION_MAX_TEAM_SIZE) break;
     seen.add(name);
     resolved.push(name);
-  }
-  if (!seen.has("general-purpose")) {
-    resolved.unshift("general-purpose");
-    while (resolved.length > ORCHESTRATION_MAX_TEAM_SIZE) resolved.pop();
   }
   return resolved;
 }

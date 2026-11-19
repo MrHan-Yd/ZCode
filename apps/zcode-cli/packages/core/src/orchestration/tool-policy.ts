@@ -1,6 +1,7 @@
 import {
   BUILT_IN_SUBAGENT_DEFINITIONS,
   getBuiltInSubagentDefinition,
+  GENERIC_SUBAGENT_NAMES,
   ORCHESTRATION_DEFAULT_MAX_CONCURRENCY,
   ORCHESTRATION_DEFAULT_TEAM,
   ORCHESTRATION_MAX_CONCURRENCY,
@@ -111,10 +112,7 @@ export function shouldForceOrchestrationReadOnly(input: {
   return input.orchestrationEnabled && (input.planEnabled || input.parentMode === "plan");
 }
 
-/**
- * 归一化团队。`general-purpose` 强制保留是 spec 的执行兜底：没有至少一个可写执行角色，
- * 所有实现步骤都会在计划校验阶段被拒，用户只会看到一份永远跑不起来的计划。
- */
+/** 通用子代理默认保留；先严格校验输入，再补齐旧团队缺少的通用角色。 */
 export function resolveOrchestrationTeam(team: readonly string[] | undefined): string[] {
   const candidate = team === undefined || team.length === 0 ? DEFAULT_ORCHESTRATION_TEAM : team;
   if (candidate.length > ORCHESTRATION_MAX_TEAM_SIZE) {
@@ -148,13 +146,16 @@ export function resolveOrchestrationTeam(team: readonly string[] | undefined): s
     seen.add(name);
     resolved.push(name);
   }
-  if (!seen.has("general-purpose")) {
+  // 旧配置曾只强制 general-purpose；通用角色退出勾选后，生效团队需要自动补齐两者。
+  const generic = new Set<string>(GENERIC_SUBAGENT_NAMES);
+  const effective = [...GENERIC_SUBAGENT_NAMES, ...resolved.filter((name) => !generic.has(name))];
+  if (effective.length > ORCHESTRATION_MAX_TEAM_SIZE) {
     throw new OrchestrationStoreError(
       "invalid_plan",
-      "Orchestration team must keep general-purpose as the execution fallback.",
+      `Orchestration team exceeds the hard limit of ${ORCHESTRATION_MAX_TEAM_SIZE} roles.`,
     );
   }
-  return resolved;
+  return effective;
 }
 
 /** 可写角色由内置元数据推导，避免设置页与计划校验各自维护一份名单。 */

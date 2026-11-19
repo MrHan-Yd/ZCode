@@ -1,5 +1,6 @@
 import { basename } from "node:path";
 import {
+  GENERIC_SUBAGENT_NAMES,
   type BuiltInSubagentModelSelectionOverrides,
   type ModelSelection,
 } from "@zcode/shared";
@@ -122,17 +123,14 @@ export function normalizeAgentProfiles(
     builtInModelSelectionOverrides?: BuiltInSubagentModelSelectionOverrides;
     /**
      * 只暴露这些内置角色；缺省保持经典模式的两个内置角色。
-     * 编排会话传入选中的团队；general-purpose 始终补回作为兜底。
+     * 编排会话传入专业团队；通用执行与检索始终可按需调度。
      */
     visibleNames?: readonly string[];
   } = {},
 ): AgentProfile[] {
   const overrides = options.builtInModelSelectionOverrides ?? {};
-  const visible = options.visibleNames
-    ? new Set<string>(options.visibleNames)
-    : new Set<string>([DEFAULT_SUBAGENT_TYPE, EXPLORE_AGENT_TYPE]);
-  // 兜底执行角色必须保留；否则模型省略 subagent_type 时 Agent 工具会回退到不存在的 profile。
-  visible.add(DEFAULT_SUBAGENT_TYPE);
+  // 专业角色由团队选择，通用子代理不再依赖勾选；经典缺省仍只暴露通用两者。
+  const visible = new Set<string>([...GENERIC_SUBAGENT_NAMES, ...(options.visibleNames ?? [])]);
   const active = new Map<string, AgentProfile>();
   for (const profile of createBuiltInAgentProfiles(overrides)) {
     if (visible.has(profile.name)) active.set(profile.name, profile);

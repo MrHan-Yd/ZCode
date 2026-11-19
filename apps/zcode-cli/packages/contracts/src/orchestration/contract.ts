@@ -119,11 +119,25 @@ export interface OrchestrationJournalUpdate<T> {
   value: T;
 }
 
+/**
+ * 冷恢复清单。损坏条目只计入 `invalidRecords`，既不当作空 run，也不删除历史文件；
+ * `records` 已按 state.updatedAt 倒序截断到实现侧上限。
+ */
+export interface OrchestrationJournalListing {
+  records: OrchestrationRunRecord[];
+  invalidRecords: number;
+}
+
 export interface OrchestrationJournalPort {
   transaction<T>(
     runId: string,
     update: (current: OrchestrationRunRecord | undefined) => OrchestrationJournalUpdate<T>,
   ): Promise<T>;
+  /**
+   * 冷恢复用：列出本 owner 目录里可读的 run 快照。可选——内存实现与测试替身可以缺席，
+   * 缺席时服务按「没有历史 run」处理。
+   */
+  list?(): Promise<OrchestrationJournalListing>;
 }
 
 export interface CreateOrchestrationRunInput {

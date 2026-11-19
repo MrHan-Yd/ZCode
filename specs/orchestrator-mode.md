@@ -97,13 +97,18 @@ interface OrchestrationStep {
 
 规则：
 
-- 默认团队 3 个：`general-purpose`、`Explore`、`tester`。
-- `general-purpose` 强制保留，作为至少一个执行型兜底。
+- 通用子代理 `general-purpose`、`Explore` 默认可按需调度，不参与手动团队选择，不在团队面板中展示。设置页的通用子代理配置与经典模式保留不变。
+- 专业团队只展示 `architect`、`frontend`、`backend`、`ui-designer`、`tester`、`reviewer` 六个角色。仅保留两个预设：**全栈**选择六个专业角色，**精简**仅选择 `reviewer`；移除“推荐”按钮、预设 ID、专属图标及中英文文案。测试角色仍可手动勾选，也包含在全栈中。
+- “全选/取消全选”保持切换语义：未全选时选择全部可用专业角色，已全选时清空专业角色并按“开启必须至少有一个专业角色”关闭编排。搜索词不缩小全选范围，不勾选不可用角色。
+- 生效团队统一由两名通用子代理和用户选中的专业角色组成。共享归一化、CLI 权威校验与 profile 解析均补齐通用子代理；旧草稿/会话配置兼容补齐，不修改在飞 run 或历史 journal。默认生效团队与精简统一为 `general-purpose + Explore + reviewer`，共享 `ORCHESTRATION_DEFAULT_TEAM` 是缺省团队的唯一来源，不根据预设数组顺序决定默认。团队面板说明通用执行与检索默认可用，勾选的是额外专业角色。
+- **兼容边界**：只修改没有专业选择时的新默认；已有草稿/会话的显式团队（包括原测试与审阅组合、仅测试组合）、运行期配置和已冻结 run 保持不变。原组合不再匹配快捷预设，但仍可手动选择。移除的是快捷预设，不删除任何专业角色，不新增协议字段或持久化版本。
 - 语言/框架只做标签 + 栈自适应 + skills，不拆独立 agent。
 - 每个角色模型默认“继承默认”（不写 `modelSelection`）；设置页按角色覆盖；团队选择器只显示“继承默认/模型名”，不编辑模型。
-- 首次开启且无团队时自动打开选择器一次；之后不再自动弹。
-- 团队按会话隔离；软上限 6、硬上限 8。
-- 只把选中的 profile 注入 Agent 工具描述与派发解析；未选角色不可派发。
+- 首次开启、或开启时没有任何专业角色（例如上一次已清空）时自动打开选择器一次；之后不再自动弹。
+- **开启必须至少有一个专业角色**：取消最后一个专业角色或应用预设后没有任何专业角色时，草稿与运行期 `enabled` 同步置为 `false`，`setOrchestration({ enabled: false })` 立即下发；不允许出现“编排开着但面板里一个角色都没勾”。首次开启或重新开启时若团队只剩通用子代理，先补精简团队再开启；审阅角色明确不可用时保持关闭并打开选择器，不擅自扩大为测试或全栈团队。旧草稿/旧 entry 里“enabled + 仅通用角色”的状态按关闭处理。
+- 团队按会话隔离；面板计数只含专业角色（最多 6 名），通用子代理不占面板名额。协议与运行期仍使用最多 8 名的扁平 `team`，不新增字段或持久化版本；生效团队软上限 6、硬上限 8 继续用于计划规模提示与校验。
+- profile 描述与派发解析包含通用子代理和选中的专业角色；未选专业角色仍不可派发。勾选角色只授权模型按需使用，不保证每个角色都执行，也不强制每次添加审阅步骤。
+- 编排主会话仍只通过 DAG 派发（Agent/Task 仍拒绝），子代理继续禁止递归派发；本次移除通用角色勾选不改变工具权限与递归深度。
 
 ### 2.4 执行中插入消息
 
@@ -344,14 +349,34 @@ Phase 5 设计（实现前先固定所有权与接线）：
 - **配置命令**：新增 v4 `setOrchestration`（`{ enabled, team, maxConcurrency? }`）与 `cancelOrchestrationRun`（`{ runId }`）。`createSession.config.orchestration` 走与 `setOrchestration` 完全相同的 app 入口，不新增第二条应用路径。命令只更新 runtime 配置并重注册工具面；活动 run 不受影响，下一轮 turn 生效。
 - **状态读取**：新增只读查询 `v4/conversation/orchestrationState`，返回 `{ config, runs }`，`runs` 含活动 run 与最近终态 run（上限 8），步骤投影含 `status / dependsOn / attempts / childSessionId / artifactUri`。Host capability `orchestrationState` 用于旧端 fail-closed 隐藏入口。不把 runs 放进 snapshot 投影，避免第二份可变状态与增量帧复杂度；UI 在会话打开和发送 ACK 后读取，活动 run 期间低频轮询。
 - **执行中插入**：`sendText.orchestrationInput`（`guide` 默认 / `queue` / `interrupt`）由 UI 状态条写入；Core 的 `decideOrchestrationInput` 继续是唯一裁决者。无活动 run 时字段被忽略。
-- **团队选择**：`general-purpose` 强制保留；软上限 6、硬上限 8；首次开启自动补默认团队并弹出选择器一次（按 workspace 记录已提示）。停用编排时团队保留在草稿，不删除用户选择。
+- **团队选择**：面板只展示六个专业角色，通用子代理默认可用且不展示、不计数；快捷预设只保留全栈与精简，全栈包含全部专业角色，精简仅选审阅，另提供独立“全选/取消全选”切换。点击预设、勾选和全选切换均复用 `SessionPane` 的单一配置写入路径；有效载荷补齐两名通用子代理，仍受运行期软上限 6/硬上限 8 约束。首次开启或清空后重开显示精简团队；停用时保留专业选择，已有显式团队不被新默认覆盖。开启状态下取消最后一个专业角色或取消全选会跟手关闭编排。
 - **角色模型**：选择器只展示“继承默认 / 具体模型名”，读取 `SubagentsService.list()` 的 `modelSelectionOverride`；编辑跳转设置页 `subagents`，不在此处写模型。
 - **组件边界**：`OrchestrationTrigger` 与选择器/时间线拆成 `packages/ui/src/v4/composer/` 的纯展示件；选择/上限/预设/搜索逻辑放 `orchestrationTeamModel.ts` 纯函数，直接测试。运行时间线只读查询结果，停止走 `cancelOrchestrationRun`，重排只把输入语义切到 `interrupt` 并聚焦输入框，不伪造用户消息。
 
+```text
+首次开启 / 清空后重开
+  → 共享 ORCHESTRATION_DEFAULT_TEAM → 精简预设（过滤明确不可用角色）
+专业角色勾选 / 全栈或精简预设 / 全选切换
+  → SessionPane 草稿意图（唯一 UI 配置所有者，已有显式专业选择优先）
+  → 共享归一化：默认通用子代理 + 专业选择
+  → 现有 setOrchestration / createSession 命令（先应用配置，再发送）
+  → CLI 权威校验、runtime 配置与 entry 持久化
+  → 下一次 DAG 使用生效团队；在飞 run 保持已冻结团队
+
+桌面 desktop-continuous / 手机 web-remote-replayable
+  → 共用同一角色选择器与上述命令 owner；不修改各自传输、重放或 owner/lease 语义
+```
+
+- 本轮验收：列表不出现通用子代理；预设含审阅；全选六名专业；不可用专业不被全选；旧团队恢复补齐通用角色；经典 profile/Agent 工具与禁止递归不变；桌面/手机共享搜索、选择与滚动。
+- 回归 fixture 约束：顺序排队用例的 `verify` 必须声明依赖 `build`，以角色对应任务收口；不能在两个可并行步骤上用“最后启动的 child”推测完成顺序，或用更长 timeout 掩盖测试竞态。
+
 - [x] 5.1 `OrchestrationTrigger`：复合触发器，主按钮切开关，chevron 开团队选择器。
-  - `packages/ui/src/v4/composer/OrchestrationTrigger.tsx`：ghost 主按钮 + chevron；`data-composer-collapse-priority="4"`，紧凑态折叠为图标；首次开启且团队为空时自动打开选择器。
-- [x] 5.2 `OrchestrationTeamPicker`：桌面 448px popover；手机 bottom sheet；推荐组合；标签搜索；软/硬上限；不可用角色。
-  - 内容组件 `OrchestrationTeamPicker.tsx` 由桌面 `PopoverContent`（`w-[min(448px,calc(100vw-2rem))]`）与手机底部 `DialogContent` 共用；纯逻辑在 `orchestrationTeamModel.ts`（预设、搜索、上限、general-purpose 锁定、不可用角色、模型标签）。
+  - `packages/ui/src/v4/composer/OrchestrationTrigger.tsx`：主按钮与 chevron 放进 segmented shell（`rounded-lg` 外壳 + 1px 分隔线），整段读作一个控件；开启态用 `bg-brand/15` + `text-brand`，关闭态保持中性，避免没有活动 run 时开/关视觉上完全一样；`data-composer-collapse-priority="4"` 挂在 shell 上，紧凑态折叠为图标；开启时没有任何专业角色（含首次开启）打开选择器，重新开启保留用户专业选择。
+- [x] 5.2 `OrchestrationTeamPicker`：桌面 448px popover；手机 bottom sheet；全栈/精简预设；标签搜索；软/硬上限；不可用角色。
+  - 内容组件 `OrchestrationTeamPicker.tsx` 由桌面 `PopoverContent`（`w-[min(448px,calc(100vw-2rem))]`）与手机底部 `DialogContent` 共用；纯逻辑在 `orchestrationTeamModel.ts`（预设、搜索、专业计数、全选切换、通用角色默认保留、不可用角色、模型标签）。
+  - **受限高度布局**：桌面面板高度上限取 `var(--radix-popover-content-available-height)`；手机 bottom sheet 使用 `80dvh` 上限。两端共用 `flex + min-h-0` 的收缩链，只有角色列表分配剩余高度并 `overflow-y-auto`，不产生整面板或水平滚动。标题、预设、搜索框和计数区不收缩。
+  - **角色行不压缩**：每行按角色名、两行描述与模型/标签的实际内容高度排版，设置 `shrink-0`，不能将行压到 `min-h-11` 后让文字溢出到下一行。限制面板高度只缩小列表可视区，保留全部专业角色及其信息，最后一个角色必须能完整滚入可视区。
+  - **边界与验收**：保留已确认的分段触发器及开/关配色，不增加新状态、命令或模型配置写入路径。`SessionPane` 仍持有草稿意图；Picker 仅持有搜索词。回归覆盖短窗口、18px UI 字号、中英文、Zai 明/暗主题及手机 bottom sheet；检查相邻行内容不重叠、头尾固定、搜索/选择可用、角色选择在关闭编排后保留。选中的复选框在明/暗主题均显示可辨的勾选；手机 Dialog 提供可访问标题与描述。
 - [x] 5.3 草稿/会话接线：draft store、submission、snapshot、restore、queue、`setOrchestration`。
   - `V4ComposerDraft` 新增 `orchestrationEnabled / subagentPool / orchestrationInputMode / orchestrationTouched`；`createComposerSubmissionConfig` 携带 createSession 的 orchestration 配置与 `orchestrationInput`。
   - 协议新增 `setOrchestration` / `cancelOrchestrationRun` / `sendText.orchestrationInput` / `createSession.config.orchestration`；CLI runtime 更新 `config.orchestration`、按需创建 service、重注册工具并持久化 `runtime/orchestration` entry。
@@ -362,8 +387,36 @@ Phase 5 设计（实现前先固定所有权与接线）：
   - 活动 run 时在输入框上方显示 `OrchestrationRunBar`；三态菜单写 `orchestrationInputMode`，提交时随 `sendText` 下发；运行数没有新增计数器。
 - [x] 5.6 每角色模型显示“继承默认/模型名”，编辑跳设置页。
   - 选择器读取 `SubagentsService.list()` 的 `modelSelectionOverride`，显示“继承默认模型 / Model: {model}”；编辑按钮跳 Settings → `subagents`（分区级定位）。
-- 验收：默认关闭无视觉变化；首次开启弹推荐团队；运行中能看到顺序与并行；手机可用；切会话隔离。
+- 验收：默认关闭无视觉变化；首次开启弹精简团队；运行中能看到顺序与并行；手机可用；切会话隔离。
 - 测试：纯模型测试（选择/预设/上限/空池）、draft 持久化、config picker 互斥、i18n 对齐；外部 E2E harness 场景（仓库内无 E2E 框架）。
+- 2026-11-19 预设简化（当前规则）：
+  - 仅保留全栈和精简；精简只增加审阅，通用执行负责实现并可运行测试、通用检索负责获取上下文。共享缺省团队与 UI 首次开启/清空后重开均使用精简，不以预设数组首项隐式选全栈。
+  - 删除“推荐”专属按钮、ID、星标图标和双语键；保留层叠与羽毛图标以及全选/取消全选切换。面板说明默认通用能力，避免误以为精简没有执行者。
+  - 兼容已保存团队：原测试/审阅、仅测试以及用户手动选择均按原样保留，不改运行中的 run、不回写旧 entry，不删除测试角色。审阅明确不可用时新默认保持关闭，不能回退到全栈。
+  - 验收：两种语言的桌面/手机面板只出现两个预设；精简仅勾审阅；全栈勾选六个专业角色；全选后再次点击清空并关闭，重新开启回精简；测试与审阅的手动组合可保存且不被新默认覆盖；shared/CLI 缺省解析与 UI 一致。
+  - 测试边界：Create/Amend 与 interrupt/queue 的旧 fixture 计划含 `tester`，必须显式传入该团队，不能依赖缺省精简团队携带测试角色；保持原顺序、并行、取消与产物断言不变。另覆盖缺省团队执行通用实现→审阅，并在计划派发前拒绝未选测试角色。
+  - 验证：UI 编排回归 26/26、shared/CLI 编排与内置角色回归 135/135 通过。隔离 Chromium 引用真实 `OrchestrationTrigger`、`OrchestrationTeamPicker` 与 `styles.css`，7/7 场景通过（桌面中英文明暗、18px 字号、手机中英文明暗、旧显式团队、审阅停用）；验证两预设、精简/全栈切换、全选清空关闭、重开回精简、显式组合不覆盖、无横向溢出和角色行重叠。
+  - 门禁：UI 与正式编排测试类型检查通过，CLI 全量 typecheck 27/27；根 `pnpm typecheck` 仍失败于改动前相同的三个 `packages/server/src/remote/*` TS7006。根 `pnpm lint` 0 errors / 70 warnings；CLI 全量 Lint 仍失败（85 个存量 max-lines 错误 / 52 warnings，均非本次三个测试），本次文件定向 Lint 与格式检查通过；架构检查 0 violations，图谱解析/唯一 ID/关系端点与源码种子验证通过。未验证完整 Electron App、真实模型编排或手机 Safari；隔离 fixture、临时类型检查和日志在系统临时目录清理。
+  - 以下较早记录保留历史事实，旧预设规则以本节与第 2.3 节为准。
+- 2026-11-19 通用子代理与专业团队修正（历史验证）：
+  - 通用执行/检索不出现在团队面板，共享归一化、profile 解析、CLI 团队校验及冷恢复均默认补齐。专业列表只显示六名角色；推荐为测试+审阅，全栈为全部专业角色，精简为测试；独立全选复用预设写入路径，计数只含专业角色。
+  - 新增 `packages/shared/src/orchestration-team.test.ts`、UI 源目录 `orchestrationTeamModel.test.ts`、CLI `orchestrationConfigTeam.test.ts`；既有 UI test 入口转发到已纳入类型检查的正式模型测试。修正排队测试 fixture 的并行/顺序矛盾，不修改生产调度器。
+  - shared/UI/profile/core 编排联合回归 138/138 通过。隔离 Chromium 引用实际组件与样式，六组场景通过：短窗口、大字号、中英文、手机明/暗及不可用专业角色；验证首次推荐、全选不受搜索限制、通用角色不出现/不计数、重复全选幂等、关闭重新开启保留选择、无重叠和可滚动。
+  - `pnpm exec turbo --cwd apps/zcode-cli run typecheck` 27/27 成功；UI 类型检查与编排测试类型检查通过。根 `pnpm typecheck` 仍失败于既有三个 `packages/server/src/remote/*` TS7006；`pnpm lint` 0 errors / 70 warnings；架构检查 0 violations，根/UI 与 CLI 各自格式入口通过。未执行完整 Electron App、真实模型编排、手机 Safari。临时 fixture/截图清理，不提交构建产物。
+- 2026-11-19 团队选择器交互修正：
+  - “全选”改为切换语义：未全选时补齐全部可用专业角色；已全选时清空专业角色，并按“开启必须有专业角色”关闭编排。按钮在两种状态下分别显示“全选 / 取消全选”与不同图标，`isOrchestrationSelectAllApplied` + `toggleOrchestrationSelectAll` 作为纯模型供选择器与 `SessionPane` 共用。
+  - 推荐 / 全栈 / 精简三个预设改用互不相同的图标（星标 / 层叠 / 羽毛），不再统一使用 Sparkles，避免与输入框外“提示词增强”图标重复。
+  - `SessionPane` 的预设、勾选与全选切换收敛到 `applyOrchestrationTeamIntent` 单一写入路径；新增 `onToggleSelectAll` 控制面。
+  - 回归覆盖：模型测试新增全选切换/部分选择补齐/再次点击清空；选择器静态渲染断言四个按钮图标互异且不含 Sparkles，并断言全选态文案切换。
+- 2026-11-19 空专业团队自动关闭编排：
+  - 原因：面板展示的六个专业角色被全部取消后，生效团队仍保留两名通用子代理，草稿 `orchestrationEnabled` 不会跟着变化，出现“编排开着但下拉里一个角色都没选”的无效状态；重新开启还会沿用该空选。
+  - 规则收敛到纯模型 `hasSelectedOrchestrationRole(team)`：开启态下团队没有专业角色即视为无效。`SessionPane` 在取消最后一个专业角色、应用预设后没有可选专业角色时，同步写 `orchestrationEnabled: false` 并下发 `setOrchestration({ enabled: false, team })`；`resolveOrchestrationTeamOnEnable` 在团队只剩通用子代理时补推荐团队，不再依赖 `touched` 保留空选；运行时投影种子里“enabled + 仅通用角色”的旧状态按关闭读取。
+  - `OrchestrationTrigger` 改为“开启时没有专业角色就打开选择器”，`OrchestrationComposerControls.touched` 随之移除，避免第二套“是否首次”判断。
+  - 回归覆盖：`orchestrationTeamModel.test.ts` 新增空团队谓词、推荐补位、推荐角色全不可用时不开启；既有“清空后重新开启保留空选”用例改为补推荐。
+- 2026-11-19 团队选择器布局回归：
+  - 新增 `packages/ui/src/v4/composer/OrchestrationTeamPicker.test.ts`，直接渲染实际组件，覆盖滚动层/角色行不收缩、信息保留与明暗勾选标记；纳入 UI `tsconfig.json`，运行命令：`TSX_TSCONFIG_PATH=packages/ui/tsconfig.json node --import tsx --test packages/ui/src/v4/composer/OrchestrationTeamPicker.test.ts`。
+  - 隔离 Chromium + 临时 Vite fixture 引用实际组件和 `styles.css`，修复前复现 44px 行容器装入 58–76px 内容、相邻七行重叠；修复后五组浏览器场景通过（1129×577 短窗口、1920×911 明主题英文、18px 字号、390×844 手机明/暗），相邻行无重叠、末尾角色可完整滚入、头尾固定、搜索/选择与开关保留团队均验证。
+  - 编排 UI 回归 14/14 通过，定向 Lint 无警告；根 `pnpm typecheck` 仍失败于既有三个 `packages/server/src/remote/*` TS7006，本次 UI 文件无类型错误。`pnpm lint` 0 errors / 70 warnings；`pnpm architecture:check --changed` 0 violations；改动文件格式检查通过。此验证未运行完整 Electron App、CLI 编排执行或手机 Safari。
 - 2026-11-18 验证记录：
   - 新增 `packages/ui/test/orchestrationTeamModel.test.ts`（7 项）与 `orchestrationI18n.test.ts`（2 项），覆盖预设/搜索/上限/不可用角色/模型标签与中英文键对齐；新增 `apps/zcode-cli/packages/core/test/orchestrationServiceState.test.ts`（2 项），覆盖 service 配置热更新与 run/step 投影。
   - 编排全量 core 测试 106/106 通过；`pnpm typecheck` 通过本次改动文件（其余仍是既有的 3 个 `packages/server/src/remote/*` TS7006）；`pnpm exec tsc -p packages/services/tsconfig.test.json` 通过。
@@ -372,23 +425,50 @@ Phase 5 设计（实现前先固定所有权与接线）：
 
 ### Phase 6 — 恢复、兼容、回归（4–6 人日）
 
-- [ ] 6.1 冷恢复：CLI session `runtime/orchestration` entry + run journal 恢复。
-- [ ] 6.2 tasks-index meta 投影合并保留 `agentRole/subagentPool`。
-- [ ] 6.3 旧 agent bundle：v4 未知字段丢弃→经典；legacy strict→omit-retry；`setOrchestration` 不支持时隐藏入口。
-- [ ] 6.4 远程 workspace 断线/重连恢复。
-- [ ] 6.5 经典模式逐项回归：prompt/工具表/snapshot/meta 不变。
+Phase 6 实现原则：
+
+- **配置恢复只信 entry**：`runtime/orchestration` 是唯一持久事实源；entry 损坏 / 版本未知时 fail-closed 回经典并落警告，不用默认团队覆盖用户选择。
+- **journal 恢复只读一次**：resume 时从 owner 目录按 mtime 取有界快照（最多 32 条）。已完成步骤保持完成；有 claimed/running attempt 的 run 调用 `recover` 标记 interrupted 并递增 generation，不重放写入、不自动扣重试；未领取的 pending 步骤保持 pending，等待用户 amend。损坏快照只计数并保留原文件，不当作空 run。
+- **恢复时机**：`resumeFromStore` 在 workspace/context 已重建之后、`sessionPersisted=true` 之前执行，owner（workspacePath / identity / sessionId）才是会话真实身份，恢复本身不回写 entry。
+- **旧端兼容**：UI 以 `orchestrationState` 查询是否可用作为唯一能力信号。不可用时隐藏入口，提交侧（`createSession.config.orchestration` / `orchestrationInput`）与 `setOrchestration` 前置同步都退回经典 payload，避免旧端 strict schema 拒绝整个命令。
+- **重连恢复**：编排状态查询是只读、无状态查询；`useOrchestrationState` 在 error 状态按 3s 重试，重连后自动回到 ready。远程会话冷开复用同一条 resume 恢复路径，不新增 Remote Host 专用逻辑。
+
+- [x] 6.1 冷恢复：CLI session `runtime/orchestration` entry + run journal 恢复。
+  - `OrchestrationService.restore()`：journal 列出可读 run，对存在在飞 attempt 的记录调用 `RunStore.recover`；报告 `{ records, interrupted, invalidRecords }` 由 runtime 落结构化日志。
+  - `NodeOrchestrationJournal.list()`：只读、不加锁，跳过 symlink，最多读取 32 条最新快照；损坏 / owner 不匹配计入 `invalidRecords` 且不删除原文件。
+  - `resumeFromStore` 调用 `restoreOrchestrationFromSession`：校验 entry → 复用 `applyOrchestrationConfiguration`（`persist=false`）→ 按需创建 service → 恢复 journal。
+- [x] 6.2 tasks-index meta 投影合并保留编排配置（实现字段为 `orchestration`，取代早期草案的 `agentRole/subagentPool`）。
+  - `ZCodeTaskMeta.orchestration?: { enabled, team, maxConcurrency }` 与 `zcodeTaskMetaSchema` 同步新增；`syncTaskMeta` 使用 `params.meta.orchestration ?? existingMeta?.orchestration`，运行态 snapshot 不带该字段时保留已存值。
+  - 写入端（snapshot → meta）尚未接入：legacy snapshot schema 是 strict，旧桌面会拒绝未知字段；等 Host 能力协商后再接，不在此阶段扩大协议面。
+- [x] 6.3 旧 agent bundle：v4 未知字段丢弃→经典；legacy strict→omit-retry；`setOrchestration` 不支持时隐藏入口。
+  - 状态查询返回 capability 缺失时进入 `unsupported`，入口 fail-closed 隐藏（现有实现）。
+  - `createComposerSubmissionConfig` 新增 `orchestrationSupported`；不支持时省略 `orchestration` / `orchestrationInput`。`syncOrchestrationBeforeSend` 在 unsupported 时不再下发 `setOrchestration`，发送保持经典语义。
+- [x] 6.4 远程 workspace 断线/重连恢复。
+  - `useOrchestrationState` 在 error 状态按 `ERROR_RETRY_MS` 重试并只对相同错误告警一次；重连成功后自动回到 ready。
+  - 远程会话冷开走 6.1 的 resume 恢复；owner 的 `remoteSessionId` 由 v4 subscribe 的 workspace ref（`cold resume 优先使用它恢复身份`）传入，CLI 侧已接受该字段。
+- [x] 6.5 经典模式逐项回归：prompt/工具表/snapshot/meta 不变。
+  - 经典会话不写 `runtime/orchestration` entry、不创建 journal 目录；`createComposerSubmissionConfig` 无 orchestration 意图时 payload 与改动前一致；`syncTaskMeta` 在 meta 无 `orchestration` 时 round-trip 不新增字段。
 - 验收：重启后续跑；旧端不崩；经典会话零差异。
 - 测试：cold resume；meta round-trip；旧 payload；snapshot diff 回归。
+- 2026-11-18 验证记录（Phase 6）：
+  - 新增 `apps/zcode-cli/packages/core/test/orchestrationRestore.test.ts`（4 项）：在飞 attempt 标记 interrupted、completed 步骤不重跑、终态 run 不变、损坏快照计数、无 list 能力降级、entry 解析 fail-closed。
+  - 新增 `packages/services/test/taskOrchestrationMeta.test.ts`（2 项）：编排配置 round-trip、同步不带字段时保留、显式新值覆盖、经典 meta 字段缺席。
+  - 新增 `packages/ui/test/orchestrationSubmissionConfig.test.ts`（3 项）：unsupported 省略编排 payload、支持端保留、关闭编排仍保留输入语义。
+  - 编排 core 全量测试 110/110 通过；编排 UI 纯函数测试 11/11 通过；`packages/services/test/taskOrchestrationMeta.test.ts` 2/2 通过。
+  - `pnpm exec tsc -p apps/zcode-cli/packages/core/tsconfig.orchestration-test.json`、`pnpm exec tsc -p packages/services/tsconfig.test.json` 通过；`pnpm exec turbo --cwd apps/zcode-cli run typecheck` 27/27 成功。
+  - 根 `pnpm typecheck` 仅剩既有 3 个 `packages/server/src/remote/*` TS7006（与 Phase 5 基线一致）；`pnpm lint` 0 errors / 70 warnings（基线一致）；改动文件定向 oxlint 无新增 warning；`pnpm architecture:check --changed` violations 0 / baseline 0 / new 0；改动文件 `oxfmt --check` 通过。
+  - 已知限制：`packages/ui/test/nonCliAcpRetirement.test.ts` 在裸 `node --import tsx` 下因 `@/lib` 路径别名缺失失败，属既有测试运行器差异，与本次改动无关。
 
 ## 6. 验收场景
 
 1. 默认关闭：工具条只多一个 ghost 入口；权限菜单、Plan、CUA、后台任务、系统提示、snapshot、task meta 逐项不变。
-2. 首次开启：自动弹出推荐团队（3 个），确认后下一轮生效。
-3. 只注入选中 profile：未选角色不出现在 Agent 工具描述；点名未选角色被拒绝。
+2. 首次开启：显示精简团队（只选审阅专业角色），面板只提供全栈和精简两个预设；通用执行/检索默认可用并在说明中提示，不出现手动勾选项；下一轮生效。开启时必须至少有一个专业角色：清空全部专业角色后编排自动关闭，重新开启补精简团队并打开选择器。审阅明确不可用时保持关闭，不自动选测试或全栈。
+3. 只注入通用 profile 与选中的专业 profile：通用执行/检索不依赖勾选，未选专业角色不出现在描述且派发被拒绝。旧会话缺少任一通用角色时生效解析补齐。
+   - 全选对全部可用专业角色生效，不受当前搜索过滤影响；面板计数为 `6/6`（无停用角色时），提交团队为两名通用加六名专业；已全选时按钮变为“取消全选”，再次点击清空专业选择并关闭编排，不触碰在飞 run。
 4. 主会话：模型看不到 Edit/Write/Bash；即使幻觉调用也被 executor 拒绝；子代理工具完整。
-5. 团队选择按会话隔离；切 tab/切会话不串；冷恢复保持。
+5. 团队选择按会话隔离；切 tab/切会话不串；冷恢复保持。原测试与审阅组合、仅测试等显式团队不受预设简化影响；只是不再高亮已移除的快捷预设。
 6. 中途切团队：显示“下一轮生效”；运行中子智能体继续完成；被移出团队的子代理仍可 `SendMessage` 恢复。
-7. 角色被删除/停用：保留引用并标记不可用；全员不可用则编排自动关闭，不扩大为全部 profile。
+7. 角色被删除/停用：保留引用并标记不可用；取消全部专业角色或全员不可用则编排自动关闭，不扩大为全部 profile；关闭后团队选择保留。
 8. 紧凑态/手机：入口折叠为图标、不溢出；团队 sheet 可搜索、可键盘操作、Esc 关闭并回焦。
 9. Plan + 编排：子代理只读；UI 明确提示。
 10. 旧 agent bundle/远程 workspace：不支持时隐藏编排入口；已存在会话降级为经典，不报错、不丢会话。

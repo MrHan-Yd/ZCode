@@ -167,7 +167,7 @@ async function waitFor(predicate: () => boolean, label: string, timeoutMs = 5_00
 test("Create：校验计划后异步启动 run，完成后通知主会话并保留产物引用", async () => {
   await withOrchestrationDirectory(async (directory) => {
     const child = new AutoSubagent();
-    const { service, context, notices } = setup(directory, child);
+    const { service, context, notices } = setup(directory, child, TEAM);
 
     const created = await service.start({ plan: phase3Plan(), context });
     assert.equal(created.status, "pending");
@@ -187,6 +187,36 @@ test("Create：校验计划后异步启动 run，完成后通知主会话并保�
     assert.match(notice, /finished with status: completed/);
     assert.match(notice, /artifact /);
     assert.match(notice, /build/);
+  });
+});
+
+test("缺省精简团队由通用执行实现、审阅检查，未选测试角色在派发前被拒", async () => {
+  await withOrchestrationDirectory(async (directory) => {
+    const child = new AutoSubagent();
+    const { service, context, notices } = setup(directory, child);
+    assert.deepEqual(service.currentTeam(), ["general-purpose", "Explore", "reviewer"]);
+    await assert.rejects(service.start({ plan: phase3Plan(), context }), (error: unknown) => {
+      assert.ok(orchestrationError("invalid_plan")(error));
+      assert.ok(error instanceof Error);
+      assert.match(error.message, /role tester, which is not in the current/u);
+      return true;
+    });
+    assert.deepEqual(child.started, []);
+    assert.deepEqual(service.listRuns(), []);
+
+    const created = await service.start({
+      plan: phase3Plan([
+        orchestrationStep({ stepId: "build", role: "general-purpose", writeScope: ["src"] }),
+        orchestrationStep({ stepId: "review", role: "reviewer", dependsOn: ["build"] }),
+      ]),
+      context,
+    });
+    await service.whenIdle();
+    const final = await service.get(created.runId);
+    assert.equal(final?.status, "completed");
+    assert.deepEqual(final?.team, ["general-purpose", "Explore", "reviewer"]);
+    assert.deepEqual(child.started, ["general-purpose", "reviewer"]);
+    assert.equal(notices.length, 1);
   });
 });
 
@@ -243,7 +273,7 @@ test("Cancel：显式取消停止在飞 child，并把 run 收口为 cancelled",
 test("Amend：旧 run 被取消或保留终态，新 run 使用递增 revision 与新 runId", async () => {
   await withOrchestrationDirectory(async (directory) => {
     const child = new AutoSubagent();
-    const { service, context, notices } = setup(directory, child);
+    const { service, context, notices } = setup(directory, child, TEAM);
     const plan = phase3Plan();
 
     const created = await service.start({ plan, context });

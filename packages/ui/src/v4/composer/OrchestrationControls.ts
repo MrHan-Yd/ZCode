@@ -23,6 +23,8 @@ export interface OrchestrationComposerControls {
   inputMode: OrchestrationInputMode;
   onToggleEnabled: () => void;
   onToggleRole: (role: string) => void;
+  /** 全选/取消全选切换：已全选时清空专业角色（会触发编排关闭）。 */
+  onToggleSelectAll: () => void;
   onApplyPreset: (preset: OrchestrationTeamPreset) => void;
   /** 跳设置页 subagents 段；role 用于尽量定位到具体角色。 */
   onOpenRoleSettings: (role?: string) => void;

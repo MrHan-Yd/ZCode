@@ -33,12 +33,12 @@ test("session configuration updates without rebuilding the service", async () =>
       notify: () => {},
     });
 
-    assert.deepEqual(service.currentTeam(), ["general-purpose", "tester"]);
+    assert.deepEqual(service.currentTeam(), ["general-purpose", "Explore", "tester"]);
     assert.equal(service.currentMaxConcurrency(), 2);
     assert.deepEqual(service.listRuns(), []);
 
-    service.updateConfiguration({ team: [...TEAM], maxConcurrency: 4 });
-    assert.deepEqual(service.currentTeam(), [...TEAM]);
+    service.updateConfiguration({ team: ["tester", "reviewer"], maxConcurrency: 4 });
+    assert.deepEqual(service.currentTeam(), ["general-purpose", "Explore", "tester", "reviewer"]);
     assert.equal(service.currentMaxConcurrency(), 4);
   });
 });

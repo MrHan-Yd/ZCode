@@ -69,10 +69,12 @@ import type { MessageFileLinkTarget } from "@/components/ai-elements/message.js"
 import { useServices } from "@/hooks/useServices.js";
 import { useOrchestrationState } from "@/v4/useOrchestrationState.js";
 import {
-  ORCHESTRATION_TEAM_PRESETS,
   applyOrchestrationPreset,
   buildOrchestrationRoleViews,
+  hasSelectedOrchestrationRole,
+  resolveOrchestrationTeamOnEnable,
   toggleOrchestrationRole,
+  toggleOrchestrationSelectAll,
   type OrchestrationTeamPreset,
 } from "@/v4/composer/orchestrationTeamModel.js";
 import type { OrchestrationComposerControls } from "@/v4/composer/OrchestrationControls.js";
@@ -1313,6 +1315,8 @@ export function SessionPane({
     useZCodeSessionStore.getState().invalidateDraftRuntime(workspacePath, workspaceIdentity);
   }, [draftConfigRef, modelSelectionView?.revision, sessionId, workspaceIdentity, workspacePath]);
   const recommendStartPlan = useStartPlanRecommendation(modelSelectionView);
+  // 旧 CLI 不支持编排状态查询时置位：提交与发送前同步都必须退回经典 payload。
+  const orchestrationUnsupportedRef = useRef(false);
   const createSubmissionFromComposer = useCallback(() => {
     const intent = orchestrationIntentRef.current;
     return createComposerSubmissionConfig(
@@ -1323,6 +1327,7 @@ export function SessionPane({
         orchestrationInputMode: intent.orchestrationInputMode,
       },
       modelSelectionView,
+      { orchestrationSupported: !orchestrationUnsupportedRef.current },
     );
   }, [draftConfigRef, modelSelectionView]);
   const composerSubmissionReady = useMemo(
@@ -1349,13 +1354,19 @@ export function SessionPane({
   const orchestrationEnabled = composerDraft.orchestrationEnabled === true;
   const orchestrationInputMode = composerDraft.orchestrationInputMode ?? "guide";
   const orchestrationAvailable = !readOnly && orchestrationStateView.status !== "unsupported";
+  // 提交路径比渲染更早创建（useCallback 在状态查询之前），用 ref 传递「旧端不支持」事实。
+  orchestrationUnsupportedRef.current = orchestrationStateView.status === "unsupported";
   // 现有会话首次打开时以运行时配置为种子；用户显式改过（touched）后不再覆盖。
+  // 旧配置可能存过“enabled + 仅通用角色”，该状态没有专业角色可派发，按关闭读取，
+  // 下一次发送前的同步会把运行期配置也纠正过来。
   const runtimeOrchestrationTeamKey = orchestrationStateView.config.team.join("\u0000");
   useEffect(() => {
     if (readOnly || !sessionId || orchestrationStateView.status !== "ready") return;
     if (composerDraft.orchestrationTouched === true) return;
     handleDraftSeedOrchestration({
-      enabled: orchestrationStateView.config.enabled,
+      enabled:
+        orchestrationStateView.config.enabled &&
+        hasSelectedOrchestrationRole(orchestrationStateView.config.team),
       team: orchestrationStateView.config.team,
     });
   }, [
@@ -1712,6 +1723,8 @@ export function SessionPane({
   const syncOrchestrationBeforeSend = useCallback(
     async (targetSessionId: string | null) => {
       if (!targetSessionId) return;
+      // 旧 CLI 没有编排命令面：继续下发只会让本应成功的发送被 capability 拒绝。
+      if (orchestrationUnsupportedRef.current) return;
       const intent = orchestrationIntentRef.current;
       const desired = {
         enabled: intent.orchestrationEnabled === true,
@@ -3750,11 +3763,12 @@ export function SessionPane({
   );
 
   const handleToggleOrchestration = useCallback(() => {
-    const nextEnabled = !orchestrationEnabled;
-    const nextTeam =
-      nextEnabled && orchestrationTeam.length === 0
-        ? applyOrchestrationPreset(ORCHESTRATION_TEAM_PRESETS[0]!, orchestrationRoles)
-        : orchestrationTeam;
+    const wantsEnabled = !orchestrationEnabled;
+    const nextTeam = wantsEnabled
+      ? resolveOrchestrationTeamOnEnable(orchestrationTeam, orchestrationRoles)
+      : orchestrationTeam;
+    // 没有可选专业角色时保持关闭；触发器会打开选择器，让用户看到缺失的角色。
+    const nextEnabled = wantsEnabled && hasSelectedOrchestrationRole(nextTeam);
     handleDraftSetOrchestrationEnabled(nextEnabled);
     if (nextTeam !== orchestrationTeam) handleDraftSetOrchestrationTeam(nextTeam);
     sendOrchestrationConfig({ enabled: nextEnabled, team: nextTeam });
@@ -3767,6 +3781,26 @@ export function SessionPane({
     sendOrchestrationConfig,
   ]);
 
+  /**
+   * 团队写入的唯一入口：预设、勾选与全选切换共用同一套“写入 + 编排开关联动”。
+   * 开启状态下团队没有专业角色时跟手关闭编排，团队选择本身保留。
+   */
+  const applyOrchestrationTeamIntent = useCallback(
+    (team: readonly string[]) => {
+      handleDraftSetOrchestrationTeam(team);
+      if (!orchestrationEnabled) return;
+      const nextEnabled = hasSelectedOrchestrationRole(team);
+      if (!nextEnabled) handleDraftSetOrchestrationEnabled(false);
+      sendOrchestrationConfig({ enabled: nextEnabled, team });
+    },
+    [
+      handleDraftSetOrchestrationEnabled,
+      handleDraftSetOrchestrationTeam,
+      orchestrationEnabled,
+      sendOrchestrationConfig,
+    ],
+  );
+
   const handleToggleOrchestrationRole = useCallback(
     (role: string) => {
       const result = toggleOrchestrationRole(orchestrationTeam, role, orchestrationRoles);
@@ -3777,32 +3811,22 @@ export function SessionPane({
         });
         return;
       }
-      handleDraftSetOrchestrationTeam(result.team);
-      if (orchestrationEnabled) {
-        sendOrchestrationConfig({ enabled: true, team: result.team });
-      }
+      applyOrchestrationTeamIntent(result.team);
     },
-    [
-      handleDraftSetOrchestrationTeam,
-      orchestrationEnabled,
-      orchestrationRoles,
-      orchestrationTeam,
-      sendOrchestrationConfig,
-    ],
+    [applyOrchestrationTeamIntent, orchestrationRoles, orchestrationTeam],
   );
+
+  const handleToggleOrchestrationSelectAll = useCallback(() => {
+    applyOrchestrationTeamIntent(
+      toggleOrchestrationSelectAll(orchestrationTeam, orchestrationRoles),
+    );
+  }, [applyOrchestrationTeamIntent, orchestrationRoles, orchestrationTeam]);
 
   const handleApplyOrchestrationPreset = useCallback(
     (preset: OrchestrationTeamPreset) => {
-      const team = applyOrchestrationPreset(preset, orchestrationRoles);
-      handleDraftSetOrchestrationTeam(team);
-      if (orchestrationEnabled) sendOrchestrationConfig({ enabled: true, team });
+      applyOrchestrationTeamIntent(applyOrchestrationPreset(preset, orchestrationRoles));
     },
-    [
-      handleDraftSetOrchestrationTeam,
-      orchestrationEnabled,
-      orchestrationRoles,
-      sendOrchestrationConfig,
-    ],
+    [applyOrchestrationTeamIntent, orchestrationRoles],
   );
 
   const handleOpenOrchestrationRoleSettings = useCallback(
@@ -3858,6 +3882,7 @@ export function SessionPane({
       inputMode: orchestrationInputMode,
       onToggleEnabled: handleToggleOrchestration,
       onToggleRole: handleToggleOrchestrationRole,
+      onToggleSelectAll: handleToggleOrchestrationSelectAll,
       onApplyPreset: handleApplyOrchestrationPreset,
       onOpenRoleSettings: handleOpenOrchestrationRoleSettings,
       onInputModeChange: handleDraftSetOrchestrationInputMode,
@@ -3873,6 +3898,7 @@ export function SessionPane({
       handleStopOrchestrationRun,
       handleToggleOrchestration,
       handleToggleOrchestrationRole,
+      handleToggleOrchestrationSelectAll,
       handleViewOrchestrationChild,
       orchestrationAvailable,
       orchestrationEnabled,

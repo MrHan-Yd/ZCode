@@ -22,10 +22,15 @@ export const BUILT_IN_SUBAGENT_NAMES = [
 
 export type BuiltInSubagentName = (typeof BUILT_IN_SUBAGENT_NAMES)[number];
 
+/** 通用子代理默认按需可用，不参与专业团队勾选。 */
+export const GENERIC_SUBAGENT_NAMES = [
+  "general-purpose",
+  "Explore",
+] as const satisfies readonly BuiltInSubagentName[];
+
 export function isBuiltInSubagentName(value: unknown): value is BuiltInSubagentName {
   return (
-    typeof value === "string" &&
-    (BUILT_IN_SUBAGENT_NAMES as readonly string[]).includes(value)
+    typeof value === "string" && (BUILT_IN_SUBAGENT_NAMES as readonly string[]).includes(value)
   );
 }
 

@@ -22,6 +22,7 @@ import {
   zcodeProcessResourceSampleSchema,
 } from "./zcode-protocol/index.js";
 import { zcodeTaskModeSchema } from "./zcode-task-mode-schema.js";
+import { ORCHESTRATION_MAX_CONCURRENCY, ORCHESTRATION_MAX_TEAM_SIZE } from "./orchestration.js";
 import { PROTOCOL_V4_LIMITS } from "./zcode-protocol-v4/core.js";
 import { errorAttributionSchema } from "./zcode-protocol-v4/snapshot.js";
 import { sessionWorkflowActivitySchema } from "./zcode-protocol-v4/sessions-index-workflow-activity.js";
@@ -1255,6 +1256,15 @@ export const zcodeTaskMetaSchema = z.object({
     })
     .optional(),
   target: zcodeTaskGoalSchema.nullable().optional(),
+  // 编排配置投影：可选、无默认值。旧 meta_json 不含它时保持缺席；同步合并侧负责
+  // 「缺席不覆盖已存值」，与 cron / off-peak 身份同一套保留策略。
+  orchestration: z
+    .object({
+      enabled: z.boolean(),
+      team: z.array(nonEmptyStringSchema).max(ORCHESTRATION_MAX_TEAM_SIZE),
+      maxConcurrency: z.number().int().min(1).max(ORCHESTRATION_MAX_CONCURRENCY),
+    })
+    .optional(),
 });
 
 export const zcodeTaskIndexEntrySchema = z.object({

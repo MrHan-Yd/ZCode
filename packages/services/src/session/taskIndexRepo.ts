@@ -1382,6 +1382,9 @@ export class TaskIndexRepo {
           cronAutomationId: params.meta.cronAutomationId ?? existingMeta?.cronAutomationId,
           // off-peak 身份同款兜底：快照不带标记时保全既有归属。
           offPeakTaskId: params.meta.offPeakTaskId ?? existingMeta?.offPeakTaskId,
+          // 编排配置投影：运行态 snapshot 不携带时保留已存值，避免下一次同步把编排
+          // 开关/团队冲掉；显式写入（哪怕 enabled=false）仍以新值为准。
+          orchestration: params.meta.orchestration ?? existingMeta?.orchestration,
           updatedAt,
           unreadAt: params.meta.unreadAt ?? existingMeta?.unreadAt,
         };

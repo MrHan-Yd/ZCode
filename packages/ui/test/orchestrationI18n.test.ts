@@ -22,6 +22,21 @@ test("orchestration composer keys exist in both locales", () => {
   }
 });
 
+test("orchestration preset copy only exposes full stack and lean review", () => {
+  for (const locale of [enUS, zhCN]) {
+    assert.deepEqual(keysWithPrefix(locale, "chat.orchestration.preset."), [
+      "chat.orchestration.preset.fullStack",
+      "chat.orchestration.preset.fullStack.description",
+      "chat.orchestration.preset.solo",
+      "chat.orchestration.preset.solo.description",
+    ]);
+  }
+  assert.match(zhCN["chat.orchestration.preset.solo.description"] ?? "", /审阅/u);
+  assert.match(enUS["chat.orchestration.preset.solo.description"] ?? "", /review/u);
+  assert.doesNotMatch(zhCN["chat.orchestration.preset.solo.description"] ?? "", /测试/u);
+  assert.doesNotMatch(enUS["chat.orchestration.preset.solo.description"] ?? "", /tests/u);
+});
+
 test("orchestration placeholders stay aligned across locales", () => {
   const placeholders = (value: string) =>
     [...value.matchAll(/\{(\w+)\}/gu)].map((match) => match[1]).sort();

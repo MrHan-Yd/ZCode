@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  formatAgentProfilesForPrompt,
-  normalizeAgentProfiles,
-} from "../src/subagent/profile.js";
+import { formatAgentProfilesForPrompt, normalizeAgentProfiles } from "../src/subagent/profile.js";
 import { createBuiltInAgentProfiles } from "../src/subagent/builtin-agents.js";
 
 test("经典模式缺省只暴露 general-purpose 与 Explore", () => {
@@ -13,25 +10,31 @@ test("经典模式缺省只暴露 general-purpose 与 Explore", () => {
   );
 });
 
-test("编排团队按 visibleNames 暴露，并始终补回 general-purpose 兜底", () => {
+test("编排团队按 visibleNames 暴露专业角色，并默认保留通用子代理", () => {
   assert.deepEqual(
     normalizeAgentProfiles([], {
       visibleNames: ["general-purpose", "Explore", "tester"],
     }).map((profile) => profile.name),
     ["general-purpose", "Explore", "tester"],
   );
-  // 即使调用方漏了 general-purpose，也必须补回；否则 Agent 省略 subagent_type 时会找不到 profile。
   assert.deepEqual(
     normalizeAgentProfiles([], { visibleNames: ["tester"] }).map((profile) => profile.name),
-    ["general-purpose", "tester"],
+    ["general-purpose", "Explore", "tester"],
+  );
+  assert.deepEqual(
+    normalizeAgentProfiles([], { visibleNames: [] }).map((profile) => profile.name),
+    ["general-purpose", "Explore"],
   );
 });
 
-test("Agent 工具描述只包含选中的角色", () => {
+test("Agent 工具描述包含通用子代理与选中专业角色，其他专业角色仍隐藏", () => {
   const description = formatAgentProfilesForPrompt([], {
-    visibleNames: ["general-purpose", "Explore", "tester"],
+    visibleNames: ["tester"],
   });
+  assert.ok(description?.includes("- general-purpose:"));
+  assert.ok(description?.includes("- Explore:"));
   assert.ok(description?.includes("- tester:"));
+  assert.equal(description?.includes("- reviewer:"), false);
   assert.equal(description?.includes("- architect:"), false);
   assert.equal(description?.includes("- frontend:"), false);
 });

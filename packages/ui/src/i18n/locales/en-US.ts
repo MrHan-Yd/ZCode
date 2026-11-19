@@ -7167,7 +7167,14 @@ const enUS: Record<string, string> = {
   "chat.orchestration.trigger.tooltipOff": "Let a planned team execute this task.",
   "chat.orchestration.trigger.team": "Choose orchestration team",
   "chat.orchestration.picker.title": "Orchestration team",
-  "chat.orchestration.picker.description": "Select the roles the main session may schedule.",
+  "chat.orchestration.picker.description":
+    "Generic execution and search are always available; select additional specialist roles.",
+  "chat.orchestration.picker.selectAll": "Select all",
+  "chat.orchestration.picker.selectAll.description":
+    "Select every available specialist, regardless of the search filter.",
+  "chat.orchestration.picker.clearAll": "Clear all",
+  "chat.orchestration.picker.clearAll.description":
+    "Clear every specialist role; orchestration turns off when none remain.",
   "chat.orchestration.picker.search": "Search roles or tags",
   "chat.orchestration.picker.writable": "Writable",
   "chat.orchestration.picker.unavailable": "Unavailable",
@@ -7179,14 +7186,12 @@ const enUS: Record<string, string> = {
   "chat.orchestration.picker.limit.soft":
     "Above the recommended size; plans may be harder to review.",
   "chat.orchestration.picker.limit.hard": "Maximum team size reached.",
-  "chat.orchestration.preset.recommended": "Recommended",
-  "chat.orchestration.preset.recommended.description":
-    "A safe default: executor, search, and tests.",
   "chat.orchestration.preset.fullStack": "Full stack",
   "chat.orchestration.preset.fullStack.description":
-    "Architecture, design, frontend, backend, and tests.",
+    "Architecture, design, frontend, backend, tests, and review.",
   "chat.orchestration.preset.solo": "Lean",
-  "chat.orchestration.preset.solo.description": "One executor plus tests.",
+  "chat.orchestration.preset.solo.description":
+    "Only add review; generic execution and search are always available.",
   "chat.orchestration.bar.label": "Orchestrating",
   "chat.orchestration.bar.progress": "{completed}/{total} done · {running} running",
   "chat.orchestration.bar.view": "View plan",

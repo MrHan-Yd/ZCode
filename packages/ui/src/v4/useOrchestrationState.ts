@@ -30,6 +30,8 @@ const IDLE_CONFIG: OrchestrationConfigState = {
   maxConcurrency: 3,
 };
 const POLL_MS = 3_000;
+/** 断线/重连后沿用同一节奏重试；不因一次 RPC 失败把编排状态永久钉在 error。 */
+const ERROR_RETRY_MS = 3_000;
 
 export function useOrchestrationState(input: {
   sessionId: string | null;
@@ -48,6 +50,8 @@ export function useOrchestrationState(input: {
   }>({ status: "idle", config: IDLE_CONFIG, runs: [], sessionId: null });
   const [generation, setGeneration] = useState(0);
   const unsupportedSessionRef = useRef<string | null>(null);
+  /** 同一个错误文本只告警一次；重连重试期间不刷屏。 */
+  const loggedErrorRef = useRef<string | null>(null);
 
   const refresh = useCallback(() => setGeneration((value) => value + 1), []);
 
@@ -69,6 +73,7 @@ export function useOrchestrationState(input: {
     orchestrationState({ sessionId, limit: 8 }).then(
       (result: V4ConversationOrchestrationStateResult) => {
         if (!alive) return;
+        loggedErrorRef.current = null;
         setState({ status: "ready", config: result.config, runs: result.runs, sessionId });
       },
       (error: unknown) => {
@@ -78,10 +83,11 @@ export function useOrchestrationState(input: {
           setState({ status: "unsupported", config: IDLE_CONFIG, runs: [], sessionId });
           return;
         }
-        logger.warn("[orchestration] 读取状态失败", {
-          error: error instanceof Error ? error.message : String(error),
-          sessionId,
-        });
+        const message = error instanceof Error ? error.message : String(error);
+        if (loggedErrorRef.current !== message) {
+          loggedErrorRef.current = message;
+          logger.warn("[orchestration] 读取状态失败", { error: message, sessionId });
+        }
         setState({ status: "error", config: IDLE_CONFIG, runs: [], sessionId });
       },
     );
@@ -92,11 +98,12 @@ export function useOrchestrationState(input: {
 
   const shouldPoll =
     state.status === "ready" && (state.config.enabled || state.runs.some((run) => run.active));
+  const shouldRetryAfterError = state.status === "error";
   useEffect(() => {
-    if (!shouldPoll) return;
-    const timer = window.setInterval(refresh, POLL_MS);
+    if (!shouldPoll && !shouldRetryAfterError) return;
+    const timer = window.setInterval(refresh, shouldRetryAfterError ? ERROR_RETRY_MS : POLL_MS);
     return () => window.clearInterval(timer);
-  }, [refresh, shouldPoll]);
+  }, [refresh, shouldPoll, shouldRetryAfterError]);
 
   return { status: state.status, config: state.config, runs: state.runs, refresh };
 }

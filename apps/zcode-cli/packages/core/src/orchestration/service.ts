@@ -10,6 +10,7 @@ import {
   OrchestrationStoreError,
   type OrchestrationArtifactStoragePort,
   type OrchestrationAttemptOutcome,
+  type OrchestrationAttemptRecord,
   type OrchestrationChildReference,
   type OrchestrationJournalPort,
   type OrchestrationRunOwner,
@@ -25,13 +26,17 @@ import { SubagentOrchestrationDispatchAdapter } from "./subagent-dispatch-adapte
 import { fitContentWithSuffix } from "../tool/executor/result-content-projection.js";
 import {
   ORCHESTRATION_DEFAULT_MAX_CONCURRENCY,
-  ORCHESTRATION_DEFAULT_TEAM,
   resolveOrchestrationMaxConcurrency,
   resolveOrchestrationTeam,
   resolveOrchestrationWritableRoles,
 } from "./tool-policy.js";
 
 const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled", "interrupted"]);
+
+function isLiveAttempt(attempt: OrchestrationAttemptRecord): boolean {
+  return attempt.status === "claimed" || attempt.status === "running";
+}
+
 const COMPLETION_NOTICE_MAX_BYTES = 12 * 1024;
 const PROMPT_STATE_MAX_BYTES = 4 * 1024;
 const PROMPT_STATE_MAX_ACTIVE_RUNS = 4;
@@ -57,6 +62,16 @@ export interface StartOrchestrationRunInput {
   context: OrchestrationDispatchContext;
 }
 
+/** 冷恢复结果：只报告事实，日志由 runtime 决定落点。 */
+export interface OrchestrationRestoreReport {
+  /** 从 journal 读出的有效 run 数（已截断到实现的恢复上限）。 */
+  records: number;
+  /** 因缺少 terminal 证据被标记 interrupted 的 run 数。 */
+  interrupted: number;
+  /** 读取失败（损坏 / 版本未知 / owner 不匹配）的 run 快照数；原文件保留。 */
+  invalidRecords: number;
+}
+
 export interface AmendOrchestrationRunInput extends StartOrchestrationRunInput {
   runId: string;
 }
@@ -79,6 +94,8 @@ export class OrchestrationService implements OrchestrationToolPort {
    * 阻塞在文件锁上；所有 store 调用都经过带缓存的端口，保证这里至多落后一次提交。
    */
   private readonly records = new Map<string, OrchestrationRunRecord>();
+  /** 冷恢复只做一次；并发调用共享同一个 Promise。 */
+  private restorePromise?: Promise<OrchestrationRestoreReport>;
 
   constructor(private readonly options: OrchestrationServiceOptions) {
     this.team = options.team;
@@ -101,7 +118,7 @@ export class OrchestrationService implements OrchestrationToolPort {
 
   /** 当前会话冻结的团队；UI 只读投影与后续 run 共用同一个解析结果。 */
   currentTeam(): readonly string[] {
-    return this.team ?? ORCHESTRATION_DEFAULT_TEAM;
+    return resolveOrchestrationTeam(this.team);
   }
 
   currentMaxConcurrency(): number {
@@ -143,6 +160,44 @@ export class OrchestrationService implements OrchestrationToolPort {
       if (record) active.push(structuredClone(record));
     }
     return active;
+  }
+
+  /**
+   * 冷恢复：把 journal 里的历史 run 读回只读投影，并把「有在飞 attempt 却没有 terminal
+   * 证据」的 run 标记为 interrupted。
+   *
+   * 只由持有父 session owner/lease 的 runtime 在 resume 时调用。已完成的 run 保持原状；
+   * 未领取的 pending 步骤保留 pending，不猜测成功也不自动重放写入。重复调用复用同一次
+   * 读取结果，避免 UI 轮询把文件 IO 放大。
+   */
+  restore(): Promise<OrchestrationRestoreReport> {
+    this.restorePromise ??= this.performRestore().catch((error: unknown) => {
+      // 恢复失败不能永久污染 promise：下一次显式调用仍有机会重试。
+      this.restorePromise = undefined;
+      throw error;
+    });
+    return this.restorePromise;
+  }
+
+  private async performRestore(): Promise<OrchestrationRestoreReport> {
+    const listing = (await this.options.journal.list?.()) ?? {
+      records: [],
+      invalidRecords: 0,
+    };
+    let interrupted = 0;
+    for (const record of listing.records) {
+      this.remember(record);
+      // 只有存在 claimed/running attempt 的 run 才需要收口；正常终态 replay 不会触发写。
+      if (!record.attempts.some(isLiveAttempt)) continue;
+      const recovered = await this.store.recover(record.runId);
+      this.remember(recovered);
+      interrupted += 1;
+    }
+    return {
+      records: listing.records.length,
+      interrupted,
+      invalidRecords: listing.invalidRecords,
+    };
   }
 
   /**

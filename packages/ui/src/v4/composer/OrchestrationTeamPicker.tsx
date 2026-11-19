@@ -1,5 +1,13 @@
 import { useMemo, useState } from "react";
-import { CheckIcon, Settings2Icon, SparklesIcon } from "lucide-react";
+import {
+  CheckIcon,
+  FeatherIcon,
+  LayersIcon,
+  ListChecksIcon,
+  ListXIcon,
+  Settings2Icon,
+  type LucideIcon,
+} from "lucide-react";
 import {
   TID_V4_ORCHESTRATION_TEAM_PICKER,
   TID_V4_ORCHESTRATION_TEAM_ROLE,
@@ -15,16 +23,25 @@ import {
   describeOrchestrationRoleModel,
   filterOrchestrationRoles,
   getOrchestrationTeamLimits,
+  isOrchestrationSelectAllApplied,
   matchOrchestrationPreset,
   orchestrationTeamSizeNotice,
   type OrchestrationRoleView,
   type OrchestrationTeamPreset,
+  type OrchestrationTeamPresetId,
 } from "@/v4/composer/orchestrationTeamModel.js";
+
+/** 预设图标与输入框外的提示词增强保持区分。 */
+const PRESET_ICONS: Record<OrchestrationTeamPresetId, LucideIcon> = {
+  "full-stack": LayersIcon,
+  solo: FeatherIcon,
+};
 
 export interface OrchestrationTeamPickerProps {
   team: readonly string[];
   roles: readonly OrchestrationRoleView[];
   onToggleRole: (role: string) => void;
+  onToggleSelectAll: () => void;
   onApplyPreset: (preset: OrchestrationTeamPreset) => void;
   onOpenRoleSettings: (role?: string) => void;
 }
@@ -37,6 +54,7 @@ export function OrchestrationTeamPicker({
   team,
   roles,
   onToggleRole,
+  onToggleSelectAll,
   onApplyPreset,
   onOpenRoleSettings,
 }: OrchestrationTeamPickerProps) {
@@ -47,10 +65,16 @@ export function OrchestrationTeamPicker({
   const visibleRoles = useMemo(() => filterOrchestrationRoles(roles, query), [query, roles]);
   const sizeNotice = orchestrationTeamSizeNotice(team);
   const limits = getOrchestrationTeamLimits();
+  const selectedCount = roles.filter((role) => selected.has(role.name)).length;
+  const allSelected = isOrchestrationSelectAllApplied(team, roles);
+  const hasAvailableRole = roles.some((role) => role.available);
 
   return (
-    <div data-testid={TID_V4_ORCHESTRATION_TEAM_PICKER} className="flex min-h-0 flex-col gap-3">
-      <div className="flex flex-col gap-0.5">
+    <div
+      data-testid={TID_V4_ORCHESTRATION_TEAM_PICKER}
+      className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden"
+    >
+      <div className="flex shrink-0 flex-col gap-0.5">
         <h3 className="text-ui-base font-medium text-foreground">
           {intl.formatMessage({ id: "chat.orchestration.picker.title" })}
         </h3>
@@ -59,21 +83,48 @@ export function OrchestrationTeamPicker({
         </p>
       </div>
 
-      <div className="flex flex-wrap gap-1.5">
-        {ORCHESTRATION_TEAM_PRESETS.map((preset) => (
-          <Button
-            key={preset.id}
-            type="button"
-            size="sm"
-            variant={presetId === preset.id ? "secondary" : "ghost"}
-            className="h-7 rounded-lg px-2 text-ui-sm"
-            onClick={() => onApplyPreset(preset)}
-            title={intl.formatMessage({ id: preset.descriptionKey })}
-          >
-            <SparklesIcon className="size-3.5" aria-hidden />
-            {intl.formatMessage({ id: preset.labelKey })}
-          </Button>
-        ))}
+      <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+        {ORCHESTRATION_TEAM_PRESETS.map((preset) => {
+          const Icon = PRESET_ICONS[preset.id];
+          return (
+            <Button
+              key={preset.id}
+              type="button"
+              size="sm"
+              variant={presetId === preset.id ? "secondary" : "ghost"}
+              className="h-7 rounded-lg px-2 text-ui-sm"
+              onClick={() => onApplyPreset(preset)}
+              title={intl.formatMessage({ id: preset.descriptionKey })}
+            >
+              <Icon className="size-3.5" aria-hidden />
+              {intl.formatMessage({ id: preset.labelKey })}
+            </Button>
+          );
+        })}
+        <Button
+          type="button"
+          size="sm"
+          variant={allSelected ? "secondary" : "ghost"}
+          className="ml-auto h-7 rounded-lg px-2 text-ui-sm"
+          disabled={!hasAvailableRole}
+          onClick={onToggleSelectAll}
+          title={intl.formatMessage({
+            id: allSelected
+              ? "chat.orchestration.picker.clearAll.description"
+              : "chat.orchestration.picker.selectAll.description",
+          })}
+        >
+          {allSelected ? (
+            <ListXIcon className="size-3.5" aria-hidden />
+          ) : (
+            <ListChecksIcon className="size-3.5" aria-hidden />
+          )}
+          {intl.formatMessage({
+            id: allSelected
+              ? "chat.orchestration.picker.clearAll"
+              : "chat.orchestration.picker.selectAll",
+          })}
+        </Button>
       </div>
 
       <Input
@@ -81,10 +132,10 @@ export function OrchestrationTeamPicker({
         onChange={(event) => setQuery(event.target.value)}
         placeholder={intl.formatMessage({ id: "chat.orchestration.picker.search" })}
         aria-label={intl.formatMessage({ id: "chat.orchestration.picker.search" })}
-        className="h-8"
+        className="h-8 shrink-0"
       />
 
-      <div className="flex min-h-0 flex-col gap-1 overflow-y-auto pr-0.5">
+      <div className="flex min-h-0 flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto pr-0.5">
         {visibleRoles.map((role) => {
           const checked = selected.has(role.name);
           const model = describeOrchestrationRoleModel(role);
@@ -92,8 +143,9 @@ export function OrchestrationTeamPicker({
             <div
               key={role.name}
               data-testid={testId(TID_V4_ORCHESTRATION_TEAM_ROLE, role.name)}
+              // 限高列表会压缩 flex 子项；行必须保留内容高度，避免描述与下一角色重叠。
               className={cn(
-                "group flex min-h-11 items-start gap-2.5 rounded-lg px-2 py-1.5",
+                "group flex min-h-11 shrink-0 items-start gap-2.5 rounded-lg px-2 py-1.5",
                 checked ? "bg-selected" : "hover:bg-hover",
                 !role.available && "opacity-60",
               )}
@@ -105,7 +157,8 @@ export function OrchestrationTeamPicker({
                 aria-label={role.name}
                 disabled={!role.available}
                 onClick={() => onToggleRole(role.name)}
-                className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm border border-input-border bg-input text-foreground-inverse disabled:cursor-not-allowed"
+                // 输入底色不是反色底；反色文字在明主题上会让选中的勾消失。
+                className="mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm border border-input-border bg-input text-foreground disabled:cursor-not-allowed"
               >
                 {checked ? <CheckIcon className="size-3" aria-hidden /> : null}
               </button>
@@ -170,11 +223,11 @@ export function OrchestrationTeamPicker({
         ) : null}
       </div>
 
-      <div className="flex items-center justify-between gap-2 border-t border-border/60 pt-2 text-ui-xs text-foreground-subtle">
+      <div className="flex shrink-0 items-center justify-between gap-2 border-t border-border/60 pt-2 text-ui-xs text-foreground-subtle">
         <span>
           {intl.formatMessage(
             { id: "chat.orchestration.picker.count" },
-            { count: String(team.length), max: String(limits.hard) },
+            { count: String(selectedCount), max: String(limits.hard) },
           )}
         </span>
         {sizeNotice ? (

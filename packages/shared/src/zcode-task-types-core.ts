@@ -342,6 +342,18 @@ export interface ZCodeTaskMeta {
   changeSummary?: ZCodeTaskChangeSummary;
   /** zcode-cli /goal 会话目标；null 表示已显式清空。 */
   target?: ZCodeTaskGoal | null;
+  /**
+   * 编排模式配置投影；经典任务不写该字段。
+   *
+   * 权威仍是 CLI session entry `runtime/orchestration`。这里只供任务列表与冷列表展示，
+   * snapshot 同步不带该字段时必须保留已存值，不能用 undefined 冲掉。
+   */
+  orchestration?: ZCodeTaskOrchestrationConfig;
+}
+export interface ZCodeTaskOrchestrationConfig {
+  enabled: boolean;
+  team: string[];
+  maxConcurrency: number;
 }
 export interface ZCodeTaskChangeSummary {
   /** 整个任务里涉及过的唯一文件数 */

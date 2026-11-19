@@ -35,6 +35,7 @@ import {
   restoreSessionShellEnvironmentSelectionForResume,
 } from "./session-shell-environment.js";
 import { repairPersistedRemoteSessionPaths } from "../helpers/persisted-remote-session-path-repair.js";
+import { restoreOrchestrationFromSession } from "./orchestration.js";
 import {
   restoreWorkspaceCheckpointEntries,
   restoreWorkspaceFileRewindEntries,
@@ -214,6 +215,11 @@ export async function resumeFromStore(
   if (savedExecution.success && options?.modeOverride === undefined) {
     Object.assign(this.config, savedExecution.data);
   }
+
+  // 编排配置与 run journal 的冷恢复：entry 是唯一持久事实源。放在 workspace/context
+  // 已恢复之后，owner（workspacePath / identity / sessionId）才是会话真实身份；
+  // 放在 sessionPersisted=true 之前，恢复本身不会再写一份 entry。
+  await restoreOrchestrationFromSession.call(this, traceContext);
 
   await restorePermissionGrantMarker(this, traceContext);
 

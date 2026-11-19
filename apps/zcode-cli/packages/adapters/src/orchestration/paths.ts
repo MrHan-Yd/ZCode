@@ -43,6 +43,11 @@ export class OrchestrationStoragePaths {
     return join(this.directory, kind, `${orchestrationDigest(key)}.json`);
   }
 
+  /** 冷恢复只在 runs 目录里枚举快照；artifacts 由 run 记录引用，不参与列表。 */
+  get runsDirectory(): string {
+    return join(this.directory, "runs");
+  }
+
   async prepare(filePath: string): Promise<void> {
     await mkdir(this.rootDirectory, { recursive: true });
     const root = await realpath(this.rootDirectory);

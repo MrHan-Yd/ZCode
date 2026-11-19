@@ -106,14 +106,41 @@ test("executor 硬拒绝：即使工具已注册，编排会话调用 Write 也�
   assert.match(result.error?.message ?? "", /disabled in orchestration mode/);
 });
 
-test("团队校验：默认团队、general-purpose 必选、未知角色与重复角色被拒", () => {
+test("团队校验：通用角色隐式保留，未知角色与重复角色仍被拒", () => {
   assert.deepEqual(resolveOrchestrationTeam(undefined), [...DEFAULT_ORCHESTRATION_TEAM]);
-  assert.throws(() => resolveOrchestrationTeam(["Explore"]), /general-purpose/);
+  assert.deepEqual(resolveOrchestrationTeam([]), [...DEFAULT_ORCHESTRATION_TEAM]);
+  assert.deepEqual(DEFAULT_ORCHESTRATION_TEAM, ["general-purpose", "Explore", "reviewer"]);
+  assert.deepEqual(resolveOrchestrationTeam(["Explore"]), ["general-purpose", "Explore"]);
+  assert.deepEqual(resolveOrchestrationTeam(["tester", "reviewer"]), [
+    "general-purpose",
+    "Explore",
+    "tester",
+    "reviewer",
+  ]);
+  assert.deepEqual(resolveOrchestrationTeam(["general-purpose", "tester"]), [
+    "general-purpose",
+    "Explore",
+    "tester",
+  ]);
   assert.throws(() => resolveOrchestrationTeam(["general-purpose", "nope"]), /not a built-in/);
   assert.throws(
     () => resolveOrchestrationTeam(["general-purpose", "general-purpose"]),
     /more than once/,
   );
+  assert.throws(
+    () =>
+      resolveOrchestrationTeam([
+        "architect",
+        "frontend",
+        "backend",
+        "ui-designer",
+        "tester",
+        "reviewer",
+        "extra",
+      ]),
+    /not a built-in/,
+  );
+  assert.throws(() => resolveOrchestrationTeam(["tester", ""]), /empty role/);
   assert.deepEqual(resolveOrchestrationWritableRoles(["general-purpose", "Explore", "tester"]), [
     "general-purpose",
     "tester",

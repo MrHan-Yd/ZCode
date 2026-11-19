@@ -1,5 +1,7 @@
 import {
   BUILT_IN_SUBAGENT_DEFINITIONS,
+  GENERIC_SUBAGENT_NAMES,
+  ORCHESTRATION_DEFAULT_TEAM,
   ORCHESTRATION_MAX_TEAM_SIZE,
   ORCHESTRATION_SOFT_TEAM_SIZE,
   normalizeOrchestrationTeamSelection,
@@ -10,11 +12,11 @@ import {
 /**
  * 编排团队选择器的纯模型。
  *
- * 组件只负责渲染；预设、搜索、上限与“不可移除 general-purpose”都在这里固定成纯函数，
+ * 组件只负责渲染；预设、搜索、专业上限与通用角色默认保留都在这里固定成纯函数，
  * 便于直接测试。真正的权威校验仍在 CLI（`resolveOrchestrationTeam`）。
  */
 
-export type OrchestrationTeamPresetId = "recommended" | "full-stack" | "solo";
+export type OrchestrationTeamPresetId = "full-stack" | "solo";
 
 export interface OrchestrationTeamPreset {
   id: OrchestrationTeamPresetId;
@@ -23,24 +25,23 @@ export interface OrchestrationTeamPreset {
   roles: readonly string[];
 }
 
+const genericRoleNames = new Set<string>(GENERIC_SUBAGENT_NAMES);
+const specialistDefinitions = BUILT_IN_SUBAGENT_DEFINITIONS.filter(
+  (definition) => !genericRoleNames.has(definition.name),
+);
+
 export const ORCHESTRATION_TEAM_PRESETS: readonly OrchestrationTeamPreset[] = [
-  {
-    id: "recommended",
-    labelKey: "chat.orchestration.preset.recommended",
-    descriptionKey: "chat.orchestration.preset.recommended.description",
-    roles: ["general-purpose", "Explore", "tester"],
-  },
   {
     id: "full-stack",
     labelKey: "chat.orchestration.preset.fullStack",
     descriptionKey: "chat.orchestration.preset.fullStack.description",
-    roles: ["general-purpose", "architect", "ui-designer", "frontend", "backend", "tester"],
+    roles: specialistDefinitions.map((definition) => definition.name),
   },
   {
     id: "solo",
     labelKey: "chat.orchestration.preset.solo",
     descriptionKey: "chat.orchestration.preset.solo.description",
-    roles: ["general-purpose", "tester"],
+    roles: ORCHESTRATION_DEFAULT_TEAM.filter((name) => !genericRoleNames.has(name)),
   },
 ];
 
@@ -54,11 +55,7 @@ export interface OrchestrationRoleView {
   modelSelection?: AgentSummary["modelSelectionOverride"];
 }
 
-export type OrchestrationTeamToggleReason =
-  | "locked"
-  | "hard_limit"
-  | "unavailable"
-  | "at_least_one_writable";
+export type OrchestrationTeamToggleReason = "locked" | "hard_limit" | "unavailable";
 
 export interface OrchestrationTeamToggleResult {
   team: string[];
@@ -69,7 +66,7 @@ export function buildOrchestrationRoleViews(
   agents: readonly AgentSummary[],
 ): OrchestrationRoleView[] {
   const byName = new Map(agents.map((agent) => [agent.name, agent]));
-  return BUILT_IN_SUBAGENT_DEFINITIONS.map((definition) => {
+  return specialistDefinitions.map((definition) => {
     const agent = byName.get(definition.name);
     return {
       name: definition.name,
@@ -109,15 +106,11 @@ export function toggleOrchestrationRole(
   roles: readonly OrchestrationRoleView[],
 ): OrchestrationTeamToggleResult {
   const normalized = normalizeOrchestrationTeamSelection(team);
+  if (genericRoleNames.has(role)) return { team: normalized, reason: "locked" };
   const view = findOrchestrationRole(roles, role);
   if (!view) return { team: normalized };
   if (!view.available) return { team: normalized, reason: "unavailable" };
   if (normalized.includes(role)) {
-    // general-purpose 是执行兜底；允许移除会让所有实现步骤在计划校验阶段被拒。
-    if (role === "general-purpose") return { team: normalized, reason: "locked" };
-    if (isLastWritableRole(normalized, roles, role)) {
-      return { team: normalized, reason: "at_least_one_writable" };
-    }
     return { team: normalized.filter((name) => name !== role) };
   }
   if (normalized.length >= ORCHESTRATION_MAX_TEAM_SIZE) {
@@ -130,12 +123,57 @@ export function applyOrchestrationPreset(
   preset: OrchestrationTeamPreset,
   roles: readonly OrchestrationRoleView[],
 ): string[] {
-  // 角色目录尚未加载时不把预设过滤成只剩 general-purpose：定义来自 shared，可直接使用。
+  // 角色目录尚未加载时保留预设；通用子代理由共享归一化补齐，不参与可用专业筛选。
   if (roles.length === 0) return normalizeOrchestrationTeamSelection(preset.roles);
   const available = new Set(roles.filter((role) => role.available).map((role) => role.name));
-  return normalizeOrchestrationTeamSelection(
-    preset.roles.filter((role) => role === "general-purpose" || available.has(role)),
-  );
+  return normalizeOrchestrationTeamSelection(preset.roles.filter((role) => available.has(role)));
+}
+
+/** “全选”是否已覆盖当前全部可用专业角色；没有可判定角色时不视为已全选。 */
+export function isOrchestrationSelectAllApplied(
+  team: readonly string[],
+  roles: readonly OrchestrationRoleView[],
+): boolean {
+  const available = roles.filter((role) => role.available);
+  if (available.length === 0) return false;
+  const selected = new Set(normalizeOrchestrationTeamSelection(team));
+  return available.every((role) => selected.has(role.name));
+}
+
+/**
+ * “全选”按钮的一次点击语义：已全选时清空专业角色，否则选择全部可用专业角色。
+ *
+ * 清空后只剩通用子代理，交由 SessionPane 按“开启必须有专业角色”关闭编排；
+ * 搜索词不影响全选范围，不可用角色不会被选中。
+ */
+export function toggleOrchestrationSelectAll(
+  team: readonly string[],
+  roles: readonly OrchestrationRoleView[],
+): string[] {
+  if (isOrchestrationSelectAllApplied(team, roles)) return normalizeOrchestrationTeamSelection([]);
+  const fullStack = ORCHESTRATION_TEAM_PRESETS.find((preset) => preset.id === "full-stack")!;
+  return applyOrchestrationPreset(fullStack, roles);
+}
+
+/**
+ * 编排开启至少需要一个专业角色。
+ *
+ * 通用子代理始终随归一化进入团队，因此不能用 `team.length === 0` 判断“没选角色”；
+ * 这里剔除通用角色，供开启、取消勾选与预设写入路径共用同一条判定。
+ */
+export function hasSelectedOrchestrationRole(team: readonly string[]): boolean {
+  return normalizeOrchestrationTeamSelection(team).some((name) => !genericRoleNames.has(name));
+}
+
+export function resolveOrchestrationTeamOnEnable(
+  team: readonly string[],
+  roles: readonly OrchestrationRoleView[],
+): string[] {
+  const normalized = normalizeOrchestrationTeamSelection(team);
+  // 通用子代理不代表专业选择；默认精简不能随按钮排序变成全栈，已有专业选择保持不变。
+  if (hasSelectedOrchestrationRole(normalized)) return normalized;
+  const solo = ORCHESTRATION_TEAM_PRESETS.find((preset) => preset.id === "solo")!;
+  return applyOrchestrationPreset(solo, roles);
 }
 
 export function matchOrchestrationPreset(
@@ -173,19 +211,12 @@ export function getWritableRoleNames(roles: readonly OrchestrationRoleView[]): s
   return roles.filter((role) => role.canWrite).map((role) => role.name);
 }
 
-function isLastWritableRole(
-  team: readonly string[],
-  roles: readonly OrchestrationRoleView[],
-  removing: string,
-): boolean {
-  const writable = new Set(roles.filter((role) => role.canWrite).map((role) => role.name));
-  const remainingWritable = team.filter((role) => role !== removing && writable.has(role));
-  return remainingWritable.length === 0;
-}
-
-/** 供选择器渲染的目录版本；避免组件直接依赖 shared 常量。 */
+/** 面板人数只计算专业角色；协议中的通用子代理不占可选名额。 */
 export function getOrchestrationTeamLimits(): { soft: number; hard: number } {
-  return { soft: ORCHESTRATION_SOFT_TEAM_SIZE, hard: ORCHESTRATION_MAX_TEAM_SIZE };
+  return {
+    soft: ORCHESTRATION_SOFT_TEAM_SIZE - GENERIC_SUBAGENT_NAMES.length,
+    hard: ORCHESTRATION_MAX_TEAM_SIZE - GENERIC_SUBAGENT_NAMES.length,
+  };
 }
 
 export type { BuiltInSubagentDefinition };

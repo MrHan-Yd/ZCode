@@ -35,6 +35,7 @@ import {
   type V4ComposerDraft,
 } from "@/v4/composer/composerDraftStore.js";
 import { resolveAppFollowupMode } from "@/v4/composer/followupModeSettings.js";
+import { hasSelectedOrchestrationRole } from "@/v4/composer/orchestrationTeamModel.js";
 import { logger } from "@/logger.js";
 import { useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 
@@ -135,16 +136,20 @@ export function useDraftConfigControl(params: {
   const appFollowupMode = resolveAppFollowupMode(sharedSettings);
   const scopeId = sessionId ?? V4_DRAFT_SCOPE_ROOT;
   const scopeKey = JSON.stringify([workspaceKey, scopeId]);
-  const loadedScope = useMemo(
-    () => ({
-      scopeKey,
-      draft: readV4ComposerDraft(workspacePath, workspaceIdentity, scopeId) ?? {
-        text: "",
-        updatedAt: 0,
-      },
-    }),
-    [scopeKey],
-  );
+  const loadedScope = useMemo(() => {
+    const stored = readV4ComposerDraft(workspacePath, workspaceIdentity, scopeId) ?? {
+      text: "",
+      updatedAt: 0,
+    };
+    // 旧草稿可能留下“编排开启但专业角色全被取消”的状态；该状态没有可派发角色，
+    // 按关闭恢复，用户重新开启时会补精简团队。
+    const draft =
+      stored.orchestrationEnabled === true &&
+      !hasSelectedOrchestrationRole(stored.subagentPool ?? [])
+        ? { ...stored, orchestrationEnabled: false }
+        : stored;
+    return { scopeKey, draft };
+  }, [scopeKey]);
   const [storedState, setStoredState] = useState(loadedScope);
   let currentState = storedState.scopeKey === scopeKey ? storedState : loadedScope;
   let draft = currentState.draft;

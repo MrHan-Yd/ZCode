@@ -127,6 +127,8 @@ function setup(directory: string, child: ControlledSubagent) {
     journal: new NodeOrchestrationJournal({ rootDirectory: directory, owner }),
     artifactStorage: new NodeOrchestrationArtifactStorage({ rootDirectory: directory, owner }),
     subagents: child.port,
+    // 计划含测试步骤，必须显式选测试角色；不能依赖缺省精简团队放宽派发边界。
+    team: ["general-purpose", "Explore", "tester"],
     now: orchestrationClock(),
     notify: ({ text }) => notices.push(text),
   });
@@ -204,7 +206,10 @@ test("排队语义：whenIdle 只在 run 真正收口后返回", async () => {
     const child = new ControlledSubagent(0);
     const { service, context, notices } = setup(directory, child);
     try {
-      await service.start({ plan: interruptPlan(), context });
+      // 用例按启动顺序完成 child，计划必须明确串行；独立步骤可并行会让 finishLatest 重复完成同一 child。
+      const plan = interruptPlan();
+      plan.steps[1]!.dependsOn = ["build"];
+      await service.start({ plan, context });
       await waitFor(() => child.started.length === 1, "first child starts");
 
       let idle = false;

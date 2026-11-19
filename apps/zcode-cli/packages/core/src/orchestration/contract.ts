@@ -10,6 +10,7 @@ export type {
   OrchestrationAttemptStatus,
   OrchestrationChildReference,
   OrchestrationEventType,
+  OrchestrationJournalListing,
   OrchestrationJournalPort,
   OrchestrationJournalUpdate,
   OrchestrationRunEvent,

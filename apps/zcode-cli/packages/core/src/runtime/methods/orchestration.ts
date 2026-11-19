@@ -3,12 +3,13 @@ import {
   type SessionEntryInfo,
   type TraceContext,
 } from "@zcode/contracts";
+import { normalizeOrchestrationTeamSelection } from "@zcode/shared";
 import type { OrchestrationConfigState } from "@zcode/shared/zcode-protocol-v4";
-import type {
-  V4ConversationOrchestrationStateResult,
-} from "@zcode/shared/zcode-protocol-v4";
+import type { V4ConversationOrchestrationStateResult } from "@zcode/shared/zcode-protocol-v4";
 import type { AgentRuntimeInternal } from "../internal.js";
+import { traceContextToLogContext } from "../deps.js";
 import { rebuildContextPrefix } from "./context-refresh.js";
+import { parseStoredOrchestrationConfig } from "../../orchestration/session-config.js";
 import {
   isOrchestratorRuntimeConfig,
   resolveOrchestrationMaxConcurrency,
@@ -39,6 +40,7 @@ export async function setOrchestrationConfig(
   this: AgentRuntimeInternal,
   input: SetOrchestrationConfigInput,
   traceContext?: TraceContext,
+  options?: { persist?: boolean },
 ): Promise<OrchestrationConfigState> {
   const team = input.enabled
     ? resolveOrchestrationTeam(input.team)
@@ -49,37 +51,174 @@ export async function setOrchestrationConfig(
     input.maxConcurrency ?? this.config.orchestration?.maxConcurrency,
   );
 
-  await persistOrchestrationConfig(this, {
-    enabled: input.enabled,
-    team: [...team],
-    maxConcurrency,
-  });
+  return await applyOrchestrationConfiguration(
+    this,
+    { enabled: input.enabled, team: [...team], maxConcurrency },
+    traceContext,
+    options?.persist !== false,
+  );
+}
 
-  this.config.orchestration = {
-    enabled: input.enabled,
+/**
+ * 配置应用本体：写内存配置、按需建 service、重注册工具面。
+ *
+ * 冷恢复与显式命令共用这一条路径，区别只在是否回写 session entry；
+ * `persist=false` 避免 resume 时把同值 entry 的 updated 时间刷成「刚刚」。
+ */
+async function applyOrchestrationConfiguration(
+  runtime: AgentRuntimeInternal,
+  config: OrchestrationConfigState,
+  traceContext: TraceContext | undefined,
+  persist: boolean,
+): Promise<OrchestrationConfigState> {
+  const { enabled, team, maxConcurrency } = config;
+  if (persist) {
+    await persistOrchestrationConfig(runtime, { enabled, team, maxConcurrency });
+  }
+
+  runtime.config.orchestration = {
+    enabled,
     team,
     maxConcurrency,
   };
-  if (input.enabled) {
-    const service = this.ensureOrchestrationService?.() ?? this.orchestrationService;
+  if (enabled) {
+    const service = runtime.ensureOrchestrationService?.() ?? runtime.orchestrationService;
     service?.updateConfiguration({ team, maxConcurrency });
   } else {
-    this.orchestrationService?.updateConfiguration({ team, maxConcurrency });
+    runtime.orchestrationService?.updateConfiguration({ team, maxConcurrency });
   }
   // 注册面与执行白名单都读 `config.orchestration`；工具缓存也必须失效，否则本轮仍供旧表。
-  this.refreshBuiltInTools?.();
-  this.invalidateToolCache();
-  if (!this.activeTurn) rebuildContextPrefix(this);
-  this.logger?.info?.("Session orchestration configuration updated", {
-    enabled: input.enabled,
+  runtime.refreshBuiltInTools?.();
+  runtime.invalidateToolCache();
+  if (!runtime.activeTurn) rebuildContextPrefix(runtime);
+  runtime.logger?.info?.("Session orchestration configuration updated", {
+    enabled,
     event: "session.orchestration.updated",
     maxConcurrency,
     module: "core.runtime",
-    sessionId: String(this.sessionId),
+    sessionId: String(runtime.sessionId),
     teamSize: team.length,
-    traceId: (traceContext ?? this.rootTraceContext).traceId,
+    traceId: (traceContext ?? runtime.rootTraceContext).traceId,
   });
-  return orchestrationConfigProjection({ enabled: input.enabled, team, maxConcurrency });
+  return orchestrationConfigProjection({ enabled, team, maxConcurrency });
+}
+
+export interface RestoreOrchestrationResult {
+  enabled: boolean;
+  records: number;
+  interrupted: number;
+  invalidRecords: number;
+}
+
+/**
+ * 冷恢复：从 `runtime/orchestration` entry 还原会话配置，并把 journal 里的 run 读回投影。
+ *
+ * entry 缺席 = 经典会话，什么都不做；entry 损坏 = fail-closed 回经典并落警告，
+ * 不覆盖用户原值。只有配置开启时才需要 run journal；已完成步骤保持完成，
+ * 有在飞 attempt 的 run 标记 interrupted 并暂停，等待用户 amend。
+ */
+export async function restoreOrchestrationFromSession(
+  this: AgentRuntimeInternal,
+  traceContext: TraceContext,
+): Promise<RestoreOrchestrationResult> {
+  const empty: RestoreOrchestrationResult = {
+    enabled: false,
+    records: 0,
+    interrupted: 0,
+    invalidRecords: 0,
+  };
+  if (!this.sessionStore?.sessionEntries) return empty;
+
+  let data: unknown;
+  try {
+    const entries = await this.sessionStore.sessionEntries({
+      sessionID: this.sessionId,
+      type: SESSION_ENTRY_ORCHESTRATION,
+    });
+    data = entries.at(-1)?.data;
+  } catch (error) {
+    this.logger?.warn("Session orchestration entry restore failed", {
+      ...traceContextToLogContext(traceContext),
+      errorMessage: error instanceof Error ? error.message : String(error),
+      event: "session.orchestration.restore_read_failed",
+      module: "core.runtime",
+      sessionId: String(this.sessionId),
+      status: "failed",
+    });
+    return empty;
+  }
+  if (data === undefined) return empty;
+
+  const stored = parseStoredOrchestrationConfig(data);
+  if (!stored) {
+    this.logger?.warn("Session orchestration entry is invalid; falling back to classic mode", {
+      ...traceContextToLogContext(traceContext),
+      event: "session.orchestration.restore_invalid_entry",
+      module: "core.runtime",
+      sessionId: String(this.sessionId),
+    });
+    return empty;
+  }
+
+  try {
+    await applyOrchestrationConfiguration(
+      this,
+      {
+        enabled: stored.enabled,
+        // 旧 entry 可能没有 Explore；补齐默认通用角色，同时保留专业选择，不回写历史。
+        team:
+          stored.team && stored.team.length > 0
+            ? normalizeOrchestrationTeamSelection(stored.team)
+            : [...resolveOrchestrationTeamForPrompt(undefined)],
+        maxConcurrency: resolveOrchestrationMaxConcurrency(stored.maxConcurrency),
+      },
+      traceContext,
+      false,
+    );
+  } catch (error) {
+    this.logger?.warn("Session orchestration entry could not be applied", {
+      ...traceContextToLogContext(traceContext),
+      errorMessage: error instanceof Error ? error.message : String(error),
+      event: "session.orchestration.restore_apply_failed",
+      module: "core.runtime",
+      sessionId: String(this.sessionId),
+    });
+    return empty;
+  }
+
+  if (!stored.enabled) return { ...empty, enabled: false };
+  const service = this.orchestrationService;
+  if (!service) {
+    // 存储端口缺席时工具面仍按配置注册，冷恢复不伪造历史 run。
+    return { ...empty, enabled: true };
+  }
+
+  const report = await service.restore();
+  if (report.invalidRecords > 0) {
+    this.logger?.warn("Orchestration journal contains unreadable run records", {
+      ...traceContextToLogContext(traceContext),
+      event: "session.orchestration.restore_invalid_records",
+      invalidRecords: report.invalidRecords,
+      module: "core.runtime",
+      sessionId: String(this.sessionId),
+    });
+  }
+  if (report.records > 0) {
+    this.logger?.info("Session orchestration runs restored", {
+      ...traceContextToLogContext(traceContext),
+      event: "session.orchestration.restored",
+      interruptedRuns: report.interrupted,
+      module: "core.runtime",
+      restoredRuns: report.records,
+      sessionId: String(this.sessionId),
+    });
+  }
+  return {
+    enabled: true,
+    records: report.records,
+    interrupted: report.interrupted,
+    invalidRecords: report.invalidRecords,
+  };
 }
 
 export function getOrchestrationState(
@@ -87,7 +226,8 @@ export function getOrchestrationState(
 ): V4ConversationOrchestrationStateResult {
   const enabled = isOrchestratorRuntimeConfig(this.config);
   const service = this.orchestrationService;
-  const team = service?.currentTeam() ?? resolveOrchestrationTeamForPrompt(this.config.orchestration?.team);
+  const team =
+    service?.currentTeam() ?? resolveOrchestrationTeamForPrompt(this.config.orchestration?.team);
   const maxConcurrency =
     service?.currentMaxConcurrency() ??
     resolveOrchestrationMaxConcurrency(this.config.orchestration?.maxConcurrency);
@@ -123,7 +263,11 @@ async function persistOrchestrationConfig(
     type: SESSION_ENTRY_ORCHESTRATION,
     touchSession: false,
     time: { created: timestamp, updated: timestamp },
-    data: { enabled: config.enabled, team: [...config.team], maxConcurrency: config.maxConcurrency },
+    data: {
+      enabled: config.enabled,
+      team: [...config.team],
+      maxConcurrency: config.maxConcurrency,
+    },
   };
   await runtime.sessionStore.saveSessionEntry(entry);
 }

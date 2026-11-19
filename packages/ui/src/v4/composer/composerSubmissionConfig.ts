@@ -22,6 +22,15 @@ export interface ComposerSubmissionConfig {
   orchestrationInput?: "guide" | "queue" | "interrupt";
 }
 
+export interface ComposerSubmissionOptions {
+  /**
+   * 运行端是否支持编排。旧 CLI 对 `orchestrationState` 返回 -32601 时调用方传 false，
+   * 提交必须退回经典 payload：旧端 schema 不认 `config.orchestration` /
+   * `orchestrationInput`，带上去会让整个 createSession / sendText 被拒。
+   */
+  orchestrationSupported?: boolean;
+}
+
 /** 在点击提交的瞬间，把 Composer 意图冻结成本次 Submission 的执行配置。 */
 export function createComposerSubmissionConfig(
   composer:
@@ -36,6 +45,7 @@ export function createComposerSubmissionConfig(
     | null
     | undefined,
   view: ModelSelectionView | null,
+  options?: ComposerSubmissionOptions,
 ): ComposerSubmissionConfig | null {
   // 只读子会话和未挂载 Composer 的 SessionPane 不提供草稿；这类场景没有可提交配置，
   // 不能因为渲染提交门禁而读取 undefined 并让整个会话区域崩溃。
@@ -51,6 +61,7 @@ export function createComposerSubmissionConfig(
       ?.models.find((candidate) => candidate.modelId === selection.modelId);
   if (!mode.success || !selection || !model || !validateModelSelectionOptions(model, selection).ok)
     return null;
+  const orchestrationSupported = options?.orchestrationSupported !== false;
   // 不读取 Session 或显示别名；复制所有选择叶子，防止 await 后用户切模改变本次请求。
   return Object.freeze({
     mode: mode.data === "plan" ? "build" : mode.data,
@@ -60,7 +71,7 @@ export function createComposerSubmissionConfig(
       modelId: selection.modelId,
       options: Object.freeze({ reasoningLevel: selection.options!.reasoningLevel! }),
     }),
-    ...(composer.orchestrationEnabled === true
+    ...(orchestrationSupported && composer.orchestrationEnabled === true
       ? {
           orchestration: Object.freeze({
             enabled: true,
@@ -68,7 +79,7 @@ export function createComposerSubmissionConfig(
           }),
         }
       : {}),
-    ...(composer.orchestrationInputMode
+    ...(orchestrationSupported && composer.orchestrationInputMode
       ? { orchestrationInput: composer.orchestrationInputMode }
       : {}),
   });

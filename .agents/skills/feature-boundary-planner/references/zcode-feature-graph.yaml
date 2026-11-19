@@ -142,6 +142,57 @@ nodes:
         symbol: SubagentsSection
       - file: apps/zcode-cli/packages/core/src/tool/handlers/agent.ts
         symbol: agentHandler
+  - id: capability.orchestration-team
+    kind: capability
+    label: Specialist orchestration team with implicit generic subagents
+    aliases: [orchestration team, 编排团队, 专业团队, 通用子代理, 全栈, 精简, 全选, 取消全选]
+    codeSeeds:
+      - file: packages/shared/src/orchestration.ts
+        symbol: normalizeOrchestrationTeamSelection
+      - file: packages/shared/src/subagents-types.ts
+        symbol: GENERIC_SUBAGENT_NAMES
+    invariants:
+      - "general-purpose and Explore are always available and never manually selected; the picker contains six specialists."
+      - "The effective team remains a flat list of up to eight roles; classic Agent behavior and child recursion limits are unchanged."
+  - id: surface.orchestration-team-picker
+    kind: ui-surface
+    label: Composer specialist role presets and select-all
+    codeSeeds:
+      - file: packages/ui/src/v4/composer/OrchestrationTeamPicker.tsx
+        symbol: OrchestrationTeamPicker
+      - file: packages/ui/src/v4/composer/orchestrationTeamModel.ts
+        symbol: applyOrchestrationPreset
+    invariants:
+      - "Only Full stack and Lean presets are offered; Lean adds reviewer and matches ORCHESTRATION_DEFAULT_TEAM, independent of preset order."
+      - "Select-all includes every available specialist regardless of the search filter; when all are selected the same button clears specialists and disables orchestration."
+      - "Generic roles do not appear or count toward the displayed six slots; removing a preset never rewrites an explicit stored team or an in-flight run."
+  - id: state.orchestration-team-intent
+    kind: state-owner
+    label: SessionPane next-turn orchestration team intent
+    codeSeeds:
+      - file: packages/ui/src/v4/SessionPane.tsx
+        symbol: handleApplyOrchestrationPreset
+      - file: packages/ui/src/v4/SessionPane.tsx
+        symbol: handleToggleOrchestration
+  - id: service.orchestration-team-config
+    kind: service
+    label: Runtime team validation and configuration application
+    codeSeeds:
+      - file: apps/zcode-cli/packages/core/src/runtime/methods/orchestration.ts
+        symbol: setOrchestrationConfig
+      - file: apps/zcode-cli/packages/core/src/orchestration/tool-policy.ts
+        symbol: resolveOrchestrationTeam
+    invariants:
+      - "Implicit generic roles are added after strict input validation; unselected specialist roles remain unavailable for new dispatch."
+      - "Configuration affects subsequent runs, never the frozen team of an in-flight run."
+  - id: persistence.orchestration-session-entry
+    kind: persistence
+    label: Runtime orchestration session entry
+    codeSeeds:
+      - file: apps/zcode-cli/packages/core/src/runtime/methods/orchestration.ts
+        symbol: persistOrchestrationConfig
+      - file: apps/zcode-cli/packages/core/src/runtime/methods/orchestration.ts
+        symbol: restoreOrchestrationFromSession
   - id: state.subagent-form-draft
     kind: state-owner
     label: Subagent form draft
@@ -505,6 +556,30 @@ edges:
     to: persistence.automation-record
     type: persists-to
     rank: must-inspect
+  - from: capability.orchestration-team
+    to: surface.orchestration-team-picker
+    type: renders-in
+    rank: must-inspect
+  - from: surface.orchestration-team-picker
+    to: state.orchestration-team-intent
+    type: owns-draft
+    rank: must-inspect
+    condition: Presets, role toggles and select-all use the same SessionPane callback path.
+  - from: state.orchestration-team-intent
+    to: service.orchestration-team-config
+    type: commits-to
+    rank: must-inspect
+    condition: Reuse setOrchestration and createSession; generic defaults are not a second UI selection state.
+  - from: service.orchestration-team-config
+    to: persistence.orchestration-session-entry
+    type: persists-to
+    rank: must-inspect
+    condition: Cold restore supplements generic defaults without rewriting entries or frozen run journals.
+  - from: surface.orchestration-team-picker
+    to: service.subagents
+    type: reads-target-options-through
+    rank: should-inspect
+    condition: Role availability and model overrides come from the selected workspace Host service.
   - from: capability.subagents
     to: surface.user-subagent-form
     type: renders-in
