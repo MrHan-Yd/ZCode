@@ -22,6 +22,9 @@ export type {
 export interface ClaimRunnableStepsOptions {
   maxConcurrency?: number;
   now?: number;
+  /** 旧修订尚未确认退出的 child 仍占容量。 */
+  reservedConcurrency?: number;
+  isBlocked?: (step: OrchestrationStep) => boolean;
 }
 
 export interface OrchestrationRunSummary {
@@ -100,7 +103,8 @@ export function claimRunnableSteps(
   const runningSteps = run.plan.steps.filter(
     (step) => run.steps[step.stepId]?.status === "running",
   );
-  const available = Math.max(0, maxConcurrency - runningSteps.length);
+  const reserved = Math.max(0, options.reservedConcurrency ?? 0);
+  const available = Math.max(0, maxConcurrency - runningSteps.length - reserved);
   if (available === 0) return [];
 
   const claimed: OrchestrationStep[] = [];
@@ -110,6 +114,7 @@ export function claimRunnableSteps(
     if (claimed.length >= available) break;
     const state = run.steps[step.stepId];
     if (!state || state.status !== "pending") continue;
+    if (options.isBlocked?.(step)) continue;
     if (!areDependenciesSatisfied(run, step)) continue;
     const writeScope = normalizeWriteScopes(step.writeScope);
     if (occupiedScopes.some((scope) => normalizedWriteScopesOverlap(scope, writeScope))) {

@@ -7,6 +7,8 @@ import type {
   OrchestrationRunStatus,
 } from "./contract.js";
 import { validateOrchestrationRunHistory } from "./record-history.js";
+import { validateOrchestrationRevisionChain } from "./record-revision.js";
+import { validateOrchestrationRevisionHistory } from "./revision-history.js";
 import {
   invalidRecord,
   parseOrchestrationRunShape,
@@ -43,6 +45,7 @@ export function deriveOrchestrationRunStatus(state: OrchestrationRunState): Orch
   let interrupted = false;
   let failed = false;
   if (state.cancelled) return "cancelled";
+  if (state.interrupted) return "interrupted";
   for (const step of state.plan.steps) {
     const status = state.steps[step.stepId]?.status;
     if (!step.optional && status === "cancelled") return "cancelled";
@@ -166,8 +169,20 @@ function validateAttempts(
 export function parseOrchestrationRunRecord(input: unknown): OrchestrationRunRecord {
   const record = parseOrchestrationRunShape(input);
   const steps = new Map(record.state.plan.steps.map((step) => [step.stepId, step]));
-  const attempts = validateAttempts(record, steps);
-  validateOrchestrationRunHistory(record, attempts, steps);
+  const extended =
+    record.events.some(
+      (event) => event.type === "plan_revised" || event.type === "attempt_quiesced",
+    ) ||
+    record.attempts.some((attempt) => attempt.cancellationPending !== undefined) ||
+    Object.values(record.state.steps).some((step) => step.generation !== undefined) ||
+    record.state.interrupted !== undefined;
+  if (extended) {
+    validateOrchestrationRevisionChain(record);
+    validateOrchestrationRevisionHistory(record);
+  } else {
+    const attempts = validateAttempts(record, steps);
+    validateOrchestrationRunHistory(record, attempts, steps);
+  }
   if (record.status !== deriveOrchestrationRunStatus(record.state))
     return invalidRecord("Run status differs from step state.");
   return record;

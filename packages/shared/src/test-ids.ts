@@ -59,6 +59,10 @@ export const TID_GIT_PANE = "git-pane";
 export const TID_GIT_CLOSE_BUTTON = "git-close-button";
 /** 顶部 Git 提交或推送主入口 */
 export const TID_GIT_ACTION_TRIGGER = "git-action-trigger";
+/** 工作区标题栏 Git 入口（GitBranch 图标 + 计数徽标，Git 有事可做时始终出现） */
+export const TID_GIT_TOOLS_ENTRY = "git-tools-entry";
+/** 标题栏 Git 图标展开的浮层（更改 / 分支切换 / 提交或推送 / 拉取） */
+export const TID_GIT_TOOLS_PANEL = "git-tools-panel";
 /** Git 提交弹窗 */
 export const TID_GIT_COMMIT_DIALOG = "git-commit-dialog";
 /** Git 提交信息输入框 */
@@ -259,8 +263,12 @@ export const TID_CHAT_SEND_BUTTON = "chat-send-button";
 export const TID_CHAT_STOP_BUTTON = "chat-stop-button";
 /** 聊天加载指示器 */
 export const TID_CHAT_LOADING = "chat-loading";
-/** 聊天右上角状态摘要面板 */
+/** 已废弃：状态面板不再有右上角摘要面板（保留常量避免旧 E2E 引用编译失败） */
 export const TID_CHAT_SUMMARY_PANEL = "chat-summary-panel";
+/** 聊天右下角会话状态卡片（Goal / 计划 / 进程 / 终端 / 工作流 / 编排 / 智能体） */
+export const TID_CHAT_STATUS_SECTIONS_PANEL = "chat-status-sections-panel";
+/** 标题栏「会话状态」图标（与 Git 工具同排）：点击唤醒/收起会话状态面板 */
+export const TID_CHAT_STATUS_ENTRY = "chat-status-entry";
 /** 聊天上下文压缩 timeline 横条（动态后缀为 inputId 或 operationId） */
 export const TID_CHAT_COMPACT_MARKER = "chat-compact-marker";
 /** 聊天上下文压缩失败/中断后的重试按钮（动态后缀为 inputId 或 operationId） */

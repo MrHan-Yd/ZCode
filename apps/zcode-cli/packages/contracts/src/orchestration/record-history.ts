@@ -235,6 +235,8 @@ function propagateBlocked(
 const EVENT_ATTEMPT_KEY_RULE: Record<OrchestrationEventType, "forbidden" | "required" | "either"> =
   {
     run_created: "forbidden",
+    plan_revised: "forbidden",
+    attempt_quiesced: "required",
     attempt_claimed: "required",
     child_bound: "required",
     attempt_completed: "required",

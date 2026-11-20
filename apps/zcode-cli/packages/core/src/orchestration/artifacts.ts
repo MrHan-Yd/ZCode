@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { OrchestrationStep } from "@zcode/shared";
+import { findCurrentOrchestrationAttempt } from "@zcode/contracts";
 import { fitContentWithSuffix } from "../tool/executor/result-content-projection.js";
 import {
   OrchestrationStoreError,
@@ -102,10 +103,9 @@ export function buildOrchestrationStepInputs(
         "Orchestration dependency has no confirmed terminal output.",
       );
     }
-    const attempt = [...record.attempts]
-      .reverse()
-      .find((candidate) => candidate.stepId === stepId && candidate.status === state.status);
-    const artifact = attempt?.artifact;
+    // 只读当前工作代的有效 attempt：旧 revision 的失效产物不能伪装成新步骤的输入。
+    const attempt = findCurrentOrchestrationAttempt(record, stepId);
+    const artifact = attempt?.status === state.status ? attempt.artifact : undefined;
     const entry: OrchestrationStepInput = {
       stepId,
       title: dependency.title,

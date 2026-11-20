@@ -459,6 +459,11 @@ export interface TurnStartedPayloadBase {
   /** 缺省为 agent，兼容旧事件与历史 transcript。 */
   executionKind?: TurnExecutionKind;
   /**
+   * 本轮开跑时 session runtime 的编排配置为 enabled（不是 UI 草稿意图）。
+   * 冷恢复从 user message metadata 读回同一个字段，缺省 = 经典轮。
+   */
+  orchestrationEnabled?: boolean;
+  /**
    * `input` 从此下标起是引擎附加文本（dwf ask 尾注 / nudge），GUI 把它折进披露；0 = 整条都是；
    * 缺席 = 无。与消息 metadata 里的同一份对齐（冷热同形）。
    */

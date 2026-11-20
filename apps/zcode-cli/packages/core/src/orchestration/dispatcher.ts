@@ -1,63 +1,94 @@
 import type {
-  ClaimedOrchestrationAttempt,
   OrchestrationArtifactsPort,
   OrchestrationRunRecord,
+  OrchestrationRunRevision,
   OrchestrationRunStorePort,
+  ReviseOrchestrationRunInput,
 } from "./contract.js";
 import { OrchestrationStoreError } from "./contract.js";
-import { buildOrchestrationStepPrompt } from "./artifacts.js";
-import { awaitOrchestrationObservation } from "./observation.js";
-import type {
-  OrchestrationDispatchContext,
-  OrchestrationDispatchHandle,
-  OrchestrationDispatchPort,
-} from "./dispatch-port.js";
+import { OrchestrationAttemptExecution } from "./attempt-execution.js";
+import { OrchestrationControl, OrchestrationProgress } from "./control.js";
+import type { OrchestrationDispatchContext, OrchestrationDispatchPort } from "./dispatch-port.js";
 
 interface ActiveOrchestrationExecution {
   controller: AbortController;
-  handles: Map<string, OrchestrationDispatchHandle>;
-  pending: Set<Promise<void>>;
-  failures: unknown[];
-  claimed: boolean;
+  attempts: Map<string, OrchestrationAttemptExecution>;
+  progress: OrchestrationProgress;
+  cleanupErrors: Map<string, unknown>;
   promise?: Promise<OrchestrationRunRecord>;
 }
 
 export class OrchestrationDispatcher {
   private readonly active = new Map<string, ActiveOrchestrationExecution>();
+  private readonly control = new OrchestrationControl();
 
   constructor(
     private readonly options: {
       store: OrchestrationRunStorePort;
       artifacts: OrchestrationArtifactsPort;
       dispatch: OrchestrationDispatchPort;
+      onProgress?: () => void;
     },
   ) {}
+
+  runControlled<T>(runId: string, action: () => Promise<T> | T): Promise<T> {
+    return this.control.run(runId, action);
+  }
 
   execute(runId: string, context: OrchestrationDispatchContext): Promise<OrchestrationRunRecord> {
     const existing = this.active.get(runId)?.promise;
     if (existing) return existing;
     const execution: ActiveOrchestrationExecution = {
       controller: new AbortController(),
-      handles: new Map(),
-      pending: new Set(),
-      failures: [],
-      claimed: false,
+      attempts: new Map(),
+      progress: new OrchestrationProgress(),
+      cleanupErrors: new Map(),
     };
     this.active.set(runId, execution);
     execution.promise = this.drive(runId, context, execution).finally(() => {
       if (this.active.get(runId) === execution) this.active.delete(runId);
+      this.options.onProgress?.();
     });
     return execution.promise;
   }
 
+  async revise(input: ReviseOrchestrationRunInput): Promise<OrchestrationRunRevision> {
+    const revised = await this.runControlled(input.runId, async () => {
+      const result = await this.options.store.revise(input);
+      const execution = this.active.get(input.runId);
+      for (const key of result.invalidatedAttemptKeys)
+        execution?.attempts.get(key)?.abort("revised");
+      this.wake(execution);
+      return result;
+    });
+    // 子代理停止不持有控制闸门：保留的在飞结果和用户整 run 取消仍可正常提交。
+    await this.stopInvalidated(revised.record, revised.invalidatedAttemptKeys, true);
+    return { ...revised, record: await this.requireRun(input.runId) };
+  }
+
   async cancel(runId: string): Promise<OrchestrationRunRecord> {
-    const record = await this.options.store.cancel(runId);
-    const execution = this.active.get(runId);
-    if (execution) {
-      execution.controller.abort("cancelled");
-      await this.stopHandles(execution);
-    }
+    const record = await this.runControlled(runId, async () => {
+      const current = await this.options.store.cancel(runId);
+      const execution = this.active.get(runId);
+      execution?.controller.abort("cancelled");
+      this.wake(execution);
+      return current;
+    });
+    await this.stopInvalidated(
+      record,
+      record.attempts
+        .filter((attempt) => attempt.cancellationPending)
+        .map((attempt) => attempt.key),
+      false,
+    );
     return record;
+  }
+
+  cleanupError(runId: string): unknown {
+    const errors = [...(this.active.get(runId)?.cleanupErrors.values() ?? [])];
+    return errors.length
+      ? new AggregateError(errors, "Orchestration child cleanup is blocked.")
+      : undefined;
   }
 
   private async drive(
@@ -67,68 +98,105 @@ export class OrchestrationDispatcher {
   ): Promise<OrchestrationRunRecord> {
     try {
       for (;;) {
-        if (execution.failures.length) throw execution.failures[0];
-        const record = await this.requireRun(runId);
-        if (record.owner.sessionId !== context.sessionId) {
-          throw new OrchestrationStoreError(
-            "owner_mismatch",
-            "Orchestration execution must use its parent session.",
-          );
-        }
-        if (record.status === "cancelled" || record.status === "interrupted") {
-          execution.controller.abort(record.status);
-          await this.stopHandles(execution);
-          await Promise.all(execution.pending);
-          if (execution.failures.length) throw execution.failures[0];
-          return this.requireRun(runId);
-        }
-        const claims = await this.options.store.claim(runId);
-        if (claims.length) execution.claimed = true;
-        // claim 与上一次读取之间可能已有前置步骤完成，依赖输入必须使用领取后的已提交快照。
-        const claimedRecord = claims.length ? await this.requireRun(runId) : record;
-        for (const claim of claims) {
-          const operation = this.executeAttempt(context, execution, claimedRecord, claim)
-            .catch((error: unknown) => {
-              execution.failures.push(error);
-            })
-            .finally(() => {
-              execution.pending.delete(operation);
-              execution.handles.delete(claim.attempt.key);
-            });
-          execution.pending.add(operation);
-        }
-        if (!execution.pending.size) {
-          const final = await this.requireRun(runId);
-          if (
-            Object.values(final.state.steps).some(
-              (step) => step.status === "pending" || step.status === "running",
-            )
-          ) {
+        const version = execution.progress.version;
+        const record = await this.runControlled(runId, async () => {
+          const current = await this.requireRun(runId);
+          if (current.owner.sessionId !== context.sessionId) {
             throw new OrchestrationStoreError(
-              "run_conflict",
-              "Orchestration has unowned in-flight attempts; reconcile the journal before continuing.",
+              "owner_mismatch",
+              "Orchestration execution must use its parent session.",
             );
           }
-          return final;
+          for (const [key, slot] of execution.attempts) {
+            if (!slot.settled) continue;
+            const pending = current.attempts.find(
+              (attempt) => attempt.key === key,
+            )?.cancellationPending;
+            if (slot.error && pending) execution.cleanupErrors.set(key, slot.error);
+            else if (slot.error) throw slot.error;
+            else {
+              execution.attempts.delete(key);
+              execution.cleanupErrors.delete(key);
+            }
+          }
+          if (current.status === "cancelled" || current.status === "interrupted") return current;
+          const claims = await this.options.store.claim(runId);
+          // 领取和所有 starting slot 的登记在同一控制边界内，晚到 ACK 始终有人负责清理。
+          const claimedRecord = claims.length ? await this.requireRun(runId) : current;
+          for (const claim of claims) {
+            const slot = new OrchestrationAttemptExecution(claim, {
+              record: claimedRecord,
+              context,
+              store: this.options.store,
+              artifacts: this.options.artifacts,
+              dispatch: this.options.dispatch,
+              signal: execution.controller.signal,
+              onProgress: () => this.wake(execution),
+            });
+            execution.attempts.set(claim.attempt.key, slot);
+          }
+          return claimedRecord;
+        });
+        if (record.status === "cancelled" || record.status === "interrupted") {
+          execution.controller.abort(record.status);
+          const stops = await Promise.allSettled(
+            [...execution.attempts.values()].map((slot) => slot.stop(false)),
+          );
+          throwFailures(stops, "Orchestration could not stop all child executions.");
+          const tasks = await Promise.allSettled(
+            [...execution.attempts.values()].map((slot) => slot.task),
+          );
+          throwFailures(tasks, "Orchestration child executions did not settle.");
+          return this.requireRun(runId);
         }
-        await Promise.race(execution.pending);
+        const hasActive = [...execution.attempts.values()].some((slot) => !slot.settled);
+        const hasPendingCleanup = record.attempts.some((attempt) => attempt.cancellationPending);
+        if (!hasActive && !hasPendingCleanup) {
+          const final = await this.runControlled(runId, async () => {
+            const current = await this.requireRun(runId);
+            if (current.state.plan.revision !== record.state.plan.revision) return undefined;
+            if (
+              Object.values(current.state.steps).some(
+                (step) => step.status === "pending" || step.status === "running",
+              )
+            ) {
+              throw new OrchestrationStoreError(
+                "run_conflict",
+                "Orchestration has unowned in-flight attempts; reconcile the journal before continuing.",
+              );
+            }
+            return current;
+          });
+          if (final) return final;
+          continue;
+        }
+        if (hasPendingCleanup && !hasActive && !execution.attempts.size) {
+          throw new OrchestrationStoreError(
+            "capability_unavailable",
+            "Orchestration has unresolved child execution reservations.",
+          );
+        }
+        await execution.progress.wait(version);
       }
     } catch (error) {
       execution.controller.abort("interrupted");
-      const cleanupErrors: unknown[] = [];
-      try {
-        await this.stopHandles(execution);
-      } catch (cleanupError) {
-        cleanupErrors.push(cleanupError);
+      const stops = await Promise.allSettled(
+        [...execution.attempts.values()].map((slot) => slot.stop(false)),
+      );
+      const tasks = await Promise.allSettled(
+        [...execution.attempts.values()].map((slot) => slot.task),
+      );
+      const current = await this.requireRun(runId);
+      if (
+        current.attempts.some(
+          (attempt) => attempt.status === "claimed" || attempt.status === "running",
+        )
+      ) {
+        await this.options.store.recover(runId);
       }
-      await Promise.all(execution.pending);
-      if (execution.claimed) {
-        try {
-          await this.options.store.recover(runId);
-        } catch (recoveryError) {
-          cleanupErrors.push(recoveryError);
-        }
-      }
+      const cleanupErrors = [...stops, ...tasks].flatMap((result) =>
+        result.status === "rejected" ? [result.reason] : [],
+      );
       if (cleanupErrors.length)
         throw new AggregateError(
           [error, ...cleanupErrors],
@@ -138,132 +206,47 @@ export class OrchestrationDispatcher {
     }
   }
 
-  private async executeAttempt(
-    context: OrchestrationDispatchContext,
-    execution: ActiveOrchestrationExecution,
+  private async stopInvalidated(
     record: OrchestrationRunRecord,
-    claim: ClaimedOrchestrationAttempt,
+    keys: readonly string[],
+    waitForStartup: boolean,
   ): Promise<void> {
-    const signal = execution.controller.signal;
-    if (signal.aborted || !(await this.isCurrent(claim))) {
-      await this.finishStoppedAttempt(claim, signal);
-      return;
-    }
-    let handle: OrchestrationDispatchHandle;
-    try {
-      handle = await this.options.dispatch.start({
-        record,
-        claim,
-        context,
-        prompt: buildOrchestrationStepPrompt(record, claim.step),
-        signal,
-      });
-    } catch (error) {
-      if (signal.aborted) await this.finishStoppedAttempt(claim, signal);
-      else {
-        await this.options.store.finish(claim.runId, claim.attempt.key, claim.attempt.generation, {
-          status: "interrupted",
-          error: errorMessage(error),
-        });
-      }
-      return;
-    }
-    execution.handles.set(claim.attempt.key, handle);
-    try {
-      const bound = await this.options.store.bindChild(
-        claim.runId,
-        claim.attempt.key,
-        handle.child,
-      );
-      if (!bound || signal.aborted || !(await this.isCurrent(claim))) {
-        await handle.stop();
-        await this.finishStoppedAttempt(claim, signal);
-        return;
-      }
-      let result;
-      try {
-        result = await awaitOrchestrationObservation(handle.wait(), signal);
-      } catch (error) {
-        await handle.stop();
-        await this.options.store.finish(claim.runId, claim.attempt.key, claim.attempt.generation, {
-          status: "interrupted",
-          error: errorMessage(error),
-        });
-        return;
-      }
-      if (signal.aborted || !(await this.isCurrent(claim))) {
-        await handle.stop();
-        await this.finishStoppedAttempt(claim, signal);
-        return;
-      }
-      if (result.status === "completed") {
-        const artifact = await this.options.artifacts.save(claim.attempt.key, result.content);
-        if (signal.aborted) {
-          await this.finishStoppedAttempt(claim, signal);
-          return;
-        }
-        await this.options.store.finish(claim.runId, claim.attempt.key, claim.attempt.generation, {
-          status: "completed",
-          artifact,
-        });
-      } else {
-        await this.options.store.finish(
-          claim.runId,
-          claim.attempt.key,
-          claim.attempt.generation,
-          result,
-        );
-      }
-    } catch (error) {
-      try {
-        await handle.stop();
-      } catch (stopError) {
-        throw new AggregateError(
-          [error, stopError],
-          "Orchestration attempt and child stop failed.",
-        );
-      }
-      throw error;
-    }
-  }
-
-  private async finishStoppedAttempt(
-    claim: ClaimedOrchestrationAttempt,
-    signal: AbortSignal,
-  ): Promise<void> {
-    await this.options.store.finish(claim.runId, claim.attempt.key, claim.attempt.generation, {
-      status: signal.reason === "cancelled" ? "cancelled" : "interrupted",
-      error:
-        signal.reason === "cancelled"
-          ? "Orchestration run was cancelled."
-          : "Orchestration run was interrupted before this attempt settled.",
-    });
-  }
-
-  private async isCurrent(claim: ClaimedOrchestrationAttempt): Promise<boolean> {
-    const current = await this.requireRun(claim.runId);
-    return (
-      current.state.generation === claim.attempt.generation &&
-      current.status !== "cancelled" &&
-      current.status !== "interrupted" &&
-      current.state.steps[claim.step.stepId]?.status === "running" &&
-      current.attempts.some(
-        (attempt) =>
-          attempt.key === claim.attempt.key &&
-          (attempt.status === "claimed" || attempt.status === "running"),
-      )
-    );
-  }
-
-  private async stopHandles(execution: ActiveOrchestrationExecution): Promise<void> {
+    const execution = this.active.get(record.runId);
     const results = await Promise.allSettled(
-      [...execution.handles.values()].map((handle) => handle.stop()),
+      keys.map(async (key) => {
+        const slot = execution?.attempts.get(key);
+        try {
+          if (slot) await slot.stop(waitForStartup);
+          else {
+            const attempt = record.attempts.find((candidate) => candidate.key === key);
+            if (!attempt?.cancellationPending) return;
+            if (!attempt.child || !this.options.dispatch.stopChild) {
+              throw new OrchestrationStoreError(
+                "capability_unavailable",
+                "The invalidated child has no recoverable execution exit capability.",
+              );
+            }
+            await this.options.dispatch.stopChild(attempt.child);
+            await this.options.store.confirmAttemptQuiesced(record.runId, key);
+          }
+          execution?.cleanupErrors.delete(key);
+        } catch (error) {
+          execution?.cleanupErrors.set(key, error);
+          throw error;
+        } finally {
+          this.wake(execution);
+        }
+      }),
     );
-    const failures = results.flatMap((result) =>
-      result.status === "rejected" ? [result.reason] : [],
+    throwFailures(
+      results,
+      `Orchestration revision ${record.state.plan.revision} is committed, but child cleanup is blocked.`,
     );
-    if (failures.length)
-      throw new AggregateError(failures, "Orchestration could not stop all child executions.");
+  }
+
+  private wake(execution?: ActiveOrchestrationExecution): void {
+    execution?.progress.wake();
+    this.options.onProgress?.();
   }
 
   private async requireRun(runId: string): Promise<OrchestrationRunRecord> {
@@ -274,6 +257,7 @@ export class OrchestrationDispatcher {
   }
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function throwFailures(results: readonly PromiseSettledResult<unknown>[], message: string): void {
+  const errors = results.flatMap((result) => (result.status === "rejected" ? [result.reason] : []));
+  if (errors.length) throw new AggregateError(errors, message);
 }

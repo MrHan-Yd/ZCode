@@ -28,8 +28,6 @@ export interface V4ComposerDraft {
   orchestrationEnabled?: boolean;
   /** 团队选择；general-purpose 由上层归一化强制保留。 */
   subagentPool?: string[];
-  /** 运行中发送语义；只影响下一次提交，无活动 run 时被 Core 忽略。 */
-  orchestrationInputMode?: "guide" | "queue" | "interrupt";
   /** 用户显式操作过编排；用于阻止运行时查询结果覆盖用户意图。 */
   orchestrationTouched?: boolean;
   /** 首次分享导入等待公共新任务初始化；不能由空 Session snapshot 抢先填充。 */
@@ -119,12 +117,6 @@ function readDraft(value: unknown): V4ComposerDraft | null {
         (role): role is string => typeof role === "string" && role.trim().length > 0,
       )
     : undefined;
-  const orchestrationInputMode =
-    value.orchestrationInputMode === "queue" || value.orchestrationInputMode === "interrupt"
-      ? value.orchestrationInputMode
-      : value.orchestrationInputMode === "guide"
-        ? ("guide" as const)
-        : undefined;
   const hasMention =
     isRecord(mention) &&
     ["id", "category", "label", "value", "markdown"].every(
@@ -163,7 +155,6 @@ function readDraft(value: unknown): V4ComposerDraft | null {
       ? { orchestrationEnabled: value.orchestrationEnabled }
       : {}),
     ...(subagentPool && subagentPool.length > 0 ? { subagentPool: subagentPool.slice(0, 8) } : {}),
-    ...(orchestrationInputMode ? { orchestrationInputMode } : {}),
     ...(value.orchestrationTouched === true ? { orchestrationTouched: true } : {}),
     ...(value.initializeFromNewTask === true && !mode.success
       ? { initializeFromNewTask: true as const }

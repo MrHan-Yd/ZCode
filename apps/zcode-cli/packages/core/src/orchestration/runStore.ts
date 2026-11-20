@@ -5,9 +5,12 @@ import {
   deriveOrchestrationRunStatus,
   normalizeCreateOrchestrationRunInput,
   normalizeOrchestrationOwner,
-  parseOrchestrationArtifactReference,
   parseOrchestrationChildReference,
   parseOrchestrationRunRecord,
+  claimBlockedByOrchestrationCleanup,
+  getOrchestrationStepGeneration,
+  materializeOrchestrationStepGenerations,
+  orchestrationCleanupReservations,
 } from "@zcode/contracts";
 import {
   OrchestrationStoreError,
@@ -21,7 +24,9 @@ import {
   type OrchestrationJournalUpdate,
   type OrchestrationRunOwner,
   type OrchestrationRunRecord,
+  type OrchestrationRunRevision,
   type OrchestrationRunStorePort,
+  type ReviseOrchestrationRunInput,
 } from "./contract.js";
 import {
   cancelRun,
@@ -32,54 +37,14 @@ import {
   isRunTerminal,
   markBlockedSteps,
 } from "./scheduler.js";
+import { FINISH_EVENTS, normalizeAttemptOutcome } from "./runStoreOutcome.js";
+import { confirmOrchestrationQuiesced, reviseOrchestrationRecord } from "./runStoreRevision.js";
 
 const CANCELLED_ERROR = "Orchestration run cancelled.";
 const RECOVERY_ERROR =
   "Orchestration interrupted during recovery; terminal evidence is unavailable.";
-const FINISH_EVENTS: Record<OrchestrationAttemptOutcome["status"], OrchestrationEventType> = {
-  completed: "attempt_completed",
-  failed: "attempt_failed",
-  cancelled: "attempt_cancelled",
-  interrupted: "run_interrupted",
-};
-
 function isLive(attempt: OrchestrationAttemptRecord): boolean {
   return attempt.status === "claimed" || attempt.status === "running";
-}
-
-function normalizeOutcome(
-  input: OrchestrationAttemptOutcome,
-  attemptKey: string,
-): OrchestrationAttemptOutcome {
-  if (!input || typeof input !== "object")
-    throw new OrchestrationStoreError("attempt_conflict", "Invalid orchestration outcome.");
-  const artifact =
-    input.artifact === undefined ? undefined : parseOrchestrationArtifactReference(input.artifact);
-  // 产物必须先核对 key，不能让旧 generation 或重复 terminal 掩盖串错 attempt 的引用。
-  if (artifact && artifact.attemptKey !== attemptKey)
-    throw new OrchestrationStoreError(
-      "artifact_conflict",
-      "Artifact belongs to a different orchestration attempt.",
-    );
-  if (Object.keys(input).some((key) => !["status", "artifact", "error"].includes(key)))
-    throw new OrchestrationStoreError("attempt_conflict", "Unknown orchestration outcome field.");
-  if (input.status === "completed") {
-    if (!artifact)
-      throw new OrchestrationStoreError(
-        "artifact_conflict",
-        "Completed orchestration attempt requires an artifact.",
-      );
-    return { status: "completed", artifact };
-  }
-  if (
-    !["failed", "cancelled", "interrupted"].includes(input.status) ||
-    typeof input.error !== "string"
-  )
-    throw new OrchestrationStoreError(
-      "attempt_conflict",
-      "Invalid orchestration terminal outcome.",
-    );
-  return { status: input.status, error: input.error, ...(artifact ? { artifact } : {}) };
 }
 
 export class OrchestrationRunStore implements OrchestrationRunStorePort {
@@ -144,29 +109,70 @@ export class OrchestrationRunStore implements OrchestrationRunStorePort {
     }));
   }
 
+  revise(input: ReviseOrchestrationRunInput): Promise<OrchestrationRunRevision> {
+    return this.transaction(input.runId, (current) => {
+      const record = this.require(current);
+      const now = this.time(record);
+      const revised = reviseOrchestrationRecord(record, input, now);
+      if (revised.record !== record)
+        return {
+          value: {
+            record: revised.record,
+            invalidatedAttemptKeys: revised.invalidatedAttemptKeys,
+          } satisfies OrchestrationRunRevision,
+        };
+      this.append(record, "plan_revised", now, undefined, {
+        previousPlan: revised.previousPlan,
+        plan: record.state.plan,
+      });
+      return this.commit(record, {
+        record,
+        invalidatedAttemptKeys: revised.invalidatedAttemptKeys,
+      } satisfies OrchestrationRunRevision);
+    });
+  }
+
+  confirmAttemptQuiesced(runId: string, attemptKey: string): Promise<boolean> {
+    return this.transaction(runId, (current) => {
+      const record = this.require(current);
+      if (!confirmOrchestrationQuiesced(record, attemptKey)) return { value: false };
+      const now = this.time(record);
+      record.state.updatedAt = now;
+      this.append(record, "attempt_quiesced", now, attemptKey);
+      return this.commit(record, true);
+    });
+  }
+
   claim(runId: string): Promise<ClaimedOrchestrationAttempt[]> {
     return this.transaction(runId, (current) => {
       const record = this.require(current);
       // failed 只描述 required 失败，独立 pending 与其他在飞步骤仍需正常收口。
       if (["cancelled", "interrupted", "completed"].includes(record.status)) return { value: [] };
       const now = this.time(record);
-      const ids = claimRunnableSteps(record.state, { maxConcurrency: record.maxConcurrency, now });
+      const ids = claimRunnableSteps(record.state, {
+        maxConcurrency: record.maxConcurrency,
+        now,
+        reservedConcurrency: orchestrationCleanupReservations(record).length,
+        isBlocked: (step) => claimBlockedByOrchestrationCleanup(record, step),
+      });
       if (!ids.length) return { value: [] };
       const claims = ids.map((stepId): ClaimedOrchestrationAttempt => {
         const step = record.state.plan.steps.find((candidate) => candidate.stepId === stepId);
         const state = record.state.steps[stepId];
         if (!step || !state)
           throw new OrchestrationStoreError("invalid_record", "Claimed step is not in the plan.");
+        const generation =
+          getOrchestrationStepGeneration(record.state, stepId) ?? record.state.generation;
         const attempt: OrchestrationAttemptRecord = {
           key: createOrchestrationAttemptKey(
             runId,
             record.state.plan.revision,
-            record.state.generation,
+            generation,
             stepId,
             state.attempts,
           ),
           revision: record.state.plan.revision,
-          generation: record.state.generation,
+          generation,
           stepId,
           attempt: state.attempts,
           status: "claimed",
@@ -199,10 +205,27 @@ export class OrchestrationRunStore implements OrchestrationRunStorePort {
     return this.transaction(runId, (current) => {
       const record = this.require(current);
       const attempt = record.attempts.find((entry) => entry.key === attemptKey);
+      if (!attempt) return { value: false };
+      // 已被 plan revision fence 的 attempt 只允许补记真实 child 身份供停止；
+      // 不恢复 live，也不允许另一个 child 覆盖同一 attempt。
+      if (attempt.status === "cancelled" && attempt.cancellationPending === true) {
+        if (attempt.child) {
+          if (!isDeepStrictEqual(attempt.child, normalized))
+            throw new OrchestrationStoreError(
+              "attempt_conflict",
+              "Orchestration attempt is already bound to a different child.",
+            );
+          return { value: false };
+        }
+        attempt.child = normalized;
+        const now = this.time(record);
+        record.state.updatedAt = now;
+        this.append(record, "child_bound", now, attemptKey);
+        return this.commit(record, true);
+      }
       if (
-        !attempt ||
-        attempt.generation !== record.state.generation ||
         !isLive(attempt) ||
+        attempt.generation !== getOrchestrationStepGeneration(record.state, attempt.stepId) ||
         record.state.steps[attempt.stepId]?.status !== "running"
       )
         return { value: false };
@@ -229,15 +252,16 @@ export class OrchestrationRunStore implements OrchestrationRunStorePort {
     generation: number,
     outcome: OrchestrationAttemptOutcome,
   ): Promise<boolean> {
-    const normalized = normalizeOutcome(outcome, attemptKey);
+    const normalized = normalizeAttemptOutcome(outcome, attemptKey);
     return this.transaction(runId, (current) => {
       const record = this.require(current);
       const attempt = record.attempts.find((entry) => entry.key === attemptKey);
       const step = attempt ? record.state.steps[attempt.stepId] : undefined;
       if (
-        generation !== record.state.generation ||
         !attempt ||
         attempt.generation !== generation ||
+        getOrchestrationStepGeneration(record.state, attempt.stepId) !== generation ||
+        attempt.cancellationPending === true ||
         !isLive(attempt) ||
         step?.status !== "running"
       )
@@ -276,11 +300,13 @@ export class OrchestrationRunStore implements OrchestrationRunStorePort {
       )
         return { value: structuredClone(record) };
       const now = this.time(record);
+      materializeOrchestrationStepGenerations(record);
       this.advanceGeneration(record);
       cancelRun(record.state, { now });
       for (const attempt of record.attempts.filter(isLive)) {
         attempt.status = "cancelled";
         attempt.endedAt = now;
+        attempt.cancellationPending = true;
         attempt.error = CANCELLED_ERROR;
       }
       this.append(record, "run_cancelled", now);
@@ -292,10 +318,15 @@ export class OrchestrationRunStore implements OrchestrationRunStorePort {
   recover(runId: string): Promise<OrchestrationRunRecord> {
     return this.transaction(runId, (current) => {
       const record = this.require(current);
+      if (record.state.cancelled) return { value: structuredClone(record) };
       const live = record.attempts.filter(isLive);
-      if (!live.length) return { value: structuredClone(record) };
+      const pending = record.attempts.some((attempt) => attempt.cancellationPending === true);
+      if (!live.length && (!pending || record.state.interrupted === true))
+        return { value: structuredClone(record) };
       const now = this.time(record);
+      materializeOrchestrationStepGenerations(record);
       this.advanceGeneration(record);
+      record.state.interrupted = true;
       for (const attempt of live) {
         const step = record.state.steps[attempt.stepId];
         if (!step)
@@ -363,6 +394,10 @@ export class OrchestrationRunStore implements OrchestrationRunStorePort {
     type: OrchestrationEventType,
     at: number,
     attemptKey?: string,
+    revision?: {
+      previousPlan: OrchestrationRunRecord["state"]["plan"];
+      plan: OrchestrationRunRecord["state"]["plan"];
+    },
   ): void {
     const sequence = (record.events.at(-1)?.sequence ?? 0) + 1;
     if (!Number.isSafeInteger(sequence))
@@ -370,12 +405,14 @@ export class OrchestrationRunStore implements OrchestrationRunStorePort {
         "invalid_record",
         "Orchestration event sequence is exhausted.",
       );
-    record.events.push({
+    const event = {
       sequence,
       type,
       generation: record.state.generation,
       at,
       ...(attemptKey !== undefined ? { attemptKey } : {}),
-    });
+      ...revision,
+    };
+    record.events.push(event as OrchestrationRunRecord["events"][number]);
   }
 }

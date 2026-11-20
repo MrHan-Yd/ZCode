@@ -1,10 +1,5 @@
 import type { ReactNode } from "react";
-import type {
-  GitChangeSourceId,
-  GitRepositorySummary,
-  ZCodeProvider,
-  ZCodeTaskChangeSummary,
-} from "@zcode/shared";
+import type { ZCodeProvider } from "@zcode/shared";
 import type { CodeViewerSource } from "@/lib/codeViewer.js";
 import type { AssistantPreviewCardsAutoOpenRequest } from "@/lib/assistantPreviewCards.js";
 import type { OpenAutomationsMain } from "@/lib/taskNavigationHistory.js";
@@ -26,7 +21,6 @@ import { SessionPane } from "@/v4/SessionPane.js";
 import type { SessionOpenTrigger } from "@/lib/sessionOpenArmsTelemetry.js";
 import type {
   ChatSearchResultHighlightRequest,
-  ChatViewSummaryPanelVariant,
   ConversationFindMatchState,
 } from "@/v4/legacyChatViewTypes.js";
 
@@ -46,15 +40,6 @@ interface V4ChatPaneProps {
   onSessionDeleted?: () => void;
   /** 草稿态 composer contextHeader（m5，壳层构造下发）。 */
   draftComposerHeader?: ReactNode;
-  gitSummary?: GitRepositorySummary | null;
-  gitDirtyFileCount?: number;
-  gitWorktreeReviewSourceId?: GitChangeSourceId | null;
-  gitWorktreeChangeSummary?: { added: number; removed: number } | null;
-  activeTaskChangeSummary?: ZCodeTaskChangeSummary | null;
-  summaryPanelVariantOverride?: ChatViewSummaryPanelVariant | null;
-  onSummaryPanelVariantOverrideChange?: (variant: ChatViewSummaryPanelVariant | null) => void;
-  onRefreshGit?: () => void;
-  onOpenGitReview?: (sourceId?: GitChangeSourceId) => void;
   onOpenBrowserUrl?: (url: string) => void;
   onOpenAutomationsMain?: OpenAutomationsMain;
   onOpenCodeViewer?: (source: CodeViewerSource) => void;
@@ -93,15 +78,6 @@ export function V4ChatPane({
   onSessionCreated,
   onSessionDeleted,
   draftComposerHeader,
-  gitSummary,
-  gitDirtyFileCount,
-  gitWorktreeReviewSourceId,
-  gitWorktreeChangeSummary,
-  activeTaskChangeSummary,
-  summaryPanelVariantOverride,
-  onSummaryPanelVariantOverrideChange,
-  onRefreshGit,
-  onOpenGitReview,
   onOpenBrowserUrl,
   onOpenAutomationsMain,
   onOpenCodeViewer,
@@ -138,15 +114,6 @@ export function V4ChatPane({
         onSessionCreated={onSessionCreated}
         onSessionDeleted={onSessionDeleted}
         draftComposerHeader={draftComposerHeader}
-        gitSummary={gitSummary}
-        gitDirtyFileCount={gitDirtyFileCount}
-        gitWorktreeReviewSourceId={gitWorktreeReviewSourceId}
-        gitWorktreeChangeSummary={gitWorktreeChangeSummary}
-        activeTaskChangeSummary={activeTaskChangeSummary}
-        summaryPanelVariantOverride={summaryPanelVariantOverride}
-        onSummaryPanelVariantOverrideChange={onSummaryPanelVariantOverrideChange}
-        onRefreshGit={onRefreshGit}
-        onOpenGitReview={onOpenGitReview}
         onOpenBrowserUrl={onOpenBrowserUrl}
         onOpenAutomationsMain={onOpenAutomationsMain}
         onOpenCodeViewer={onOpenCodeViewer}

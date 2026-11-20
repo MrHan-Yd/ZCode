@@ -441,6 +441,11 @@ function executionKindOfMessage(message: MessageWithParts): "agent" | "controlOn
   return value === "agent" || value === "controlOnly" ? value : undefined;
 }
 
+/** 编排标记：热路径在 TurnStarted 上，冷路径从同一条 user message metadata 读回（冷热同形）。 */
+function orchestrationEnabledOfMessage(message: MessageWithParts): boolean {
+  return message.info.metadata?.orchestrationEnabled === true;
+}
+
 /**
  * 引擎附加文本的起点：热路径它在 TurnStarted 上，
  * 冷路径从用户消息 metadata 读回同一个字段。只认非负整数——别的形状按缺席处理（宁可多显示）。
@@ -1891,6 +1896,7 @@ export function synthesizeEventsFromMessages(
     const intent = inputIntentOfMessage(message);
     const executionKind = executionKindOfMessage(message);
     const epilogueStart = epilogueStartOfMessage(message);
+    const orchestrationEnabled = orchestrationEnabledOfMessage(message);
     const turnStartedAtMs = messageCreatedAtMs(message) ?? baseMs + seq;
     // timeline part 与下一个 accepted turn 之间可以夹着 legacy synthetic
     // context，不能靠「紧邻前一条」猜测；持有显式边界直到真正开轮。
@@ -1907,6 +1913,7 @@ export function synthesizeEventsFromMessages(
         // 使用同一个 messageId 字段进入 ProductProjection。
         messageId: String(message.info.id),
         ...(executionKind ? { executionKind } : {}),
+        ...(orchestrationEnabled ? { orchestrationEnabled: true } : {}),
         ...(message.info.anchor?.sourceCommandId
           ? { inputId: message.info.anchor.sourceCommandId }
           : {}),

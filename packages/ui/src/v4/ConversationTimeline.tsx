@@ -42,9 +42,7 @@ import {
   getConversationContentWidthClassName,
   getConversationStatusPanelOffsetClassName,
 } from "@/v4/conversationLayout.js";
-import {
-  type ConversationTurnRenderUnit,
-} from "@/v4/conversationTurnRenderUnits.js";
+import { type ConversationTurnRenderUnit } from "@/v4/conversationTurnRenderUnits.js";
 import { createConversationTurnRenderUnitsBuilder } from "@/v4/conversationTurnRenderUnitsCache.js";
 import {
   resolveConversationTurnNavigatorActiveQueryRowId,
@@ -319,6 +317,11 @@ interface ConversationTimelineProps {
   searchResultHighlightRequest?: ChatSearchResultHighlightRequest | null;
   onSearchResultHighlightDone?: (requestId: number) => void;
   sessionPhase?: SessionPhase;
+  /**
+   * 编排 run 活跃时保持最后一轮工作历史展开：异步主轮已结束，但步骤子代理仍在运行，
+   * 折叠“已工作 X”会让主会话看起来停了（与手动 Agent 工具运行中的形态不一致）。
+   */
+  orchestrationRunActive?: boolean;
   /** 宿主可调用的一次性“滚动到底部”动作；不持有 conversation 或跨 renderer 状态。 */
   scrollToBottomActionRef?: { current: (() => void) | null };
   /** 宿主可调用的一次性 query 定位动作；不改变分享面板 view。 */
@@ -381,6 +384,7 @@ function ConversationTimelineImpl({
   searchResultHighlightRequest,
   onSearchResultHighlightDone,
   sessionPhase,
+  orchestrationRunActive = false,
   scrollToBottomActionRef,
   scrollToQueryActionRef,
   selectionActions,
@@ -422,8 +426,9 @@ function ConversationTimelineImpl({
       buildRenderUnits(rows, {
         nowMs: liveNowMs,
         sessionPhase,
+        keepLastTurnHistoryOpen: orchestrationRunActive,
       }),
-    [buildRenderUnits, liveNowMs, rows, sessionPhase],
+    [buildRenderUnits, liveNowMs, orchestrationRunActive, rows, sessionPhase],
   );
   const { virtualizedUnits, liveUnit, liveUnitIndex } = useMemo(
     () => splitConversationTimelineLiveTail(renderUnits),
@@ -550,7 +555,6 @@ function ConversationTimelineImpl({
     const container = selectionPanelLayoutContainerRef?.current;
     const dock = composerDockRef.current;
     if (!container || !dock) return;
-
     syncShareSelectionPanelLayout();
     let resizeObserver: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined") {

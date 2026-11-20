@@ -53,6 +53,11 @@ export async function persistUserPrompt(
     executionKind?: TurnExecutionKind;
     /** 引擎附加文本的起点；同样为冷恢复而存。 */
     epilogueStart?: number;
+    /**
+     * 与同轮 live TurnStarted 共用同一个编排标记；调用方显式传入可避免
+     * 轮内配置变更导致热/冷行不一致。缺省回退到当前 runtime 配置。
+     */
+    orchestrationEnabled?: boolean;
   },
 ): Promise<void> {
   this.latestConversationMessageId = messageID;
@@ -65,6 +70,10 @@ export async function persistUserPrompt(
     options?.intent,
     "drained",
   );
+  // 冷恢复需要与 live TurnStarted 同形的编排标记；配置在开轮时读取，
+  // 不随后续开关变化改写历史消息。
+  const runtimeOrchestrationEnabled = this.config.orchestration?.enabled === true;
+  const orchestrationEnabled = options?.orchestrationEnabled ?? runtimeOrchestrationEnabled;
   const message: Parameters<SessionStorePort["saveMessage"]>[0] = {
     id: messageID,
     sessionID: this.sessionId,
@@ -94,6 +103,7 @@ export async function persistUserPrompt(
     options?.clientId ||
     options?.intent ||
     options?.executionKind ||
+    orchestrationEnabled ||
     options?.epilogueStart !== undefined
       ? {
           metadata: {
@@ -105,6 +115,7 @@ export async function persistUserPrompt(
               ? { inputClientId: options?.intent?.clientId ?? options?.clientId }
               : {}),
             ...(options?.executionKind ? { executionKind: options.executionKind } : {}),
+            ...(orchestrationEnabled ? { orchestrationEnabled: true } : {}),
             ...(options?.epilogueStart === undefined
               ? {}
               : { epilogueStart: options.epilogueStart }),

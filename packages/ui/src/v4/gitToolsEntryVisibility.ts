@@ -35,26 +35,3 @@ export function shouldShowGitToolsEntry(options: {
   const hasRemoteWork = options.hasPushableCommits || options.behind > 0 || options.canPull;
   return hasWorktreeChanges || hasRemoteWork;
 }
-
-/**
- * 收起态胶囊是否显示「远程待办」摘要（未推送提交 / 落后远端 / 已同步）。
- *
- * auto 形态在容器不足 1280px 时只显示胶囊，点胶囊才展开面板——而那正是唯一能点「推送」的地方。
- * 所以"干净但有待推送提交"时胶囊必须给出可点内容，否则入口等于不存在。
- * 有上游时也给一条（「已同步」），否则干净且同步的仓库在窄屏下胶囊可能整体为 null，
- * 展开面板的入口随之消失，主按钮上的「拉取」也就点不到了。
- * 工作区已有行级增减时由「+/- 变更」摘要表达，这里不重复。
- */
-export function shouldShowGitRemoteSummary(options: {
-  added: number;
-  removed: number;
-  hasPushableCommits: boolean;
-  behind: number;
-  canPull: boolean;
-}): boolean {
-  if (options.added + options.removed > 0) {
-    return false;
-  }
-
-  return options.hasPushableCommits || options.behind > 0 || options.canPull;
-}

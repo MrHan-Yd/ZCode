@@ -154,6 +154,42 @@ async function setFollowupMode(
 }
 
 /**
+ * 队列项「立即发送」是用户的显式打断：与 Core 的 interrupt admission 对齐，
+ * 先取消仍在驱动的编排 run，再抢占主会话 turn。取消某个 run 失败只记录原错误，
+ * 用户消息本身不能被吞掉；旧 generation 的迟到结果仍由 RunStore fencing 拒绝。
+ */
+async function cancelActiveOrchestrationRuns(
+  host: V4CommandCoreHost,
+  record: V4SessionRecordView,
+): Promise<void> {
+  if (!record.app.cancelOrchestrationRun) return;
+  let runIds: string[];
+  try {
+    runIds = record.app
+      .getOrchestrationState()
+      .runs.filter((run) => run.active)
+      .map((run) => run.runId);
+  } catch (error) {
+    host.logger?.warn?.("v4 sendQueuedNow could not read orchestration state", {
+      errorMessage: error instanceof Error ? error.message : String(error),
+      sessionId: record.app.sessionId,
+    });
+    return;
+  }
+  for (const runId of runIds) {
+    try {
+      await record.app.cancelOrchestrationRun(runId);
+    } catch (error) {
+      host.logger?.warn?.("v4 sendQueuedNow could not cancel orchestration run", {
+        errorMessage: error instanceof Error ? error.message : String(error),
+        runId,
+        sessionId: record.app.sessionId,
+      });
+    }
+  }
+}
+
+/**
  * sendQueuedNow：reserve → Core promotion lease → stop barrier → start/promote → remove。
  * - 必须读取完整 QueueItem；text-only fallback 会丢 sourceCommandId/附件/client/order，禁止使用。
  * - stop 复用 session-flow 的语义：goal-pause barrier（否则 verifier 未收 abort 时
@@ -213,6 +249,7 @@ async function sendQueuedNow(
     if (!autoDrainPromotion) acquirePromotionLease("after-current");
     let preempted = false;
     if (!autoDrainPromotion) {
+      await cancelActiveOrchestrationRuns(host, record);
       preempted = await preemptActiveTurnAndWait(host, record, {
         abortMessage: "v4 sendQueuedNow preempts active turn",
         goalPausedMutationReason: "send_queued_now_goal_paused",

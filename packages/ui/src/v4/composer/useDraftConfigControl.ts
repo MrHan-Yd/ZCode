@@ -102,8 +102,6 @@ interface DraftConfigControl {
   handleDraftSetOrchestrationEnabled: (enabled: boolean) => void;
   /** 团队选择；调用方负责先做 general-purpose / 上限归一化。 */
   handleDraftSetOrchestrationTeam: (team: readonly string[]) => void;
-  /** 运行中发送语义（guide / queue / interrupt）。 */
-  handleDraftSetOrchestrationInputMode: (mode: "guide" | "queue" | "interrupt") => void;
   /** 从运行时查询种子恢复；用户显式操作后不再覆盖。 */
   handleDraftSeedOrchestration: (input: { enabled: boolean; team: readonly string[] }) => void;
 }
@@ -517,13 +515,6 @@ export function useDraftConfigControl(params: {
     [updateComposerDraft],
   );
 
-  const handleDraftSetOrchestrationInputMode = useCallback(
-    (mode: "guide" | "queue" | "interrupt") => {
-      updateComposerDraft((current) => ({ ...current, orchestrationInputMode: mode }));
-    },
-    [updateComposerDraft],
-  );
-
   const handleDraftSeedOrchestration = useCallback(
     (input: { enabled: boolean; team: readonly string[] }) => {
       updateComposerDraft((current) => {
@@ -559,7 +550,6 @@ export function useDraftConfigControl(params: {
     handleDraftSwitchMode,
     handleDraftSetOrchestrationEnabled,
     handleDraftSetOrchestrationTeam,
-    handleDraftSetOrchestrationInputMode,
     handleDraftSeedOrchestration,
   };
 }

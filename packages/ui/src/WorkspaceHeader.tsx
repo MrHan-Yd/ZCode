@@ -1,4 +1,5 @@
 import type {
+  GitChangeSourceId,
   ZCodeProvider,
   ZCodeTaskMeta,
   ZCodeTaskChangeSummary,
@@ -10,6 +11,7 @@ import type {
 import { useState } from "react";
 import { TID_WORKSPACE_HEADER } from "@zcode/shared";
 import type { ConversationDropTargetController } from "@/v4/composer/conversationDropTarget.js";
+import type { GitToolsModel } from "@/v4/gitToolsModel.js";
 import { cn } from "@/components/lib/utils.js";
 import {
   WorkspaceHeaderActionSection,
@@ -46,6 +48,11 @@ export function WorkspaceHeader({
   workspaceHeaderState,
   gitSummary,
   gitDirtyFileCount,
+  gitTools = null,
+  gitToolsPanelOpen = false,
+  onGitToolsPanelOpenChange,
+  gitWorktreeReviewSourceId,
+  onOpenGitReview,
   isMacDesktop,
   isMacFullscreen,
   isWindowsDesktop,
@@ -89,6 +96,14 @@ export function WorkspaceHeader({
   workspaceHeaderState: WorkspaceHeaderState;
   gitSummary: GitRepositorySummary;
   gitDirtyFileCount: number;
+  /** Git 工具模型；null 表示入口不渲染。 */
+  gitTools?: GitToolsModel | null;
+  /** Git 浮层是否打开。 */
+  gitToolsPanelOpen?: boolean;
+  /** 切换 Git 浮层；由 shell 写入 `summaryPanelVariantOverride`。 */
+  onGitToolsPanelOpenChange?: (open: boolean) => void;
+  gitWorktreeReviewSourceId?: GitChangeSourceId | null;
+  onOpenGitReview?: (sourceId?: GitChangeSourceId) => void;
   isMacDesktop?: boolean;
   isMacFullscreen?: boolean;
   isWindowsDesktop?: boolean;
@@ -200,6 +215,7 @@ export function WorkspaceHeader({
         <WorkspaceHeaderActionSection
           variant={variant}
           activeTaskId={activeTaskId}
+          activeSessionId={activeSessionId}
           user={user}
           readOnlyReason={readOnlyReason}
           workspaceAbsPath={workspaceAbsPath}
@@ -215,6 +231,13 @@ export function WorkspaceHeader({
           simplifyForNarrowRemote={simplifyForNarrowRemote}
           hideHelpMenu={false}
           showWindowControls={usesInlineWindowControls}
+          gitTools={gitTools}
+          gitToolsPanelOpen={gitToolsPanelOpen}
+          onGitToolsPanelOpenChange={onGitToolsPanelOpenChange}
+          gitWorktreeReviewSourceId={gitWorktreeReviewSourceId}
+          activeTaskChangeSummary={activeTaskChangeSummary}
+          onRefreshGit={onRefreshGit}
+          onOpenGitReview={onOpenGitReview}
           // 面板操作按钮沿用 macOS 紧凑样式，Windows/Linux 窗控跟随最右侧 Header。
           onSelectedEditorChange={setSelectedEditor}
         />

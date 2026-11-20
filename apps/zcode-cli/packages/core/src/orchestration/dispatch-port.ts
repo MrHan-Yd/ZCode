@@ -33,6 +33,18 @@ export interface OrchestrationDispatchPort {
     context: OrchestrationDispatchContext;
     signal: AbortSignal;
   }): Promise<OrchestrationDispatchHandle>;
+  /** 停止持久记录中的旧 child，并等待真实执行退出；不重新创建子代理。 */
+  stopChild?(child: OrchestrationChildReference): Promise<void>;
+}
+
+export class OrchestrationDispatchStartError extends Error {
+  constructor(
+    cause: unknown,
+    readonly executionQuiesced: boolean,
+  ) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = "OrchestrationDispatchStartError";
+  }
 }
 
 export function orchestrationSubagentRequest(

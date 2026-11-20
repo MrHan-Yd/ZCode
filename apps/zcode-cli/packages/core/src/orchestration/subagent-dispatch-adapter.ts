@@ -10,10 +10,22 @@ import {
 export class SubagentOrchestrationDispatchAdapter implements OrchestrationDispatchPort {
   constructor(private readonly subagents: SubagentPort) {}
 
+  async stopChild(child: { taskId: string }): Promise<void> {
+    const { stopTask, waitForTaskQuiescence } = this.subagents;
+    if (!stopTask) {
+      throw new OrchestrationStoreError(
+        "capability_unavailable",
+        "Orchestration cannot stop a recovered child without explicit stop capability.",
+      );
+    }
+    await stopTask.call(this.subagents, child.taskId);
+    if (waitForTaskQuiescence) await waitForTaskQuiescence.call(this.subagents, child.taskId);
+  }
+
   async start(
     input: Parameters<OrchestrationDispatchPort["start"]>[0],
   ): Promise<OrchestrationDispatchHandle> {
-    const { start, getTask, waitForTask, stopTask } = this.subagents;
+    const { start, getTask, waitForTask, stopTask, waitForTaskQuiescence } = this.subagents;
     if (!start || !getTask || !waitForTask || !stopTask) {
       throw new OrchestrationStoreError(
         "capability_unavailable",
@@ -36,6 +48,9 @@ export class SubagentOrchestrationDispatchAdapter implements OrchestrationDispat
     const output = await start.call(this.subagents, orchestrationSubagentRequest(input), {
       signal: input.signal,
       ...(input.context.model ? { model: input.context.model } : {}),
+      // run 创建时已冻结 team；派发解析必须用它而不是会话实时配置，否则运行中关闭编排或
+      // 收缩团队会让在飞 run 的剩余专业步骤变成 not found。
+      visibleProfiles: input.record.team,
     });
     const child = {
       agentId: output.agentId,
@@ -65,6 +80,8 @@ export class SubagentOrchestrationDispatchAdapter implements OrchestrationDispat
               "Child stop did not confirm a terminal state.",
             );
           }
+          // 新端提供真实执行退出屏障时优先使用；旧端仍以 stop 的终态账本为边界。
+          if (waitForTaskQuiescence) await waitForTaskQuiescence.call(this.subagents, child.taskId);
         })().catch((error: unknown) => {
           stopPromise = undefined;
           throw error;

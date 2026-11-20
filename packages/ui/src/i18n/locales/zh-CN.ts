@@ -4688,6 +4688,8 @@ const zhCN: Record<string, string> = {
   "chat.summaryPanel.runningBackgroundTasksMiniValuePlural": "{count} 后台",
   "chat.summaryPanel.stopRunningBackgroundTask": "停止运行中的后台任务",
   "chat.summaryPanel.openRunningSubagentSession": "打开子智能体会话",
+  // 标题栏「会话状态」图标（与 Git 工具同排）：点击唤醒/收起状态面板。
+  "chat.statusEntry.label": "会话状态",
   "chat.composer.backgroundWorks.tooltipTerminal": "运行中的终端",
   "chat.composer.backgroundWorks.tooltipAgent": "打开运行中的智能体",
   // workflow 从 bash 拆出后 badge 有三类：
@@ -4702,10 +4704,13 @@ const zhCN: Record<string, string> = {
   "chat.summaryPanel.todoGoalIterationGroup": "第 {count} 轮迭代",
   "chat.summaryPanel.todoSessionGroup": "整个会话",
   "chat.statusPanel.environment": "Git 工具",
+  "chat.gitPanel.changesAriaLabel": "更改 {files} 个文件，+{added} −{removed}",
   "chat.statusPanel.changes": "更改",
   "chat.statusPanel.unpushedCommits": "未推送提交",
   "chat.statusPanel.behindRemote": "落后远端",
   "chat.statusPanel.remoteSynced": "已同步",
+  "chat.statusPanel.gitChipAriaLabel": "Git 工具：{summary}",
+  "chat.statusPanel.showStatusPanel": "显示状态面板",
   "chat.statusPanel.branch": "分支",
   "chat.statusPanel.commitPush": "提交 / 推送",
   "chat.statusPanel.clean": "干净",
@@ -4722,14 +4727,25 @@ const zhCN: Record<string, string> = {
   "chat.statusPanel.todoWaitingFold": "待处理 {count} 项",
   "chat.statusPanel.terminals": "终端",
   "chat.statusPanel.agents": "智能体",
+  // 面板空态：图标常驻后，没有运行内容的会话点开也必须给出明确反馈。
+  "chat.statusPanel.empty": "当前没有进行中的计划、终端或智能体",
   // Workflows 分区：与 Terminals / Agents 并列的
   // 第三类实时活动。行内的状态词与步数复用 chat.toolCall.workflow.* 那一组，不另造词汇。
   "chat.statusPanel.workflows": "工作流",
+  "chat.statusPanel.orchestration": "编排计划",
   "chat.statusPanel.runningStatusValue": "{count} 个后台运行",
   "chat.statusPanel.runningStatusValuePlural": "{count} 个后台运行",
   "chat.statusPanel.runningAgentsValue": "{count} 运行",
   "chat.statusPanel.runningAgentsValuePlural": "{count} 运行",
   "chat.statusPanel.runningStop": "停止",
+  // 运行中子智能体的状态词与状态摘要。刻意不复用 subagentDirectory.status.*：
+  // 目录页用的是「等待中 / 已阻塞」，本分区用「等待 / 阻塞」，不改历史目录文案。
+  "chat.statusPanel.subagentStatus.running": "运行中",
+  "chat.statusPanel.subagentStatus.waiting": "等待",
+  "chat.statusPanel.subagentStatus.blocked": "阻塞",
+  "chat.statusPanel.subagentStatusSummary.running": "{count} 运行",
+  "chat.statusPanel.subagentStatusSummary.waiting": "{count} 等待",
+  "chat.statusPanel.subagentStatusSummary.blocked": "{count} 阻塞",
   "chat.toolbar.model.label": "选择模型",
   "chat.toolbar.draftConfigWriteFailed": "配置修改失败，请重试",
   "chat.toolbar.model.description": "选择当前任务使用的模型。快捷键只打开模型菜单。",
@@ -6838,20 +6854,7 @@ const zhCN: Record<string, string> = {
   "chat.orchestration.preset.fullStack.description": "架构、设计、前端、后端、测试与审阅。",
   "chat.orchestration.preset.solo": "精简",
   "chat.orchestration.preset.solo.description": "仅增加审阅角色；通用执行与检索默认可用。",
-  "chat.orchestration.bar.label": "编排运行中",
-  "chat.orchestration.bar.progress": "完成 {completed}/{total} · {running} 个运行中",
-  "chat.orchestration.bar.view": "查看计划",
-  "chat.orchestration.bar.stop": "停止本次运行",
-  "chat.orchestration.input.label": "计划运行中，本条消息按以下方式发送",
-  "chat.orchestration.input.guide": "追加指导",
-  "chat.orchestration.input.guide.description": "继续当前运行，计划可随之调整。",
-  "chat.orchestration.input.queue": "排队",
-  "chat.orchestration.input.queue.description": "等运行结束后再发送。",
-  "chat.orchestration.input.interrupt": "停止并重排",
-  "chat.orchestration.input.interrupt.description": "取消当前运行，并按新消息重新规划。",
-  "chat.orchestration.timeline.title": "编排计划",
-  "chat.orchestration.timeline.team": "{count} 个角色 · 最多 {concurrency} 个并行",
-  "chat.orchestration.timeline.parallel": "{count} 个步骤并行执行",
+  "chat.orchestration.progress": "完成 {completed}/{total} · {running} 个运行中",
   "chat.orchestration.timeline.stop": "停止",
   "chat.orchestration.timeline.replan": "重排",
   "chat.orchestration.run.pending": "待开始",
@@ -6869,7 +6872,6 @@ const zhCN: Record<string, string> = {
   "chat.orchestration.step.interrupted": "已中断",
   "chat.orchestration.step.attempts": "已重试 {count} 次",
   "chat.orchestration.step.waiting": "等待 {steps}",
-  "chat.orchestration.step.viewChild": "查看子会话",
 };
 
 export default zhCN;

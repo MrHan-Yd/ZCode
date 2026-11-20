@@ -1,9 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  shouldShowGitRemoteSummary,
-  shouldShowGitToolsEntry,
-} from "../src/v4/gitToolsEntryVisibility.js";
+import { shouldShowGitToolsEntry } from "../src/v4/gitToolsEntryVisibility.js";
 
 const repo = { isGitAvailable: true, isRepository: true } as const;
 
@@ -83,72 +80,6 @@ test("非 Git 仓库或 Git 不可用：不显示", () => {
     visibility({
       gitSummary: { isGitAvailable: true, isRepository: false },
       canPull: true,
-    }),
-    false,
-  );
-});
-
-test("收起态胶囊：工作区无行级增减但有未推送提交时，显示「未推送提交」摘要", () => {
-  // 窄屏 auto 形态只显示胶囊，胶囊必须可点，否则「推送」仍然无处可点。
-  assert.equal(
-    shouldShowGitRemoteSummary({
-      added: 0,
-      removed: 0,
-      hasPushableCommits: true,
-      behind: 0,
-      canPull: true,
-    }),
-    true,
-  );
-});
-
-test("收起态胶囊：干净且有上游时给出「已同步」摘要，否则窄屏下展开面板的入口会消失", () => {
-  assert.equal(
-    shouldShowGitRemoteSummary({
-      added: 0,
-      removed: 0,
-      hasPushableCommits: false,
-      behind: 0,
-      canPull: true,
-    }),
-    true,
-  );
-});
-
-test("收起态胶囊：有行级增减时由「+/- 更改」摘要表达，不重复显示远程摘要", () => {
-  assert.equal(
-    shouldShowGitRemoteSummary({
-      added: 3,
-      removed: 1,
-      hasPushableCommits: true,
-      behind: 2,
-      canPull: true,
-    }),
-    false,
-  );
-});
-
-test("收起态胶囊：只落后远端时也给出摘要", () => {
-  assert.equal(
-    shouldShowGitRemoteSummary({
-      added: 0,
-      removed: 0,
-      hasPushableCommits: false,
-      behind: 2,
-      canPull: true,
-    }),
-    true,
-  );
-});
-
-test("收起态胶囊：无改动、无上游、无远程待办时不显示摘要", () => {
-  assert.equal(
-    shouldShowGitRemoteSummary({
-      added: 0,
-      removed: 0,
-      hasPushableCommits: false,
-      behind: 0,
-      canPull: false,
     }),
     false,
   );

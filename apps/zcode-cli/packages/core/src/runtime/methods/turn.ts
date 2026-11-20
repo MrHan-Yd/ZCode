@@ -301,6 +301,9 @@ export async function executeTurnCommand(
       // workspace checkpoint 挂在 user messageId 上；先生成 id 再发 TurnStarted，
       // v4 投影才能用 turn rowId 找回该轮文件 checkpoint，避免摘要有计数但展开查空。
       const attachmentMetas = summarizeTurnAttachmentsForEvent(attachments);
+      // 编排标记取本轮实际执行时的配置（setOrchestration 已在发送前生效），
+      // 不取 UI 草稿意图；关闭后新开的轮不再标记，历史轮不受后续开关影响。
+      const orchestrationEnabled = this.config.orchestration?.enabled === true;
       const turnStartedEvent = this.createEvent(
         SessionEventType.TurnStarted,
         {
@@ -309,6 +312,7 @@ export async function executeTurnCommand(
           input: displayInput,
           messageId: userMessageId,
           inputId: options?.inputId,
+          ...(orchestrationEnabled ? { orchestrationEnabled: true } : {}),
           ...(options?.automationId
             ? { automationId: options.automationId }
             : options?.offPeakTaskId
@@ -522,6 +526,8 @@ export async function executeTurnCommand(
               inputPresentation: options?.inputPresentation,
               sessionInputId: options?.intent?.queueItemId,
               sourceCommandId: options?.inputId,
+              // 与同轮 TurnStarted 共用同一份开跑时配置，避免轮内开关造成热/冷分叉。
+              orchestrationEnabled,
               ...(options?.epilogueStart === undefined
                 ? {}
                 : { epilogueStart: options.epilogueStart }),

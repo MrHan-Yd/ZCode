@@ -4,7 +4,6 @@ import type { SessionCreateSource } from "@zcode/shared";
 import { reportSessionCreate } from "@/lib/sessionCreateTelemetry.js";
 import { getLocalTtftObserver } from "@/v4/telemetry/localTtftObserver.js";
 /* oxlint-disable eslint(max-lines) -- SessionPane 是单 pane 竖切的命令编排收口（订阅/发送/停止/fork/edit/retry/queue/slash 全集），与旧 ChatView 同粒度；HEAD 已超限（693 行计数），拆散命令组会打散 dispatchCommand/snapshotRef 的闭包纪律。 */
-import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
 import {
   useCallback,
   useEffect,
@@ -26,14 +25,7 @@ import {
   testId,
   ZCODE_AGENT_PROVIDER,
 } from "@zcode/shared";
-import type {
-  AgentSummary,
-  ConversationShareAccessMode,
-  GitChangeSourceId,
-  GitRepositorySummary,
-  ZCodeProvider,
-  ZCodeTaskChangeSummary,
-} from "@zcode/shared";
+import type { AgentSummary, ConversationShareAccessMode, ZCodeProvider } from "@zcode/shared";
 import type {
   AttachmentRef,
   CommandAck,
@@ -106,6 +98,7 @@ import {
 import type { ModelSelectionSource } from "@/v4/composer/V4ComposerToolbar.js";
 import { formatModelChangeLabel } from "@/v4/composer/modelTriggerDisplay.js";
 import { resolveAppFollowupMode } from "@/v4/composer/followupModeSettings.js";
+import { resolveOrchestrationInputForSend } from "@/v4/composer/orchestrationSendPolicy.js";
 import {
   createComposerSubmissionConfig,
   type ComposerSubmissionConfig,
@@ -179,14 +172,15 @@ import { createConversationTurnRenderUnitsBuilder } from "@/v4/conversationTurnR
 import { buildConversationTurnNavigatorItems } from "@/v4/conversationTurnNavigatorHelpers.js";
 import { SessionPluginReferenceIconBoundary } from "@/v4/SessionPluginReferenceIconProvider.js";
 import {
-  resolveConversationStatusPanelVariant,
-  shouldUseConversationStatusPanelInlineLayout,
-} from "@/v4/conversationLayout.js";
-import {
   buildConversationStatusPanelModel,
   resolveSoleRunningWorkflowRunTarget,
 } from "@/v4/conversationStatusPanelModel.js";
 import type { ConversationStatusPanelWorkflowRunTarget } from "@/v4/conversationStatusPanelModel.js";
+import {
+  closeStatusPanelOverlay,
+  openStatusPanelOverlay,
+  useStatusPanelOverlayOpen,
+} from "@/v4/statusPanelOverlayStore.js";
 import {
   buildWorkflowRunByRunId,
   buildWorkflowRunByToolCallId,
@@ -225,7 +219,6 @@ import { recordV4CommandAck } from "@/v4/commandAckObservability.js";
 import { pendingCommandRegistry } from "@/v4/pendingCommandRegistry.js";
 import type {
   ChatSearchResultHighlightRequest,
-  ChatViewSummaryPanelVariant,
   ConversationFindMatchState,
 } from "@/v4/legacyChatViewTypes.js";
 import type { SessionLease } from "@/v4/sessionDataLayer.js";
@@ -351,15 +344,6 @@ export interface SessionPaneProps {
   draftComposerHeader?: ReactNode;
   /** 主草稿把 drop controller 提给 app shell 的标题栏；其他 pane 只在自身 surface 消费。 */
   onDropTargetControllerChange?: (controller: ConversationDropTargetController | null) => void;
-  gitSummary?: GitRepositorySummary | null;
-  gitDirtyFileCount?: number;
-  gitWorktreeReviewSourceId?: GitChangeSourceId | null;
-  gitWorktreeChangeSummary?: { added: number; removed: number } | null;
-  activeTaskChangeSummary?: ZCodeTaskChangeSummary | null;
-  summaryPanelVariantOverride?: ChatViewSummaryPanelVariant | null;
-  onSummaryPanelVariantOverrideChange?: (variant: ChatViewSummaryPanelVariant | null) => void;
-  onRefreshGit?: () => void;
-  onOpenGitReview?: (sourceId?: GitChangeSourceId) => void;
   onOpenBrowserUrl?: (url: string) => void;
   onOpenAutomationsMain?: OpenAutomationsMain;
   onOpenCodeViewer?: (source: CodeViewerSource) => void;
@@ -527,15 +511,6 @@ export function SessionPane({
   workspaceBadge,
   draftComposerHeader,
   onDropTargetControllerChange,
-  gitSummary,
-  gitDirtyFileCount,
-  gitWorktreeReviewSourceId,
-  gitWorktreeChangeSummary,
-  activeTaskChangeSummary,
-  summaryPanelVariantOverride,
-  onSummaryPanelVariantOverrideChange,
-  onRefreshGit,
-  onOpenGitReview,
   onOpenBrowserUrl,
   onOpenAutomationsMain,
   onOpenCodeViewer,
@@ -1055,11 +1030,17 @@ export function SessionPane({
   );
   const [dismissedErrorKeys, setDismissedErrorKeys] = useState<readonly string[]>([]);
   const [sendSubmissionError, setSendSubmissionError] = useState<ZCodeUiError | null>(null);
-  const [paneLocalSummaryPanelVariantOverride, setPaneLocalSummaryPanelVariantOverride] =
-    useState<ChatViewSummaryPanelVariant | null>(null);
+  // 状态面板由标题栏「会话状态」图标唤醒：开关意图存在 shell 与 pane 共享的
+  // statusPanelOverlayStore 里，面板内容仍由本 pane 的会话投影提供。
+  const statusPanelOpen = useStatusPanelOverlayOpen(sessionId);
+  const handleCloseStatusPanel = useCallback(() => {
+    if (sessionId) closeStatusPanelOverlay(sessionId);
+  }, [sessionId]);
   const [terminalSectionOpen, setTerminalSectionOpen] = useState(false);
   const [agentSectionOpen, setAgentSectionOpen] = useState(false);
   const [workflowSectionOpen, setWorkflowSectionOpen] = useState(false);
+  // 编排计划默认展开：它是运行中唯一能看到完整 DAG（含未启动步骤）的地方。
+  const [orchestrationSectionOpen, setOrchestrationSectionOpen] = useState(true);
   const [dropTargetController, setDropTargetController] =
     useState<ConversationDropTargetController | null>(null);
   const handleDropTargetControllerChange = useCallback(
@@ -1124,21 +1105,6 @@ export function SessionPane({
     ((target: { unitIndex: number; rowId: number }) => void) | null
   >(null);
   const conversationLayoutContainerRef = useRef<HTMLDivElement>(null);
-  const hasExternalSummaryPanelVariantControl = Boolean(onSummaryPanelVariantOverrideChange);
-  const effectiveSummaryPanelVariantOverride = hasExternalSummaryPanelVariantControl
-    ? (summaryPanelVariantOverride ?? null)
-    : paneLocalSummaryPanelVariantOverride;
-  const handleSummaryPanelVariantChange = useCallback(
-    (variant: ChatViewSummaryPanelVariant | null) => {
-      if (onSummaryPanelVariantOverrideChange) {
-        onSummaryPanelVariantOverrideChange(variant);
-        return;
-      }
-      setPaneLocalSummaryPanelVariantOverride(variant);
-    },
-    [onSummaryPanelVariantOverrideChange],
-  );
-
   const workspaceKey = workspaceIdentity?.trim() || workspacePath;
   const workspaceConfigOptions = useZCodeSessionStore(
     (store) => store.getWorkspaceState(workspacePath, workspaceIdentity).configOptions,
@@ -1274,7 +1240,6 @@ export function SessionPane({
     handleDraftSwitchMode,
     handleDraftSetOrchestrationEnabled,
     handleDraftSetOrchestrationTeam,
-    handleDraftSetOrchestrationInputMode,
     handleDraftSeedOrchestration,
     promoteComposerDraft,
     captureAcceptedModelSelection,
@@ -1324,7 +1289,6 @@ export function SessionPane({
         ...draftConfigRef.current,
         orchestrationEnabled: intent.orchestrationEnabled,
         subagentPool: intent.subagentPool,
-        orchestrationInputMode: intent.orchestrationInputMode,
       },
       modelSelectionView,
       { orchestrationSupported: !orchestrationUnsupportedRef.current },
@@ -1352,7 +1316,6 @@ export function SessionPane({
     [composerDraft.subagentPool],
   );
   const orchestrationEnabled = composerDraft.orchestrationEnabled === true;
-  const orchestrationInputMode = composerDraft.orchestrationInputMode ?? "guide";
   const orchestrationAvailable = !readOnly && orchestrationStateView.status !== "unsupported";
   // 提交路径比渲染更早创建（useCallback 在状态查询之前），用 ref 传递「旧端不支持」事实。
   orchestrationUnsupportedRef.current = orchestrationStateView.status === "unsupported";
@@ -1407,15 +1370,18 @@ export function SessionPane({
   const orchestrationIntentRef = useRef({
     orchestrationEnabled,
     subagentPool: orchestrationTeam,
-    orchestrationInputMode,
   });
   orchestrationIntentRef.current = {
     orchestrationEnabled,
     subagentPool: orchestrationTeam,
-    orchestrationInputMode,
   };
   const orchestrationRuntimeConfigRef = useRef(orchestrationStateView.config);
   orchestrationRuntimeConfigRef.current = orchestrationStateView.config;
+  // 发送时用 ref 读取活动 run，避免把整份 run 投影塞进 send 回调依赖导致重建。
+  const orchestrationActiveRunCountRef = useRef(0);
+  orchestrationActiveRunCountRef.current = orchestrationStateView.runs.filter(
+    (run) => run.active,
+  ).length;
 
   const codingPlanUpgradeDialog = useOptionalCodingPlanUpgradeDialog();
   const openSettingsTab = useOptionalTabStore((state) => state.openSettingsTab);
@@ -3053,11 +3019,16 @@ export function SessionPane({
       }
       // 附件 ref 已在 composer 预传状态机中收口。
       await syncOrchestrationBeforeSend(sessionId);
+      const orchestrationInput = resolveOrchestrationInputForSend({
+        activeRunCount: orchestrationActiveRunCountRef.current,
+        requestedDelivery: options?.requestedDelivery,
+      });
       const ack = await dispatchSubmissionCommand(
         "sendText",
         {
           text: effectiveText,
           ...submission,
+          ...(orchestrationInput ? { orchestrationInput } : {}),
           ...(readyAttachments.length > 0 ? { attachments: readyAttachments } : {}),
           ...(options?.requestedDelivery
             ? {
@@ -3854,22 +3825,14 @@ export function SessionPane({
     [dispatchCommand, sessionId],
   );
 
-  const handleViewOrchestrationChild = useCallback(
-    (childSessionId: string) => {
-      handleOpenSubagentSession({
-        parentSessionId: sessionId ?? rootSessionId ?? childSessionId,
-        childSessionId,
-        subagentType: "general-purpose",
-        title: childSessionId,
-      });
-    },
-    [handleOpenSubagentSession, rootSessionId, sessionId],
-  );
-
   const handleRequestOrchestrationReplan = useCallback(() => {
-    handleDraftSetOrchestrationInputMode("interrupt");
+    // 「重排」是显式动作：先取消活动 run，再聚焦同一个输入框。
+    // 不弹第二个输入框、不预填、不代发消息；用户自己决定下一条需求怎么写。
+    for (const run of orchestrationStateView.runs) {
+      if (run.active) handleStopOrchestrationRun(run.runId);
+    }
     document.querySelector<HTMLElement>(`[data-testid="${TID_V4_COMPOSER_INPUT}"]`)?.focus();
-  }, [handleDraftSetOrchestrationInputMode]);
+  }, [handleStopOrchestrationRun, orchestrationStateView.runs]);
 
   const orchestrationControls = useMemo<OrchestrationComposerControls>(
     () => ({
@@ -3879,30 +3842,20 @@ export function SessionPane({
       roles: orchestrationRoles,
       runs: orchestrationStateView.runs,
       activeRuns: orchestrationStateView.runs.filter((run) => run.active),
-      inputMode: orchestrationInputMode,
       onToggleEnabled: handleToggleOrchestration,
       onToggleRole: handleToggleOrchestrationRole,
       onToggleSelectAll: handleToggleOrchestrationSelectAll,
       onApplyPreset: handleApplyOrchestrationPreset,
       onOpenRoleSettings: handleOpenOrchestrationRoleSettings,
-      onInputModeChange: handleDraftSetOrchestrationInputMode,
-      onStopRun: handleStopOrchestrationRun,
-      onViewChild: handleViewOrchestrationChild,
-      onRequestReplan: handleRequestOrchestrationReplan,
     }),
     [
       handleApplyOrchestrationPreset,
-      handleDraftSetOrchestrationInputMode,
       handleOpenOrchestrationRoleSettings,
-      handleRequestOrchestrationReplan,
-      handleStopOrchestrationRun,
       handleToggleOrchestration,
       handleToggleOrchestrationRole,
       handleToggleOrchestrationSelectAll,
-      handleViewOrchestrationChild,
       orchestrationAvailable,
       orchestrationEnabled,
-      orchestrationInputMode,
       orchestrationRoles,
       orchestrationStateView.runs,
       orchestrationTeam,
@@ -4218,27 +4171,20 @@ export function SessionPane({
     setSelectionSideChatBlocked(sessionId, Boolean(blockingInteractionId));
     return () => setSelectionSideChatBlocked(sessionId, false);
   }, [blockingInteractionId, selectionSideChat, sessionId]);
-  const isOfficeMode = useIsOfficeMode();
   const statusPanelModel = useMemo(
     () =>
       buildConversationStatusPanelModel({
-        isOfficeMode,
         workspacePath,
-        gitSummary,
-        gitDirtyFileCount,
-        gitWorktreeChangeSummary,
         goal: selectionSideChat ? null : (snapshot?.goal ?? null),
         sessionPlans: state.sessionPlans,
         plan: snapshot?.plan ?? null,
         backgroundWorks: snapshot?.backgroundWorks ?? [],
         runningSubagents: subagents.running,
         workflowRuns: snapshot?.workflowRuns?.runs ?? [],
+        orchestrationRuns: orchestrationStateView.runs,
       }),
     [
-      isOfficeMode,
-      gitDirtyFileCount,
-      gitSummary,
-      gitWorktreeChangeSummary,
+      orchestrationStateView.runs,
       snapshot?.backgroundWorks,
       snapshot?.goal,
       snapshot?.plan,
@@ -4295,32 +4241,18 @@ export function SessionPane({
     setTerminalSectionOpen(runningTerminalCount > 0);
     setAgentSectionOpen(runningAgentCount > 0);
     setWorkflowSectionOpen(runningWorkflowCount > 0);
-    handleSummaryPanelVariantChange("panel");
+    if (sessionId) openStatusPanelOverlay(sessionId);
   }, [
     handleOpenWorkflowRunFromPanel,
-    handleSummaryPanelVariantChange,
     runningAgentCount,
     runningBackgroundWorkCount,
     runningTerminalCount,
     runningWorkflowCount,
+    sessionId,
     soleRunningWorkflowRunTarget,
   ]);
-  const statusPanelVariant = resolveConversationStatusPanelVariant({
-    variantOverride: effectiveSummaryPanelVariantOverride,
-  });
-  // 若只有 status panel 内部知道自动展开态，而 timeline/composer 未同步调整布局，
-  // 宽屏下就会出现面板覆盖内容。因此外层布局也必须使用同一展开状态。
-  const shouldUseStatusPanelInlineLayout =
-    !isDraft &&
-    shouldUseConversationStatusPanelInlineLayout({
-      hasContent: statusPanelModel.hasContent,
-      variant: statusPanelVariant,
-    });
-  const statusPanelLayout = !shouldUseStatusPanelInlineLayout
-    ? "none"
-    : statusPanelVariant === "auto"
-      ? "auto"
-      : "inline";
+  // 面板是顶部右侧的按需浮层（标题栏图标唤醒），覆盖正文但不改列宽。
+  const statusPanelLayout = "none" as const;
   const controlLastError = snapshot?.control.lastError ?? null;
   const controlLastErrorKey = controlLastError
     ? createSessionErrorKey(snapshot?.sessionId ?? sessionId, controlLastError)
@@ -5021,32 +4953,26 @@ export function SessionPane({
           <ConversationStatusPanel
             workspacePath={workspacePath}
             workspaceIdentity={workspaceIdentity}
-            gitSummary={gitSummary}
-            gitDirtyFileCount={gitDirtyFileCount}
-            gitWorktreeReviewSourceId={gitWorktreeReviewSourceId}
-            gitWorktreeChangeSummary={gitWorktreeChangeSummary}
-            activeTaskChangeSummary={activeTaskChangeSummary}
-            commitMessageModelSelection={draftConfig.modelSelection ?? null}
             goal={selectionSideChat ? null : (snapshot?.goal ?? null)}
             sessionPlans={state.sessionPlans}
             plan={snapshot?.plan ?? null}
             backgroundWorks={snapshot?.backgroundWorks ?? []}
             runningSubagents={subagents.running}
             workflowRuns={snapshot?.workflowRuns?.runs ?? []}
+            orchestrationRuns={orchestrationStateView.runs}
             endedSubagentCount={subagents.endedTotal}
             rootSessionId={rootSessionId ?? sessionId ?? undefined}
             parentSessionId={sessionId ?? undefined}
-            layoutMode={statusPanelLayout}
-            summaryPanelVariantOverride={effectiveSummaryPanelVariantOverride}
-            onVariantChange={handleSummaryPanelVariantChange}
+            open={statusPanelOpen}
+            onClose={handleCloseStatusPanel}
             terminalSectionOpen={terminalSectionOpen}
             onTerminalSectionOpenChange={setTerminalSectionOpen}
             agentSectionOpen={agentSectionOpen}
             onAgentSectionOpenChange={setAgentSectionOpen}
             workflowSectionOpen={workflowSectionOpen}
             onWorkflowSectionOpenChange={setWorkflowSectionOpen}
-            onRefreshGit={onRefreshGit}
-            onOpenGitReview={onOpenGitReview}
+            orchestrationSectionOpen={orchestrationSectionOpen}
+            onOrchestrationSectionOpenChange={setOrchestrationSectionOpen}
             onPauseGoal={
               !readOnly && !selectionSideChat && snapshot?.availability.pauseGoal.allowed
                 ? handlePauseGoal
@@ -5083,6 +5009,12 @@ export function SessionPane({
             endedWorkflowRunCount={endedWorkflowRunCount}
             onOpenWorkflowRunDirectory={
               onOpenWorkflowRunDirectory ? handleOpenWorkflowRunDirectoryFromPanel : undefined
+            }
+            onStopOrchestrationRun={
+              !readOnly && orchestrationAvailable ? handleStopOrchestrationRun : undefined
+            }
+            onRequestOrchestrationReplan={
+              !readOnly && orchestrationAvailable ? handleRequestOrchestrationReplan : undefined
             }
           />
         ) : null}
@@ -5198,6 +5130,7 @@ export function SessionPane({
               searchResultHighlightRequest={isDraft ? null : searchResultHighlightRequest}
               onSearchResultHighlightDone={onSearchResultHighlightDone}
               sessionPhase={isDraft ? undefined : snapshot?.control.phase}
+              orchestrationRunActive={orchestrationStateView.runs.some((run) => run.active)}
               shareSelection={
                 shareActive && shareInSelectionStage && shareDraft?.view === "timeline" && sessionId
                   ? {

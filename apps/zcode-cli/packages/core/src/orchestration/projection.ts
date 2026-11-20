@@ -1,3 +1,4 @@
+import { findCurrentOrchestrationAttempt } from "@zcode/contracts";
 import type { OrchestrationRunRecord } from "./contract.js";
 import type {
   OrchestrationConfigState,
@@ -37,9 +38,7 @@ export function projectOrchestrationRun(
     active,
     steps: record.state.plan.steps.map((step) => {
       const state = record.state.steps[step.stepId];
-      const latestAttempt = [...record.attempts]
-        .reverse()
-        .find((attempt) => attempt.stepId === step.stepId);
+      const latestAttempt = findCurrentOrchestrationAttempt(record, step.stepId);
       return {
         stepId: step.stepId,
         title: step.title,

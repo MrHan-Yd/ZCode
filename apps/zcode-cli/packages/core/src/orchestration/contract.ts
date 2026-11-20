@@ -16,6 +16,8 @@ export type {
   OrchestrationRunEvent,
   OrchestrationRunOwner,
   OrchestrationRunRecord,
+  OrchestrationRunRevision,
+  ReviseOrchestrationRunInput,
   OrchestrationRunState,
   OrchestrationRunStatus,
   OrchestrationRunStorePort,
@@ -25,7 +27,11 @@ export type {
 import type { OrchestrationRunRecord } from "@zcode/contracts";
 import type { OrchestrationDispatchContext } from "./dispatch-port.js";
 
-export { OrchestrationStoreError } from "@zcode/contracts";
+export {
+  OrchestrationStoreError,
+  getOrchestrationStepGeneration,
+  findCurrentOrchestrationAttempt,
+} from "@zcode/contracts";
 
 /**
  * 主会话工具面看到的编排用例接口。工具 handler 只依赖这五个方法，

@@ -18,15 +18,13 @@ export interface ComposerSubmissionConfig {
   planEnabled: boolean;
   /** 仅 createSession.config 消费；已有会话由 setOrchestration 单独下发。 */
   orchestration?: ComposerOrchestrationSubmissionConfig;
-  /** 运行中发送语义；交给 Core admission 裁决，无活动 run 时忽略。 */
-  orchestrationInput?: "guide" | "queue" | "interrupt";
 }
 
 export interface ComposerSubmissionOptions {
   /**
    * 运行端是否支持编排。旧 CLI 对 `orchestrationState` 返回 -32601 时调用方传 false，
-   * 提交必须退回经典 payload：旧端 schema 不认 `config.orchestration` /
-   * `orchestrationInput`，带上去会让整个 createSession / sendText 被拒。
+   * 提交必须退回经典 payload：旧端 schema 不认 `config.orchestration`，
+   * 带上去会让整个 createSession / sendText 被拒。
    */
   orchestrationSupported?: boolean;
 }
@@ -40,7 +38,6 @@ export function createComposerSubmissionConfig(
         modelSelection?: ModelSelection;
         orchestrationEnabled?: boolean;
         subagentPool?: readonly string[];
-        orchestrationInputMode?: "guide" | "queue" | "interrupt";
       }
     | null
     | undefined,
@@ -78,9 +75,6 @@ export function createComposerSubmissionConfig(
             team: normalizeOrchestrationTeamSelection(composer.subagentPool),
           }),
         }
-      : {}),
-    ...(orchestrationSupported && composer.orchestrationInputMode
-      ? { orchestrationInput: composer.orchestrationInputMode }
       : {}),
   });
 }

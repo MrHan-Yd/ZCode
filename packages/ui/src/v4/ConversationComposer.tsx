@@ -157,7 +157,6 @@ import { useConversationSelectionReferences } from "@/v4/composer/useConversatio
 import { ConversationBackgroundWorkTrigger } from "@/v4/composer/ConversationBackgroundWorkTrigger.js";
 import { V4ComposerCuaEntry } from "@/v4/composer/V4ComposerCuaEntry.js";
 import { OrchestrationTrigger } from "@/v4/composer/OrchestrationTrigger.js";
-import { OrchestrationRunBar } from "@/v4/composer/OrchestrationRunBar.js";
 import type { OrchestrationComposerControls } from "@/v4/composer/OrchestrationControls.js";
 import { V4ComposerPromptEnhanceButton } from "@/v4/composer/V4ComposerPromptEnhanceButton.js";
 import {
@@ -2303,7 +2302,6 @@ function ConversationComposerImpl({
             })}
           </div>
         ) : null}
-        {orchestrationControls ? <OrchestrationRunBar controls={orchestrationControls} /> : null}
         <ChatPromptEditor
           workspacePath={workspacePath}
           workspaceIdentity={workspaceIdentity}

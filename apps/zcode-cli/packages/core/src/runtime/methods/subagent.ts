@@ -55,7 +55,10 @@ import {
   type OfficialCuaPolicy,
 } from "../../subagent/computer-use-policy.js";
 import { computeOfficialCuaServerNames } from "./mcp.js";
-import { shouldForceOrchestrationReadOnly } from "../../orchestration/tool-policy.js";
+import {
+  shouldForceOrchestrationReadOnly,
+  resolveVisibleSubagentProfileNames,
+} from "../../orchestration/tool-policy.js";
 
 export function createDefaultSubagentPort(
   this: AgentRuntimeInternal,
@@ -72,7 +75,8 @@ export function createDefaultSubagentPort(
     outputRootDir: this.config.subagents?.outputRootDir,
     // 目录刷新会替换 config.subagents.profiles；端口按调用读取，不能捕获启动期数组。
     getProfiles: () => this.config.subagents?.profiles,
-    visibleProfiles: this.config.subagents?.visibleProfiles,
+    // 编排团队可以在运行期开启/变更，可见角色同样必须按调用读取；静态值会把新团队锁在端口外。
+    getVisibleProfiles: () => resolveVisibleSubagentProfileNames(this.config),
     builtInModelSelectionOverrides: this.config.subagents?.builtInModelSelectionOverrides,
     runtimeTaskRegistry: this.runtimeTaskRegistry,
     emitParentEvent: async (event, traceContext) => {

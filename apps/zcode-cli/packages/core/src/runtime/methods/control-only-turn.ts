@@ -88,6 +88,8 @@ export async function emitControlOnlyUserTurn(
         ...(options.inputSource ? { inputSource: options.inputSource } : {}),
         ...(options.workflowLaunch ? { workflowLaunch: options.workflowLaunch } : {}),
         ...(options.intent ? { intent: options.intent } : {}),
+        // 控制轮同样是用户可见输入；标记与普通轮共用 runtime 配置事实。
+        ...(this.config.orchestration?.enabled === true ? { orchestrationEnabled: true } : {}),
       },
       turnTraceContext,
     ),

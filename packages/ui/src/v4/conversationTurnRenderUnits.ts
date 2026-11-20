@@ -73,6 +73,15 @@ export interface ConversationTurnRenderUnit {
 interface BuildConversationTurnRenderUnitsOptions {
   nowMs?: number;
   sessionPhase?: SessionPhase;
+  /**
+   * 编排 run 活跃时保持最后一轮工作历史展开。
+   *
+   * 编排的 `CreateOrchestrationPlan` 是异步工具：主轮先结束，子代理随后启动并把
+   * `SubagentSpawned` 行追加到同一 turn。按既有规则，已结束的轮会把工作历史折叠成
+   * “已工作 X”，用户就看不到正在跑的子代理——与手动 Agent 工具运行中始终可见的形态不一致。
+   * 这里只改最后一条 turn 的默认展开态；run 结束后自动回到折叠规则。
+   */
+  keepLastTurnHistoryOpen?: boolean;
 }
 
 export type { BuildConversationTurnRenderUnitsOptions };
@@ -396,16 +405,21 @@ export function normalizeRenderUnitPosition(
 ): ConversationTurnRenderUnit {
   const isLastTurn = index === total - 1;
   const forceOpenHistory = shouldForceOpenAbnormalHistory(unit.header, options.sessionPhase);
+  // 编排 active run 只对最后一条 turn 生效：子代理行追加在计划工具所在轮，
+  // 历史不折叠才能像手动 Agent 一样持续看到运行中的 child。
+  const keepLiveHistoryOpen = isLastTurn && options.keepLastTurnHistoryOpen === true;
   const assistantHistoryDefaultOpen =
     unit.workSegments && unit.workSegments.length > 0
       ? !unit.timelineOnly &&
         (forceOpenHistory ||
+          keepLiveHistoryOpen ||
           (isLastTurn && unit.workSegments.at(-1)?.workStatus?.state === "running") ||
           (unit.workSegments.length === 1 &&
             unit.latestAssistantTextRow === undefined &&
             unit.assistantWorkRows.length > 0))
       : !unit.timelineOnly &&
         (forceOpenHistory ||
+          keepLiveHistoryOpen ||
           (isLastTurn && unit.workStatus?.state === "running") ||
           (unit.latestAssistantTextRow === undefined && unit.assistantWorkRows.length > 0));
   const workSegments = unit.workSegments?.map((segment, segmentIndex, segments) =>
@@ -415,6 +429,7 @@ export function normalizeRenderUnitPosition(
           assistantHistoryDefaultOpen:
             !unit.timelineOnly &&
             (forceOpenHistory ||
+              keepLiveHistoryOpen ||
               (isLastTurn && segment.workStatus?.state === "running") ||
               (segments.length === 1 &&
                 unit.latestAssistantTextRow === undefined &&

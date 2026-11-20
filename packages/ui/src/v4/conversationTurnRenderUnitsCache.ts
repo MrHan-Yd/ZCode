@@ -22,6 +22,11 @@ interface RenderUnitsCache {
   rows: readonly ConversationRow[];
   nowMs: number | undefined;
   sessionPhase: SessionPhase | undefined;
+  /**
+   * 编排 active run 会改变最后一轮的默认展开态；它只在开始/结束 run 时翻转，
+   * 翻转时整份 unit 的 `assistantHistoryDefaultOpen` 都不可复用，因此进缓存键。
+   */
+  keepLastTurnHistoryOpen: boolean;
   /** turn 顺序 = units 数组顺序（已通过 keep 过滤）。 */
   turnOrder: readonly string[];
   unitByTurnId: Map<string, ConversationTurnRenderUnit>;
@@ -37,12 +42,14 @@ function createRenderUnitsCache(
   rows: readonly ConversationRow[],
   nowMs: number | undefined,
   sessionPhase: SessionPhase | undefined,
+  keepLastTurnHistoryOpen: boolean,
   units: readonly ConversationTurnRenderUnit[],
 ): RenderUnitsCache {
   return {
     rows,
     nowMs,
     sessionPhase,
+    keepLastTurnHistoryOpen,
     turnOrder: units.map((unit) => unit.turnId),
     unitByTurnId: new Map(units.map((unit) => [unit.turnId, unit])),
   };
@@ -73,6 +80,7 @@ function rebuildRenderUnitsIncremental(
   cache: RenderUnitsCache,
   nowMs: number | undefined,
   sessionPhase: SessionPhase | undefined,
+  keepLastTurnHistoryOpen: boolean,
   additionalDirty: ReadonlySet<string> = EMPTY_TURN_ID_SET,
 ): { units: ConversationTurnRenderUnit[]; turnOrder: string[] } {
   // 1) 公共前缀/后缀 diff（引用比较）：变化区间内的行所属 turn 全部重建。
@@ -115,7 +123,11 @@ function rebuildRenderUnitsIncremental(
   // 3) 逐 turn 重建/复用。materialize 的 index/total 语义与 uncached 一致：keep 前的
   //    draft 序号与总数（isLastTurn 以 keep 前口径传入 workSegments 构建，再由
   //    normalize 修正 keep 后位置——与原全量路径相同）。
-  const options: BuildConversationTurnRenderUnitsOptions = { nowMs, sessionPhase };
+  const options: BuildConversationTurnRenderUnitsOptions = {
+    nowMs,
+    sessionPhase,
+    keepLastTurnHistoryOpen,
+  };
   const total = turnOrder.length;
   const materializedByTurnId = new Map<string, ConversationTurnRenderUnit>();
   const keptTurnIds: string[] = [];
@@ -157,9 +169,14 @@ export function createConversationTurnRenderUnitsBuilder(): ConversationTurnRend
   return function build(rows, options = {}) {
     const nowMs = options.nowMs;
     const sessionPhase = options.sessionPhase;
+    const keepLastTurnHistoryOpen = options.keepLastTurnHistoryOpen === true;
     // 捕获成 const：闭包内的回调里 `let` 的窄化会失效（TS18047）。
     const cache = renderUnitsCache;
-    if (cache !== null && cache.sessionPhase === sessionPhase) {
+    if (
+      cache !== null &&
+      cache.sessionPhase === sessionPhase &&
+      cache.keepLastTurnHistoryOpen === keepLastTurnHistoryOpen
+    ) {
       const nowMsChanged = cache.nowMs !== nowMs;
       if (cache.rows === rows && !nowMsChanged) {
         return materializeCachedUnits(cache);
@@ -171,18 +188,32 @@ export function createConversationTurnRenderUnitsBuilder(): ConversationTurnRend
         renderUnitsCache = { ...cache, nowMs };
         return materializeCachedUnits(cache);
       }
-      const rebuilt = rebuildRenderUnitsIncremental(rows, cache, nowMs, sessionPhase, clockDirty);
+      const rebuilt = rebuildRenderUnitsIncremental(
+        rows,
+        cache,
+        nowMs,
+        sessionPhase,
+        keepLastTurnHistoryOpen,
+        clockDirty,
+      );
       renderUnitsCache = {
         rows,
         nowMs,
         sessionPhase,
+        keepLastTurnHistoryOpen,
         turnOrder: rebuilt.turnOrder,
         unitByTurnId: new Map(rebuilt.units.map((unit) => [unit.turnId, unit])),
       };
       return rebuilt.units;
     }
     const units = buildConversationTurnRenderUnitsUncached(rows, options);
-    renderUnitsCache = createRenderUnitsCache(rows, nowMs, sessionPhase, units);
+    renderUnitsCache = createRenderUnitsCache(
+      rows,
+      nowMs,
+      sessionPhase,
+      keepLastTurnHistoryOpen,
+      units,
+    );
     return units;
   };
 }

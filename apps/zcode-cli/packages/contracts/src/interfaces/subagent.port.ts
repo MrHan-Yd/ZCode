@@ -25,6 +25,12 @@ export interface SubagentRunOptions {
   signal?: AbortSignal;
   /** 未显式选模的 child 从父 Agent Loop 继承的不可变 Model。 */
   model?: Model;
+  /**
+   * 本次派发可见的内置子代理名单。编排 run 用它已冻结的团队覆盖会话实时配置：
+   * 运行中关闭编排或改团队只影响后续 run，不能打断在飞 run 的剩余步骤。
+   * 缺省由 runtime 按当前配置派生（编排开启 = 团队，经典模式 = 通用两角色）。
+   */
+  visibleProfiles?: readonly string[];
   /** Core Server 对前台 child 的最高优先级 Selection；每个 child 仍自行创建 Model。 */
   modelOverride?: {
     selection: ModelSelection;
@@ -45,6 +51,8 @@ export interface SubagentStartOptions {
   signal?: AbortSignal;
   /** 后台 child 启动时继承的普通 Model；临时 turn 模型仍禁止进入后台。 */
   model?: Model;
+  /** 与 `SubagentRunOptions.visibleProfiles` 同义：编排 run 用冻结团队覆盖会话实时配置。 */
+  visibleProfiles?: readonly string[];
 }
 
 export interface SubagentWaitOptions {
@@ -108,6 +116,16 @@ export interface SubagentTaskSnapshot {
   output?: AgentOutput;
   outputFile?: string;
   notified?: boolean;
+  /** 需要物理执行退出的任务在冷恢复后也不能被 SendMessage 复活。 */
+  quiescenceRequired?: boolean;
+}
+
+/** 匹配同一次 child 执行的真实退出凭据；terminal 账本本身不构成凭据。 */
+export interface SubagentTaskQuiescence {
+  taskId: string;
+  agentId: string;
+  childSessionId?: SessionId;
+  status: "quiesced";
 }
 
 export interface SubagentPort {
@@ -127,6 +145,8 @@ export interface SubagentPort {
     taskId: string,
     options?: SubagentStopOptions,
   ): Promise<SubagentTaskSnapshot | undefined>;
+  /** 等待同身份 child 的真实执行退出；旧端缺失时调用方必须保留写占用。 */
+  waitForTaskQuiescence?(taskId: string): Promise<SubagentTaskQuiescence>;
   sendMessage?(
     request: SubagentSendMessageRequest,
     options?: SubagentSendMessageOptions,

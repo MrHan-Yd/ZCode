@@ -7,6 +7,10 @@ import {
 } from "@zcode/shared";
 import { OrchestrationArtifacts } from "./artifacts.js";
 import {
+  buildOrchestrationCompletionNotice,
+  buildOrchestrationFailureNotice,
+} from "./serviceNotice.js";
+import {
   OrchestrationStoreError,
   type OrchestrationArtifactStoragePort,
   type OrchestrationAttemptOutcome,
@@ -21,9 +25,8 @@ import {
 import type { OrchestrationDispatchContext } from "./dispatch-port.js";
 import { OrchestrationDispatcher } from "./dispatcher.js";
 import { OrchestrationRunStore } from "./runStore.js";
-import { summarizeRun } from "./scheduler.js";
+import { boundOrchestrationPromptState, describeOrchestrationRun } from "./servicePromptState.js";
 import { SubagentOrchestrationDispatchAdapter } from "./subagent-dispatch-adapter.js";
-import { fitContentWithSuffix } from "../tool/executor/result-content-projection.js";
 import {
   ORCHESTRATION_DEFAULT_MAX_CONCURRENCY,
   resolveOrchestrationMaxConcurrency,
@@ -37,8 +40,6 @@ function isLiveAttempt(attempt: OrchestrationAttemptRecord): boolean {
   return attempt.status === "claimed" || attempt.status === "running";
 }
 
-const COMPLETION_NOTICE_MAX_BYTES = 12 * 1024;
-const PROMPT_STATE_MAX_BYTES = 4 * 1024;
 const PROMPT_STATE_MAX_ACTIVE_RUNS = 4;
 
 export interface OrchestrationServiceOptions {
@@ -86,6 +87,8 @@ export class OrchestrationService implements OrchestrationToolPort {
   private readonly store: OrchestrationRunStore;
   private readonly dispatcher: OrchestrationDispatcher;
   private readonly executions = new Map<string, Promise<void>>();
+  /** 已接纳但尚未返回的 start/amend/cancel；whenIdle 不能在这些空窗里误报空闲。 */
+  private readonly mutations = new Set<Promise<unknown>>();
   /** 会话配置可在运行中更新；只影响后续新建的 run，已在飞的 run 冻结自己的 team。 */
   private team: readonly string[] | undefined;
   private maxConcurrency: number | undefined;
@@ -226,8 +229,8 @@ export class OrchestrationService implements OrchestrationToolPort {
    * 循环是必要的：等待期间模型可能通过新的工具调用启动后继 run。
    */
   async whenIdle(): Promise<void> {
-    while (this.executions.size > 0) {
-      await Promise.allSettled(this.executions.values());
+    while (this.executions.size > 0 || this.mutations.size > 0) {
+      await Promise.allSettled([...this.executions.values(), ...this.mutations]);
     }
   }
 
@@ -243,15 +246,15 @@ export class OrchestrationService implements OrchestrationToolPort {
     const lines: string[] = [];
     if (active.length) {
       lines.push("Active runs:");
-      for (const record of active) lines.push(`- ${describeRun(record)}`);
+      for (const record of active) lines.push(`- ${describeOrchestrationRun(record)}`);
     } else {
       lines.push("No orchestration run is currently active.");
     }
     if (latestTerminal) {
       lines.push("Latest finished run:");
-      lines.push(`- ${describeRun(latestTerminal)}`);
+      lines.push(`- ${describeOrchestrationRun(latestTerminal)}`);
     }
-    return boundPromptState(lines.join("\n"));
+    return boundOrchestrationPromptState(lines.join("\n"));
   }
 
   private latestTerminalRecord(): OrchestrationRunRecord | undefined {
@@ -280,6 +283,16 @@ export class OrchestrationService implements OrchestrationToolPort {
         const record = await store.create(input);
         remember(record);
         return record;
+      },
+      revise: async (input) => {
+        const result = await store.revise(input);
+        remember(result.record);
+        return result;
+      },
+      confirmAttemptQuiesced: async (runId: string, attemptKey: string) => {
+        const confirmed = await store.confirmAttemptQuiesced(runId, attemptKey);
+        await refresh(runId);
+        return confirmed;
       },
       get: async (runId) => {
         const record = await store.get(runId);
@@ -320,46 +333,55 @@ export class OrchestrationService implements OrchestrationToolPort {
   }
 
   async start(input: StartOrchestrationRunInput): Promise<OrchestrationRunRecord> {
-    const prepared = this.preparePlan(input);
-    const runId = `orch-${randomUUID()}`;
-    const record = await this.store.create({
-      runId,
-      plan: prepared.plan,
-      team: prepared.team,
-      writableRoles: prepared.writableRoles,
-      maxConcurrency: prepared.maxConcurrency,
+    return this.track(async () => {
+      const prepared = this.preparePlan(input);
+      const runId = `orch-${randomUUID()}`;
+      const record = await this.store.create({
+        runId,
+        plan: prepared.plan,
+        team: prepared.team,
+        writableRoles: prepared.writableRoles,
+        maxConcurrency: prepared.maxConcurrency,
+      });
+      this.launch(runId, input.context);
+      return record;
     });
-    this.launch(runId, input.context);
-    return record;
   }
 
   /**
-   * 用户改方向时建立后继 run。
-   *
-   * v1 只保证「旧 run 显式取消 + revision 递增 + 新 run 启动」；已完成步骤的产物复用与
-   * guide 注入属于 Phase 4，不在这一层假装做了。旧 run 的产物仍留在 journal 中可查。
+   * 同一 run 的原地修订：保留未变步骤的 child / 产物，只取消被删除或执行语义改变的
+   * 在飞 attempt。dispatcher 在返回前完成旧 child 收口并持久化 attempt_quiesced，
+   * 因此 service 不建立第二个 run，也不伪造“旧 run 已取消”的完成通知。
    */
   async amend(input: AmendOrchestrationRunInput): Promise<OrchestrationRunRecord> {
-    const previous = await this.store.get(input.runId);
-    if (!previous) {
-      throw new OrchestrationStoreError("not_found", "Orchestration run was not found.");
-    }
-    this.remember(previous);
-    const requested = this.preparePlan(input);
-    const revision = Math.max(requested.plan.revision, previous.state.plan.revision + 1);
-    if (!TERMINAL_RUN_STATUSES.has(previous.status)) {
-      await this.dispatcher.cancel(previous.runId);
-    }
-    return this.start({
-      plan: { ...requested.plan, revision },
-      team: requested.team,
-      maxConcurrency: requested.maxConcurrency,
-      context: input.context,
+    return this.track(async () => {
+      const previous = await this.store.get(input.runId);
+      if (!previous) {
+        throw new OrchestrationStoreError("not_found", "Orchestration run was not found.");
+      }
+      this.remember(previous);
+      const requested = this.preparePlan(input);
+      if (requested.plan.planId !== previous.state.plan.planId) {
+        throw new OrchestrationStoreError("invalid_plan", "An amendment must keep the planId.");
+      }
+      const duplicate = requested.plan.revision === previous.state.plan.revision;
+      const expectedRevision = duplicate
+        ? previous.state.plan.revision - 1
+        : previous.state.plan.revision;
+      const revision = duplicate ? previous.state.plan.revision : previous.state.plan.revision + 1;
+      const result = await this.dispatcher.revise({
+        runId: previous.runId,
+        expectedRevision,
+        plan: { ...requested.plan, revision },
+      });
+      this.remember(result.record);
+      if (!this.executions.has(previous.runId)) this.launch(previous.runId, input.context);
+      return result.record;
     });
   }
 
   async cancel(runId: string): Promise<OrchestrationRunRecord> {
-    return this.dispatcher.cancel(runId);
+    return this.track(() => this.dispatcher.cancel(runId));
   }
 
   async get(runId: string): Promise<OrchestrationRunRecord | undefined> {
@@ -412,9 +434,19 @@ export class OrchestrationService implements OrchestrationToolPort {
         this.notify(runId, buildOrchestrationFailureNotice(runId, error), context);
       })
       .finally(() => {
-        this.executions.delete(runId);
+        if (this.executions.get(runId) === execution) this.executions.delete(runId);
       });
     this.executions.set(runId, execution);
+  }
+
+  private track<T>(operation: () => Promise<T>): Promise<T> {
+    const promise = operation();
+    this.mutations.add(promise);
+    void promise.then(
+      () => this.mutations.delete(promise),
+      () => this.mutations.delete(promise),
+    );
+    return promise;
   }
 
   private notify(runId: string, text: string, context: OrchestrationDispatchContext): void {
@@ -427,50 +459,10 @@ export class OrchestrationService implements OrchestrationToolPort {
   }
 }
 
-export function buildOrchestrationCompletionNotice(record: OrchestrationRunRecord): string {
-  const summary = summarizeRun(record.state);
-  const lines = [
-    `Orchestration run ${record.runId} (plan "${record.state.plan.planId}", revision ${record.state.plan.revision}) finished with status: ${record.status}.`,
-    `Steps: ${summary.completed}/${summary.total} completed, ${summary.failed} failed, ${summary.blocked} blocked, ${summary.cancelled} cancelled, ${summary.interrupted} interrupted, ${summary.pending} pending, ${summary.running} running.`,
-    "",
-  ];
-  for (const step of record.state.plan.steps) {
-    const state = record.state.steps[step.stepId];
-    if (!state) continue;
-    const artifact = latestArtifact(record, step.stepId);
-    lines.push(
-      [
-        `- ${step.stepId} (${step.role}, ${step.title}): ${state.status}`,
-        state.error ? ` — ${state.error}` : "",
-        artifact ? ` — artifact ${artifact.uri}` : "",
-      ].join(""),
-    );
-  }
-  lines.push(
-    "",
-    record.status === "completed"
-      ? "Summarize the completed work for the user. Do not re-run finished steps."
-      : "Review the failed or blocked steps and decide whether to amend the plan or report the failure. Do not assume output for steps without an artifact.",
-  );
-  return boundNotice(lines.join("\n"));
-}
-
-export function buildOrchestrationFailureNotice(runId: string, error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return boundNotice(
-    [
-      `Orchestration run ${runId} stopped because the scheduler failed before reaching a terminal record.`,
-      message,
-      "Treat unfinished steps as interrupted and decide whether to amend the plan.",
-    ].join("\n"),
-  );
-}
-
-function latestArtifact(record: OrchestrationRunRecord, stepId: string) {
-  return [...record.attempts]
-    .reverse()
-    .find((attempt) => attempt.stepId === stepId && attempt.artifact !== undefined)?.artifact;
-}
+export {
+  buildOrchestrationCompletionNotice,
+  buildOrchestrationFailureNotice,
+} from "./serviceNotice.js";
 
 function formatZodIssues(issues: readonly { path: PropertyKey[]; message: string }[]): string {
   return issues
@@ -479,42 +471,4 @@ function formatZodIssues(issues: readonly { path: PropertyKey[]; message: string
       return `${path}: ${issue.message}`;
     })
     .join("; ");
-}
-
-function boundNotice(text: string): string {
-  if (Buffer.byteLength(text, "utf8") <= COMPLETION_NOTICE_MAX_BYTES) return text;
-  // 通知不是产物：截断到 UTF-8 字符边界即可，原文始终可从 run journal / artifact 读取。
-  return fitContentWithSuffix(
-    text,
-    COMPLETION_NOTICE_MAX_BYTES,
-    "\n[... orchestration summary truncated ...]",
-    "head",
-  );
-}
-
-function describeRun(record: OrchestrationRunRecord): string {
-  const summary = summarizeRun(record.state);
-  return [
-    `run \`${record.runId}\`, plan \`${record.state.plan.planId}\``,
-    `revision ${record.state.plan.revision}, generation ${record.state.generation}`,
-    `status ${record.status}`,
-    `${summary.completed}/${summary.total} completed`,
-    ...[
-      summary.running ? `${summary.running} running` : "",
-      summary.failed ? `${summary.failed} failed` : "",
-      summary.blocked ? `${summary.blocked} blocked` : "",
-      summary.cancelled ? `${summary.cancelled} cancelled` : "",
-      summary.interrupted ? `${summary.interrupted} interrupted` : "",
-    ].filter(Boolean),
-  ].join(", ");
-}
-
-function boundPromptState(text: string): string {
-  if (Buffer.byteLength(text, "utf8") <= PROMPT_STATE_MAX_BYTES) return text;
-  return fitContentWithSuffix(
-    text,
-    PROMPT_STATE_MAX_BYTES,
-    "\n[... orchestration run state truncated ...]",
-    "head",
-  );
 }

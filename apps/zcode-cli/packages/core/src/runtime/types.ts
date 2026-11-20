@@ -153,8 +153,10 @@ export interface AgentRuntimeConfig {
     profiles?: readonly AgentProfile[];
     builtInModelSelectionOverrides?: BuiltInSubagentModelSelectionOverrides;
     /**
-     * 只暴露给 Agent 工具的内置角色名单；缺省 = 经典模式的两个内置角色。
-     * 编排会话按团队写入；不影响子代理恢复（恢复仍使用完整 profile 集合）。
+     * 宿主的显式可见名单；缺省 = 经典模式的两个内置角色。
+     * 编排会话不写这个字段，派发解析与工具描述统一从 `orchestration.team` 派生
+     * （见 `resolveVisibleSubagentProfileNames`），避免团队出现两份可写状态。
+     * 不影响子代理恢复（恢复仍使用完整 profile 集合）。
      */
     visibleProfiles?: readonly string[];
   };
@@ -229,7 +231,7 @@ export interface AgentRuntimeConfig {
    */
   orchestration?: {
     enabled?: boolean;
-    /** 会话隔离的团队；缺省按 spec 使用 general-purpose / Explore / tester。 */
+    /** 会话隔离的团队；缺省按 spec 使用 general-purpose / Explore / reviewer。 */
     team?: readonly string[];
     /** 默认 3，硬上限 8。 */
     maxConcurrency?: number;

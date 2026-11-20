@@ -379,6 +379,8 @@ export interface AgentRuntimeTurnMethods {
       intent?: TurnInputIntentMetadata;
       executionKind?: TurnExecutionKind;
       epilogueStart?: number;
+      /** 与同轮 TurnStarted 共用的编排标记；缺省回退当前 runtime 配置。 */
+      orchestrationEnabled?: boolean;
     },
   ): Promise<void>;
   recordPendingModelChange(input: {

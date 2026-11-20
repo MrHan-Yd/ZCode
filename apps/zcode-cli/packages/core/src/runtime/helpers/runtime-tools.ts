@@ -28,6 +28,7 @@ import {
   isOrchestratorRuntimeConfig,
   ORCHESTRATION_TOOL_NAMES,
   ORCHESTRATOR_ALLOWED_TOOL_NAMES,
+  resolveVisibleSubagentProfileNames,
 } from "../../orchestration/tool-policy.js";
 
 const DEFAULT_SUBAGENT_BACKGROUND_BASH_MAX_MS = 3_600_000;
@@ -114,7 +115,7 @@ function registerRuntimeBuiltInTools(
     includeBrowserUse: browserUseEnabled,
     embeddedSearchEnabled: resolveRuntimeEmbeddedSearchEnabled(runtime),
     agentProfiles: runtime.config.subagents?.profiles,
-    visibleProfiles: runtime.config.subagents?.visibleProfiles,
+    visibleProfiles: resolveVisibleSubagentProfileNames(runtime.config),
     includeOrchestration: isOrchestratorRuntimeConfig(runtime.config),
     allowedTools: resolveBuiltInToolAllowlist(runtime.config),
     // workflow_child 的结构性禁用（CreateWorkflow/SaveWorkflow 因 alwaysAsk 隐形挂起；

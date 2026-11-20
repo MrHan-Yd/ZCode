@@ -1,58 +1,46 @@
-/* oxlint-disable eslint(max-lines) -- 状态面板同时维护收起态摘要、展开态分区、菜单策略和宽度自适应，同文件能保证两种形态共享同一内容优先级。 */
-import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
+/* oxlint-disable eslint(max-lines) -- 会话状态卡片的分区组件与折叠策略集中在同文件，保证 Goal/计划/进程/终端/工作流/编排/智能体共享同一套内容与排序规则。 */
 import {
+  Fragment,
   forwardRef,
   memo,
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ComponentPropsWithoutRef,
-  type CSSProperties,
   type MouseEvent,
   type ReactNode,
 } from "react";
 import {
-  ActivityIcon,
-  ArrowDownToLineIcon,
   ArrowRightIcon,
-  ArrowUpFromLineIcon,
-  BotIcon,
   CheckCircle2Icon,
-  ChevronDownIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
   CircleCheckBigIcon,
   CircleIcon,
-  EllipsisIcon,
-  FileDiffIcon,
+  CircleSlashIcon,
   GoalIcon,
   ListChecksIcon,
-  Maximize2Icon,
-  Minimize2Icon,
   PauseIcon,
   PlayIcon,
+  RotateCcwIcon,
   SquareIcon,
   SquareTerminalIcon,
   Workflow,
+  XIcon,
 } from "lucide-react";
 import {
-  TID_CHAT_SUMMARY_PANEL,
+  TID_CHAT_STATUS_SECTIONS_PANEL,
   TID_V4_BACKGROUND_WORK_CANCEL,
   TID_V4_BACKGROUND_WORK_ITEM,
   testId,
 } from "@zcode/shared";
-import type {
-  GitChangeSourceId,
-  GitRepositorySummary,
-  ModelSelection,
-  ZCodeSessionRunningSubagent,
-  ZCodeTaskChangeSummary,
-} from "@zcode/shared";
+import type { ZCodeSessionRunningSubagent } from "@zcode/shared";
 import type {
   BackgroundWorkSummary,
   GoalState,
+  OrchestrationRunProjection,
+  OrchestrationStepProjection,
   PlanState,
   ToolCallRow,
   WorkflowRunState,
@@ -69,19 +57,9 @@ import {
   CollapsibleContent,
   CollapsibleTrigger,
 } from "@/components/ui/collapsible.js";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu.js";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { formatBackgroundTaskElapsedLabel } from "@/BackgroundTaskElapsedLabel.js";
-import { GitActionMenu } from "@/GitActionMenu.js";
-import { GitPullAction } from "@/GitPullAction.js";
-import { GitBranchSwitcher } from "@/GitBranchSwitcher.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type {
   OpenPlanDetailSideTabRequest,
@@ -89,24 +67,28 @@ import type {
   OpenSubagentSideTabRequest,
   OpenWorkflowRunDirectorySideTabRequest,
 } from "@/lib/workspaceSidePane.js";
-import type { ChatViewSummaryPanelVariant } from "@/v4/legacyChatViewTypes.js";
-import { resolveConversationStatusPanelVariant } from "@/v4/conversationLayout.js";
 import {
   buildConversationStatusPanelModel,
   type ConversationStatusPanelRunningSubagent,
   type ConversationStatusPanelModel,
+  type ConversationStatusPanelOrchestrationRun,
   type ConversationStatusPanelSessionPlanItem,
   type ConversationStatusPanelWorkflowRun,
 } from "@/v4/conversationStatusPanelModel.js";
 import type { ConversationStatusPanelWorkflowRunTarget } from "@/v4/conversationStatusPanelModel.js";
 import { workflowRunOpenTarget } from "@/v4/conversationStatusPanelModel.js";
-import { shouldShowGitRemoteSummary } from "@/v4/gitToolsEntryVisibility.js";
 import { formatSessionSpeedValue } from "@/v4/composer/sessionStatsSpeeds.js";
 import {
   resolveLongestRunningSubagent,
   resolveSubagentSpeedPollIds,
   resolveSubagentSpeedReadings,
 } from "@/v4/subagentSpeeds.js";
+import {
+  SUBAGENT_STATUS_ORDER,
+  countSubagentStatuses,
+  hasSubagentStatusSummary,
+  sortRunningSubagentsByStatus,
+} from "@/v4/subagentStatusModel.js";
 import { resolveSubagentDisplayName } from "@/lib/subagentName.js";
 import { useSessionPerformanceBatch } from "@/hooks/useSessionPerformanceBatch.js";
 import {
@@ -117,13 +99,6 @@ import {
 interface ConversationStatusPanelProps {
   workspacePath: string;
   workspaceIdentity?: string;
-  gitSummary?: GitRepositorySummary | null;
-  gitDirtyFileCount?: number;
-  gitWorktreeReviewSourceId?: GitChangeSourceId | null;
-  gitWorktreeChangeSummary?: { added: number; removed: number } | null;
-  activeTaskChangeSummary?: ZCodeTaskChangeSummary | null;
-  /** 当前会话正在使用的模型；提交消息生成缺省继承它。 */
-  commitMessageModelSelection?: ModelSelection | null;
   goal?: GoalState | null;
   sessionPlans?: readonly ToolCallRow[];
   plan?: PlanState | null;
@@ -131,6 +106,8 @@ interface ConversationStatusPanelProps {
   runningSubagents?: readonly ZCodeSessionRunningSubagent[];
   /** 本会话 `snapshot.workflowRuns.runs`；与 backgroundWorks 在模型层按 workId ≡ runId 联接。 */
   workflowRuns?: readonly WorkflowRunState[];
+  /** 活动编排 run 的只读投影（`orchestrationState`）；计划分区不持有第二份 run 状态。 */
+  orchestrationRuns?: readonly OrchestrationRunProjection[];
   /**
    * 已结束的 workflow run 条数（journal 口径，`countEndedWorkflowRuns`）。
    * 面板不自己算：它手上的投影是 memory-only 的活状态，重启后为空，而这条计数恰恰要在重启后
@@ -140,20 +117,18 @@ interface ConversationStatusPanelProps {
   endedSubagentCount?: number;
   rootSessionId?: string;
   parentSessionId?: string;
-  /** 当前 pane 是否由手机 Web 远控壳承载。 */
-  /** 当前是否为粗指针手机视口。 */
-  isMobileViewport?: boolean;
-  layoutMode?: "none" | "auto" | "inline";
-  summaryPanelVariantOverride?: ChatViewSummaryPanelVariant | null;
-  onVariantChange?: (variant: ChatViewSummaryPanelVariant | null) => void;
+  /** 面板是否打开：由标题栏「会话状态」图标的握手状态驱动。 */
+  open: boolean;
+  /** 面板自己的关闭按钮。 */
+  onClose?: () => void;
   terminalSectionOpen?: boolean;
   onTerminalSectionOpenChange?: (open: boolean) => void;
   agentSectionOpen?: boolean;
   onAgentSectionOpenChange?: (open: boolean) => void;
   workflowSectionOpen?: boolean;
   onWorkflowSectionOpenChange?: (open: boolean) => void;
-  onRefreshGit?: () => void;
-  onOpenGitReview?: (sourceId?: GitChangeSourceId) => void;
+  orchestrationSectionOpen?: boolean;
+  onOrchestrationSectionOpenChange?: (open: boolean) => void;
   onPauseGoal?: () => void;
   onResumeGoal?: () => void;
   onOpenPlanDetail?: (request: OpenPlanDetailSideTabRequest) => void;
@@ -163,13 +138,16 @@ interface ConversationStatusPanelProps {
   onOpenSubagentDirectory?: (request: OpenSubagentDirectorySideTabRequest) => void;
   onOpenWorkflowRun?: (target: ConversationStatusPanelWorkflowRunTarget) => void;
   onOpenWorkflowRunDirectory?: (request: OpenWorkflowRunDirectorySideTabRequest) => void;
-  className?: string;
+  onStopOrchestrationRun?: (runId: string) => void;
+  /** 只取消当前 run 并聚焦同一个输入框；不弹第二个输入框、不代发消息。 */
+  onRequestOrchestrationReplan?: () => void;
 }
 
 // memo 组件默认 props 不内联创建数组，避免每次渲染生成新引用触发稳定引用边界测试。
 const EMPTY_BACKGROUND_WORKS: readonly BackgroundWorkSummary[] = [];
 const EMPTY_RUNNING_SUBAGENTS: readonly ZCodeSessionRunningSubagent[] = [];
 const EMPTY_WORKFLOW_RUNS: readonly WorkflowRunState[] = [];
+const EMPTY_ORCHESTRATION_RUNS: readonly OrchestrationRunProjection[] = [];
 
 function formatDurationUnits(
   totalSeconds: number,
@@ -222,73 +200,54 @@ function formatRunningCount(
   );
 }
 
-function formatRunningSubagentCount(
-  formatMessage: ReturnType<typeof useZCodeIntl>["intl"]["formatMessage"],
-  count: number,
-) {
-  return formatMessage(
-    {
-      // 这里的计数至少包含 running 投影中的 subagent（可能是 mixed 胶囊总数）；
-      // subagent 又包含 foreground、background、blocked 和 waiting，复用后台任务文案
-      // 会把计数语义错误地缩窄成“后台”。
-      id:
-        count === 1
-          ? "chat.statusPanel.runningAgentsValue"
-          : "chat.statusPanel.runningAgentsValuePlural",
-    },
-    { count: String(count) },
-  );
-}
-
 type StatusSectionKind =
   | "environment"
   | "goal"
   | "sessionPlans"
   | "plan"
+  | "orchestration"
   | "terminal"
   | "workflow"
   | "agent";
-
-const STATUS_SECTION_SCROLL_POLICY = {
-  environment: null,
-  goal: "max-h-48",
-  sessionPlans: "max-h-48",
-  // 六个双行 Todo（6 × 52px）需要约 20rem；超过后只滚动进程区块。
-  plan: "max-h-80",
-  terminal: "max-h-48",
-  // workflow 行与 terminal / agent 行同高（两行 + 控制），限高沿用同一档。
-  workflow: "max-h-48",
-  agent: "max-h-48",
-} as const satisfies Record<StatusSectionKind, string | null>;
 
 function StatusSectionHeader({
   children,
   isOpen,
   section,
+  separated,
   title,
 }: {
   children?: ReactNode;
   isOpen: boolean;
   section: StatusSectionKind;
+  separated: boolean;
   title: string;
 }) {
+  // 分区头是整个面板唯一的「我在哪」锚点：分区不再各自限高滚动后，
+  // 标题必须粘在视口顶部，滚过的行被不透明底色遮住；否则长列表里只剩一片行。
   return (
-    <div className="mb-0.5 flex h-8 min-w-0 shrink-0 items-center gap-1.5 px-2 pr-8">
+    <div
+      className={cn(
+        "sticky top-0 z-10 -mx-2 flex h-7 min-w-0 shrink-0 items-center gap-1.5 border-b border-[var(--color-border)]/50 bg-[var(--color-popover)] px-2 pr-8",
+        separated && "border-t",
+      )}
+    >
       <CollapsibleTrigger asChild>
         <button
           type="button"
           aria-expanded={isOpen}
           data-status-section-trigger={section}
-          className="group flex min-w-0 shrink-0 items-center gap-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-input-border-focused)]"
+          className="group -ml-1 flex h-6 min-w-0 shrink-0 items-center gap-1 rounded-md px-1 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-input-border-focused)]"
         >
-          <span className="shrink-0 text-ui-base text-[var(--color-foreground-subtle)]">
+          <ChevronRightIcon
+            className={cn(
+              "size-3.5 shrink-0 text-[var(--color-foreground-subtle)] opacity-60 transition-transform duration-150 group-hover:opacity-100 group-focus-visible:opacity-100",
+              isOpen && "rotate-90",
+            )}
+          />
+          <span className="shrink-0 text-ui-base font-medium text-[var(--color-foreground-subtle)] group-hover:text-[var(--color-foreground)]">
             {title}
           </span>
-          {isOpen ? (
-            <ChevronDownIcon className="size-3.5 shrink-0 text-[var(--color-foreground-subtle)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
-          ) : (
-            <ChevronRightIcon className="size-3.5 shrink-0 text-[var(--color-foreground-subtle)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
-          )}
         </button>
       </CollapsibleTrigger>
       {children ? (
@@ -322,9 +281,6 @@ function StatusSection({
   const [uncontrolledOpen, setUncontrolledOpen] = useState(defaultOpen);
   const isControlled = open !== undefined;
   const isOpen = open ?? uncontrolledOpen;
-  // 限高过去依赖每个调用方显式传 scrollable，组合区块或新增类型时容易
-  // 旁路滚动视口。改为按完整区块类型表统一裁决，让计划等新类型漏配时直接触发类型检查。
-  const scrollViewportMaxHeightClass = STATUS_SECTION_SCROLL_POLICY[section];
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
       if (!isControlled) {
@@ -340,152 +296,18 @@ function StatusSection({
       open={isOpen}
       onOpenChange={handleOpenChange}
       data-status-section={section}
-      className={cn("min-w-0 flex-none", separated && "border-t border-[var(--color-border)] pt-2")}
+      className="min-w-0 flex-none"
     >
       <section className="min-w-0 flex-none">
-        <StatusSectionHeader isOpen={isOpen} section={section} title={title}>
+        <StatusSectionHeader isOpen={isOpen} section={section} separated={separated} title={title}>
           {trailing?.(isOpen)}
         </StatusSectionHeader>
+        {/* 滚动只发生在面板唯一的视口里；分区内容不再限高，也不再自带 overflow。 */}
         <CollapsibleContent>
-          {scrollViewportMaxHeightClass ? (
-            // 长 Goal / 计划 / Todo / 终端 / 智能体列表过去保持自然高度，外层 shell
-            // 只能把超出 max-height 的内容裁掉。滚动边界必须放在折叠动画内容层内部，
-            // 既固定区块标题和控制，也不破坏 CollapsibleContent 的高度动画。
-            <div
-              data-status-section-scroll={section}
-              className={cn(
-                scrollViewportMaxHeightClass,
-                "min-h-0 overflow-x-hidden overflow-y-auto pr-1",
-              )}
-            >
-              {children}
-            </div>
-          ) : (
-            children
-          )}
+          <div className="pb-2">{children}</div>
         </CollapsibleContent>
       </section>
     </Collapsible>
-  );
-}
-
-function GitStatusSection({
-  activeTaskChangeSummary,
-  commitMessageModelSelection = null,
-  gitSummary,
-  gitWorktreeReviewSourceId,
-  model,
-  onOpenGitReview,
-  onRefreshGit,
-  separated,
-  workspaceIdentity,
-  workspacePath,
-  useVerticalFloatingPanels,
-}: {
-  activeTaskChangeSummary?: ZCodeTaskChangeSummary | null;
-  commitMessageModelSelection?: ModelSelection | null;
-  gitSummary: GitRepositorySummary | null | undefined;
-  gitWorktreeReviewSourceId?: GitChangeSourceId | null;
-  model: ConversationStatusPanelModel;
-  onOpenGitReview?: (sourceId?: GitChangeSourceId) => void;
-  onRefreshGit?: () => void;
-  separated: boolean;
-  workspaceIdentity?: string;
-  workspacePath: string;
-  useVerticalFloatingPanels: boolean;
-}) {
-  const { intl } = useZCodeIntl();
-  const git = model.git;
-  if (!git || !gitSummary || !onRefreshGit) {
-    return null;
-  }
-  const hasChanges = git.added + git.removed > 0;
-  // 「更改」行只在真的有改动时渲染。有上游的干净仓库现在也会显示 Git 段（见
-  // gitToolsEntryVisibility），继续无条件挂一行「+0 -0」会让这块看起来是空的。
-  const hasWorkspaceChanges = hasChanges || git.dirtyFileCount > 0;
-  const canOpenReview = Boolean(onOpenGitReview && gitSummary.isRepository);
-
-  return (
-    <StatusSection
-      section="environment"
-      separated={separated}
-      title={intl.formatMessage({ id: "chat.statusPanel.environment" })}
-      trailing={(isOpen) =>
-        // 收起态的「+N -M」同样只在真有改动时显示：规则 5 之后干净仓库也会渲染这段，
-        // 收起时顶着一行「+0 -0」比留空更像坏掉。
-        isOpen || !hasWorkspaceChanges ? null : (
-          <span className="shrink-0 font-mono text-ui-sm tabular-nums">
-            <span className={cn("text-[var(--color-diff-added)]", !hasChanges && "opacity-50")}>
-              +{git.added}
-            </span>{" "}
-            <span className={cn("text-[var(--color-diff-removed)]", !hasChanges && "opacity-50")}>
-              -{git.removed}
-            </span>
-          </span>
-        )
-      }
-    >
-      <div className="space-y-0">
-        {hasWorkspaceChanges ? (
-          /* V4 状态面板迁移时只保留了 Changes 的静态展示，
-             没有继续透传旧版 Git review 回调，导致规范中的审阅入口不可点击。 */
-          <button
-            type="button"
-            disabled={!canOpenReview}
-            className={cn(
-              "flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-2 text-left text-ui-base text-[var(--color-foreground)] transition-colors",
-              canOpenReview
-                ? "hover:bg-[var(--color-hover)] hover:text-[var(--color-foreground)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-input-border-focused)]"
-                : "cursor-default opacity-50",
-            )}
-            onClick={() => {
-              onOpenGitReview?.(gitWorktreeReviewSourceId ?? undefined);
-            }}
-          >
-            <FileDiffIcon className="size-4 shrink-0 text-[var(--color-foreground)]" />
-            <span className="min-w-0 flex-1 truncate">
-              {intl.formatMessage({ id: "chat.statusPanel.changes" })}
-            </span>
-            <span className="shrink-0 font-mono tabular-nums">
-              <span className="text-[var(--color-diff-added)]">+{git.added}</span>{" "}
-              <span className="text-[var(--color-diff-removed)]">-{git.removed}</span>
-            </span>
-          </button>
-        ) : null}
-        <GitBranchSwitcher
-          workspacePath={workspacePath}
-          gitSummary={gitSummary}
-          dirtyFileCount={git.dirtyFileCount}
-          onRefreshGit={onRefreshGit}
-          className="w-full px-0 pt-0"
-          triggerClassName="flex h-8 w-full min-w-0 justify-start gap-2 rounded-lg px-2 text-left text-ui-base text-[var(--color-foreground)] hover:bg-[var(--color-hover)] hover:text-[var(--color-foreground)] [&>span]:max-w-[calc(100%-3.5rem)] [&_svg:first-child]:text-[var(--color-foreground)]"
-          popoverClassName="w-72 max-w-[calc(100vw-2rem)]"
-          branchListClassName="max-h-56"
-          popoverSide={useVerticalFloatingPanels ? "bottom" : "left"}
-          showFooterActions
-        />
-        <GitActionMenu
-          workspacePath={workspacePath}
-          workspaceIdentity={workspaceIdentity}
-          gitSummary={gitSummary}
-          activeTaskChangeSummary={activeTaskChangeSummary ?? null}
-          commitMessageModelSelection={commitMessageModelSelection}
-          onRefreshGit={onRefreshGit}
-          triggerLayout="status-row"
-          className="w-full"
-        />
-        {/* 拉取与提交/推送同级，所以占独立一行；没有上游分支时这一行不出现
-            （`canPull` 为假），此时「提交或推送」会先把分支推上去建立跟踪关系。 */}
-        {git.canPull ? (
-          <GitPullAction
-            workspacePath={workspacePath}
-            gitSummary={gitSummary}
-            onRefreshGit={onRefreshGit}
-            className="w-full"
-          />
-        ) : null}
-      </div>
-    </StatusSection>
   );
 }
 
@@ -1348,6 +1170,334 @@ function WorkflowStatusSection({
   );
 }
 
+function OrchestrationStepStatusIcon({
+  status,
+}: {
+  status: OrchestrationStepProjection["status"];
+}) {
+  // 与「进程」分区同一套图标语言：进行中用 →、待执行用 ○、完成用 ✓。
+  // 运行中不使用加载动画——同一份状态在「进程」里已经用静态箭头表达，
+  // 编排计划继续用转圈会让两个分区看起来是两套语义。
+  const className = "mt-0.5 size-3.5 shrink-0";
+  switch (status) {
+    case "running":
+      return (
+        <ArrowRightIcon aria-hidden className={cn(className, "text-[var(--color-foreground)]")} />
+      );
+    case "completed":
+      return (
+        <CheckCircle2Icon aria-hidden className={cn(className, "text-[var(--color-success)]")} />
+      );
+    case "failed":
+      return <XIcon aria-hidden className={cn(className, "text-[var(--color-destructive)]")} />;
+    case "blocked":
+    case "cancelled":
+    case "interrupted":
+      return (
+        <CircleSlashIcon
+          aria-hidden
+          className={cn(className, "text-[var(--color-foreground-subtle)]")}
+        />
+      );
+    default:
+      return (
+        <CircleIcon
+          aria-hidden
+          className={cn(className, "text-[var(--color-foreground-subtlest)]")}
+        />
+      );
+  }
+}
+
+function orchestrationStepStatusTone(status: OrchestrationStepProjection["status"]) {
+  if (status === "running") return "text-warning";
+  if (status === "failed") return "text-[var(--color-destructive)]";
+  return "text-[var(--color-foreground-subtle)]";
+}
+
+function orchestrationRunStatusTone(status: OrchestrationRunProjection["status"]) {
+  if (status === "running") return "text-warning";
+  if (status === "failed") return "text-[var(--color-destructive)]";
+  return "text-[var(--color-foreground-subtle)]";
+}
+
+function OrchestrationStepRow({
+  now,
+  step,
+  stepById,
+}: {
+  now: number;
+  step: OrchestrationStepProjection;
+  stepById: ReadonlyMap<string, OrchestrationStepProjection>;
+}) {
+  const { intl } = useZCodeIntl();
+  const waitingOn = step.dependsOn.filter((dependency) => {
+    const state = stepById.get(dependency)?.status;
+    return state !== "completed" && state !== "failed" && state !== "cancelled";
+  });
+  const elapsedMs =
+    step.startedAt === undefined
+      ? null
+      : step.status === "running"
+        ? Math.max(0, now - step.startedAt)
+        : step.endedAt === undefined
+          ? null
+          : Math.max(0, step.endedAt - step.startedAt);
+  // 行尾只给时长值：「已运行 X」句子在每行复制会盖过标题；动词短语留给智能体/终端分区，
+  // 那里一行只有一个运行中的任务。
+  const elapsedLabel =
+    elapsedMs === null
+      ? null
+      : formatDurationUnits(Math.floor(elapsedMs / 1000), intl.formatMessage);
+
+  return (
+    <li
+      data-orchestration-step-id={step.stepId}
+      data-step-status={step.status}
+      className="grid min-w-0 grid-cols-[14px_minmax(0,1fr)_auto] items-start gap-x-2 rounded-lg px-2 py-1 transition-colors hover:bg-[var(--color-hover)]"
+    >
+      <OrchestrationStepStatusIcon status={step.status} />
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span
+          className={cn(
+            "line-clamp-2 min-w-0 text-ui-base leading-5",
+            step.status === "completed"
+              ? "text-[var(--color-foreground-subtle)]"
+              : "text-[var(--color-foreground)]",
+          )}
+        >
+          {step.title}
+        </span>
+        <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-ui-sm leading-4 text-[var(--color-foreground-subtle)]">
+          <span className={cn("shrink-0", orchestrationStepStatusTone(step.status))}>
+            {intl.formatMessage({ id: `chat.orchestration.step.${step.status}` })}
+          </span>
+          {step.role ? (
+            <span className="min-w-0 max-w-24 truncate font-mono text-ui-xs text-[var(--color-foreground-subtlest)]">
+              {step.role}
+            </span>
+          ) : null}
+          {step.status === "pending" && waitingOn.length > 0 ? (
+            <span className="min-w-0 truncate">
+              {intl.formatMessage(
+                { id: "chat.orchestration.step.waiting" },
+                { steps: waitingOn.join(", ") },
+              )}
+            </span>
+          ) : null}
+          {step.attempts > 1 ? (
+            <span className="shrink-0 text-warning">
+              {intl.formatMessage(
+                { id: "chat.orchestration.step.attempts" },
+                { count: String(step.attempts) },
+              )}
+            </span>
+          ) : null}
+        </span>
+      </span>
+      {elapsedLabel ? (
+        <span className="shrink-0 pt-0.5 text-ui-xs tabular-nums text-[var(--color-foreground-subtlest)]">
+          {elapsedLabel}
+        </span>
+      ) : null}
+      {step.error ? (
+        <span className="col-span-2 col-start-2 mt-0.5 line-clamp-2 text-ui-sm leading-4 text-[var(--color-destructive)]">
+          {step.error}
+        </span>
+      ) : null}
+    </li>
+  );
+}
+
+/**
+ * 编排计划分区：run / step 的只读投影 + 两个显式动作（停止 / 重排）。
+ *
+ * 计划过去住在 composer 上方的运行条和弹窗里，主会话结束后只看到一条“已工作 X”；
+ * 放进状态面板后与 Todo / 子智能体同层，折叠成 chip 也能看到进度。
+ * 数据来自 `orchestrationState` 的只读投影，组件不维护 run 状态。
+ */
+function OrchestrationStatusSection({
+  onOpenChange,
+  onRequestReplan,
+  onStopRun,
+  open,
+  runs,
+  separated,
+  title,
+}: {
+  onOpenChange?: (open: boolean) => void;
+  onRequestReplan?: () => void;
+  onStopRun?: (runId: string) => void;
+  open?: boolean;
+  runs: readonly ConversationStatusPanelOrchestrationRun[];
+  separated: boolean;
+  title: string;
+}) {
+  const { intl } = useZCodeIntl();
+  const hasRunningStep = runs.some(({ run }) =>
+    run.steps.some((step) => step.status === "running"),
+  );
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!hasRunningStep) return;
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [hasRunningStep]);
+
+  if (runs.length === 0) return null;
+  const primary = runs[0]!;
+
+  return (
+    <StatusSection
+      section="orchestration"
+      open={open}
+      onOpenChange={onOpenChange}
+      separated={separated}
+      title={title}
+      trailing={() => (
+        <span className="shrink-0 tabular-nums">
+          {intl.formatMessage(
+            { id: "chat.orchestration.progress" },
+            {
+              completed: String(primary.completedCount),
+              total: String(primary.totalCount),
+              running: String(primary.runningCount),
+            },
+          )}
+        </span>
+      )}
+    >
+      <div className="flex flex-col pb-1">
+        {runs.map((entry, index) => (
+          <OrchestrationRunBlock
+            key={entry.run.runId}
+            entry={entry}
+            now={now}
+            onRequestReplan={onRequestReplan}
+            onStopRun={onStopRun}
+            separated={index > 0}
+          />
+        ))}
+      </div>
+    </StatusSection>
+  );
+}
+
+function OrchestrationRunBlock({
+  entry,
+  now,
+  onRequestReplan,
+  onStopRun,
+  separated,
+}: {
+  entry: ConversationStatusPanelOrchestrationRun;
+  now: number;
+  onRequestReplan?: () => void;
+  onStopRun?: (runId: string) => void;
+  separated: boolean;
+}) {
+  const { intl } = useZCodeIntl();
+  const { run } = entry;
+  const stepById = useMemo(
+    () => new Map(run.steps.map((step) => [step.stepId, step])),
+    [run.steps],
+  );
+  const canAct = run.active;
+  const stopLabel = intl.formatMessage({ id: "chat.orchestration.timeline.stop" });
+  const replanLabel = intl.formatMessage({ id: "chat.orchestration.timeline.replan" });
+
+  return (
+    <section
+      data-orchestration-run-id={run.runId}
+      data-orchestration-run-status={run.status}
+      className={cn(
+        "flex min-w-0 flex-col",
+        // run 之间只用一条发丝线：面板里已经有一层边框，run 再套卡片会变成三层描边。
+        separated && "mt-2 border-t border-[var(--color-border)]/50 pt-2",
+      )}
+    >
+      <div className="flex h-7 min-w-0 items-center gap-1.5 px-2">
+        {/* planId 可截断，修订号独立且永远可见：丢掉 rN 就判断不了这是哪一版计划。 */}
+        <span
+          className="min-w-0 flex-1 truncate font-mono text-ui-sm font-medium text-[var(--color-foreground)]"
+          title={run.planId}
+        >
+          {run.planId}
+        </span>
+        <span className="shrink-0 text-ui-xs tabular-nums text-[var(--color-foreground-subtlest)]">
+          r{run.revision}
+        </span>
+        <span
+          className={cn("shrink-0 text-ui-xs font-medium", orchestrationRunStatusTone(run.status))}
+        >
+          {intl.formatMessage({ id: `chat.orchestration.run.${run.status}` })}
+        </span>
+        {canAct && onStopRun ? (
+          <ControlHintTooltip title={stopLabel} side="left">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="size-6 shrink-0 rounded-md"
+              aria-label={stopLabel}
+              onClick={() => onStopRun(run.runId)}
+            >
+              <SquareIcon className="size-3.5" aria-hidden />
+            </Button>
+          </ControlHintTooltip>
+        ) : null}
+        {canAct && onRequestReplan ? (
+          <ControlHintTooltip title={replanLabel} side="left">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="size-6 shrink-0 rounded-md"
+              aria-label={replanLabel}
+              onClick={onRequestReplan}
+            >
+              <RotateCcwIcon className="size-3.5" aria-hidden />
+            </Button>
+          </ControlHintTooltip>
+        ) : null}
+      </div>
+      <ol className="flex flex-col gap-0.5 px-1">
+        {run.steps.map((step) => (
+          <OrchestrationStepRow key={step.stepId} step={step} stepById={stepById} now={now} />
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+/**
+ * 运行中子智能体的前置状态图标：沿用「进程」分区的图标语言（→ / ○ / ⊘），
+ * 不再使用旋转加载图标。状态词仍在信息行保留，图标只做快速扫读辅助。
+ */
+function SubagentStatusGlyph({
+  status,
+}: {
+  status: ConversationStatusPanelRunningSubagent["status"];
+}) {
+  const className = "size-3.5 shrink-0";
+  if (status === "running") {
+    return (
+      <ArrowRightIcon aria-hidden className={cn(className, "text-[var(--color-foreground)]")} />
+    );
+  }
+  if (status === "waiting") {
+    return (
+      <CircleIcon
+        aria-hidden
+        className={cn(className, "text-[var(--color-foreground-subtlest)]")}
+      />
+    );
+  }
+  return (
+    <CircleSlashIcon aria-hidden className={cn(className, "text-[var(--color-destructive)]")} />
+  );
+}
+
 function SubagentStatusSection({
   endedSubagentCount,
   onCancelBackgroundWork,
@@ -1379,10 +1529,10 @@ function SubagentStatusSection({
 }) {
   const { intl } = useZCodeIntl();
   const [now, setNow] = useState(() => Date.now());
-  const ordered = useMemo(
-    () => [...subagents].sort((left, right) => (left.startedAt ?? 0) - (right.startedAt ?? 0)),
-    [subagents],
-  );
+  // 状态事实来自 snapshot.subagents.running[].status：running → waiting → blocked，
+  // 组内按 startedAt 升序（缺失排组尾），同值保持投影原序（规则 11）。
+  const ordered = useMemo(() => sortRunningSubagentsByStatus(subagents), [subagents]);
+  const statusCounts = useMemo(() => countSubagentStatuses(subagents), [subagents]);
   useEffect(() => {
     if (subagents.length === 0) return;
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -1392,7 +1542,7 @@ function SubagentStatusSection({
   // 每行显示该子会话**自己的**累计平均 TPS（specs/session-performance-stats.md 规则 7）。
   // 一次批量读覆盖全部运行中的子智能体：请求频率是 1 秒一次，与并发子代理数无关；
   // 分区卸载（面板收起成胶囊、会话切换）或没有运行中子智能体时不发请求。
-  // `ordered` 按启动序，截断上限因此保留运行最久的那些——与下面 trailing 读的那一个一致。
+  // id 顺序与行渲染共用同一份排序结果：32 上限因此优先保留运行中、再等待、再阻塞。
   const pollIds = useMemo(
     () => resolveSubagentSpeedPollIds(ordered.map((item) => item.childSessionId)),
     [ordered],
@@ -1416,6 +1566,27 @@ function SubagentStatusSection({
     ? Math.max(0, now - (longestRunning.startedAt ?? now))
     : 0;
   const longestSpeed = longestRunning ? (speeds.get(longestRunning.childSessionId) ?? null) : null;
+  // 状态摘要只列非零项，顺序固定 running/waiting/blocked（规则 12）。展开态与收起态共用，
+  // data-subagent-status-summary 只用于断言，不参与渲染。
+  const hasStatusSummary = hasSubagentStatusSummary(statusCounts);
+  const statusSummaryNode = hasStatusSummary ? (
+    <span
+      data-subagent-status-summary={`running:${statusCounts.running},waiting:${statusCounts.waiting},blocked:${statusCounts.blocked}`}
+      className="inline-flex min-w-0 items-center gap-1"
+    >
+      {SUBAGENT_STATUS_ORDER.filter((status) => statusCounts[status] > 0).map((status, index) => (
+        <Fragment key={status}>
+          {index > 0 ? <span className="shrink-0">·</span> : null}
+          <span className="shrink-0">
+            {intl.formatMessage(
+              { id: `chat.statusPanel.subagentStatusSummary.${status}` },
+              { count: String(statusCounts[status]) },
+            )}
+          </span>
+        </Fragment>
+      ))}
+    </span>
+  ) : null;
 
   return (
     <StatusSection
@@ -1427,7 +1598,7 @@ function SubagentStatusSection({
       title={title}
       trailing={(isOpen) =>
         subagents.length === 0 ? null : isOpen ? (
-          <span>{formatRunningSubagentCount(intl.formatMessage, subagents.length)}</span>
+          statusSummaryNode
         ) : (
           <>
             <span className="min-w-0 truncate">
@@ -1443,12 +1614,10 @@ function SubagentStatusSection({
                 <span className="shrink-0 tabular-nums" data-subagent-speed="true">
                   {formatSessionSpeedValue(longestSpeed, intl)}
                 </span>
-                <span className="shrink-0">·</span>
+                {hasStatusSummary ? <span className="shrink-0">·</span> : null}
               </>
             )}
-            <span className="shrink-0">
-              {formatRunningSubagentCount(intl.formatMessage, subagents.length)}
-            </span>
+            {statusSummaryNode}
           </>
         )
       }
@@ -1465,6 +1634,14 @@ function SubagentStatusSection({
           const speed = speeds.get(subagent.childSessionId);
           // 标题说的是「让它干什么」，名字说的是「它是谁」；缺名字时整段缺席（见 subagentName.ts）。
           const displayName = resolveSubagentDisplayName(subagent.subagentType);
+          // 状态图标与状态词表达同一事实（规则 10）：图标负责扫读，颜色只是辅助，
+          // 可读状态始终由文字承担。
+          const statusTone =
+            subagent.status === "running"
+              ? "text-warning"
+              : subagent.status === "waiting"
+                ? "text-[var(--color-foreground-subtle)]"
+                : "text-[var(--color-destructive)]";
           return (
             <li
               key={subagent.childSessionId}
@@ -1476,7 +1653,10 @@ function SubagentStatusSection({
               data-background-task-kind="agent"
               data-child-session-id={subagent.childSessionId}
               data-work-id={subagent.controlWorkId}
-              data-work-status="running"
+              // 与 data-subagent-status 保持同一事实（snapshot.subagents.running[].status），
+              // 不再硬编码 running，避免两个属性互相矛盾。
+              data-work-status={subagent.status}
+              data-subagent-status={subagent.status}
               className={cn(
                 "group relative flex min-w-0 items-start gap-2 rounded-lg px-2 py-2 hover:bg-[var(--color-hover)]",
                 canOpenSubagentSession && "cursor-pointer",
@@ -1496,12 +1676,23 @@ function SubagentStatusSection({
                   className="absolute inset-0 z-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[var(--color-input-border-focused)]"
                 />
               ) : null}
-              <BotIcon className="pointer-events-none relative z-[1] mt-0.5 size-4 shrink-0 text-[var(--color-foreground-subtle)]" />
+              {/* 状态图标前置到行首，与「进程」分区一致：扫一眼图标就能分清谁在跑、谁在等、谁被阻塞。 */}
+              <span className="pointer-events-none relative z-[1] mt-0.5 flex shrink-0 items-center">
+                <SubagentStatusGlyph status={subagent.status} />
+              </span>
               <div className="pointer-events-none relative z-[1] flex min-w-0 flex-1 flex-col gap-1.5">
                 <span className="line-clamp-2 text-ui-base leading-5 text-[var(--color-foreground)]">
                   {subagent.title}
                 </span>
+                {/* 信息行从状态词开始：状态词 → 角色名 → 时长 → TPS → Stop。
+                    状态图标已经前置到行首；各项用间距分隔，不使用 `·`，
+                    窄面板下整段换行而不是挤掉 Stop。 */}
                 <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-ui-base">
+                  <span className={cn("shrink-0", statusTone)}>
+                    {intl.formatMessage({
+                      id: `chat.statusPanel.subagentStatus.${subagent.status}`,
+                    })}
+                  </span>
                   {/* 名字排在时长之前：先认出「是谁在跑」，再看跑了多久。哨兵值/空值整段缺席。
                       这一行整体 pointer-events-none（整行点击由 z-0 那层透明按钮承接），所以
                       title 提示在这里永远不会弹——长名只截断，完整名字在打开的子会话页签上。 */}
@@ -1626,253 +1817,30 @@ function EndedSubagentDirectoryRow({
   );
 }
 
-function StatusSummaryMetric({ children, icon }: { children: ReactNode; icon: ReactNode }) {
-  return (
-    <div className="flex h-8 w-max max-w-80 min-w-0 items-center gap-1.5 pl-2 pr-3 text-ui-base text-[var(--color-foreground)]">
-      <span className="relative size-4 shrink-0">
-        <span className="absolute inset-0 transition-opacity group-hover:opacity-0 group-focus-visible:opacity-0">
-          {icon}
-        </span>
-        <Maximize2Icon className="absolute inset-0 size-4 text-[var(--color-foreground)] opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100" />
-      </span>
-      {children}
-    </div>
-  );
-}
-
-function getCurrentPlanItem(plan: ConversationStatusPanelModel["plan"]) {
-  return (
-    plan?.items.find((item) => item.status === "inProgress") ??
-    plan?.items.find((item) => item.status === "pending") ??
-    null
-  );
-}
-
-function getCompletedPlanItem(plan: ConversationStatusPanelModel["plan"]) {
-  return [...(plan?.items ?? [])].reverse().find((item) => item.status === "completed") ?? null;
-}
-
-function StatusSummaryRow({
-  endedWorkflowRunCount,
-  gitWorktreeChangeSummary,
-  model,
-  onVariantChange,
-}: {
-  /** 已结束 run 的目录计数；宿主给 0 表示目录入口不可渲染（缺会话或缺回调）。 */
-  endedWorkflowRunCount: number;
-  gitWorktreeChangeSummary?: { added: number; removed: number } | null;
-  model: ConversationStatusPanelModel;
-  onVariantChange?: (variant: ChatViewSummaryPanelVariant | null) => void;
-}) {
-  const { intl } = useZCodeIntl();
-  const expandLabel = intl.formatMessage({ id: "chat.summaryPanel.showPanel" });
-  const currentPlanItem = getCurrentPlanItem(model.plan);
-  const completedPlanItem = getCompletedPlanItem(model.plan);
-  const latestSessionPlan = model.sessionPlans?.items[0] ?? null;
-  const goal = model.goal;
-  const goalTitle = goal ? goal.summaryTitle?.trim() || goal.objective.trim() || null : null;
-  const goalStatus = goal?.status ?? null;
-  // V4 goal 在 verifier 判定未完成后会进入 notSatisfied；mini 过去漏掉
-  // 这个合法开放态并返回 null，导致只剩 2px 空 shell，也失去重新展开入口。
-  const isActiveGoal =
-    goalStatus === "active" ||
-    goalStatus === "notSatisfied" ||
-    goalStatus === "paused" ||
-    goalStatus === "verifying";
-  const isDoneGoal = goalStatus === "verified";
-  const added = gitWorktreeChangeSummary?.added ?? 0;
-  const removed = gitWorktreeChangeSummary?.removed ?? 0;
-  const hasGitMiniSummary = Boolean(model.git && added + removed > 0);
-  // 工作区没有行级增减、但还有未推送提交（或落后远端）时，胶囊也要给出可点内容：
-  // auto 形态在容器不足 1280px 时只显示胶囊，点开才是唯一能按「推送」的地方。
-  const gitRemoteSummary =
-    model.git &&
-    shouldShowGitRemoteSummary({
-      added,
-      removed,
-      hasPushableCommits: model.git.hasPushableCommits,
-      behind: model.git.behind,
-      canPull: model.git.canPull,
-    })
-      ? model.git
-      : null;
-  const gitRemoteSummaryCount = gitRemoteSummary
-    ? gitRemoteSummary.hasPushableCommits
-      ? gitRemoteSummary.ahead
-      : gitRemoteSummary.behind
-    : 0;
-
-  // 胶囊摘要过去把所有后台任务都写死成 Activity，纯 Subagent 因而没有复用
-  // Running 明细的 Bot 语义。规则现在是三类的：**恰好一类**沿用该类图标，混合才是 Activity
-  // （两类矩阵在 workflow 加入后就不够用了，硬写下去会漏掉 workflow+agent 这种组合）。
-  const hasRunningBash = model.runningBashWorks.length > 0;
-  const hasRunningSubagent = model.runningSubagentWorks.length > 0;
-  const hasRunningWorkflow = model.runningWorkflowRuns.length > 0;
-  const runningCount =
-    model.runningBashWorks.length +
-    model.runningSubagentWorks.length +
-    model.runningWorkflowRuns.length;
-  const runningKindCount = [hasRunningWorkflow, hasRunningBash, hasRunningSubagent].filter(
-    Boolean,
-  ).length;
-  const RunningSummaryIcon =
-    runningKindCount > 1
-      ? ActivityIcon
-      : hasRunningWorkflow
-        ? Workflow
-        : hasRunningBash
-          ? SquareTerminalIcon
-          : BotIcon;
-  const summaryMetric = currentPlanItem ? (
-    <StatusSummaryMetric
-      icon={<ArrowRightIcon className="size-4 text-[var(--color-foreground)]" />}
-    >
-      <span className="min-w-0 truncate">{currentPlanItem.content}</span>
-    </StatusSummaryMetric>
-  ) : goalTitle && isActiveGoal ? (
-    <StatusSummaryMetric icon={<GoalIcon className="size-4 text-[var(--color-foreground)]" />}>
-      <span className="min-w-0 truncate">{goalTitle}</span>
-    </StatusSummaryMetric>
-  ) : hasGitMiniSummary ? (
-    <StatusSummaryMetric icon={<FileDiffIcon className="size-4 text-[var(--color-foreground)]" />}>
-      <span className="min-w-0 truncate">
-        {intl.formatMessage({ id: "chat.statusPanel.changes" })}
-      </span>
-      <span className="shrink-0 text-[var(--color-diff-added)]">+{added}</span>
-      <span className="shrink-0 text-[var(--color-diff-removed)]">-{removed}</span>
-    </StatusSummaryMetric>
-  ) : gitRemoteSummary ? (
-    <StatusSummaryMetric
-      // 有未推送提交是「往上推」，其余两种情况（落后远端 / 已同步）都指向「拉取」。
-      icon={
-        gitRemoteSummary.hasPushableCommits ? (
-          <ArrowUpFromLineIcon className="size-4 text-[var(--color-foreground)]" />
-        ) : (
-          <ArrowDownToLineIcon className="size-4 text-[var(--color-foreground)]" />
-        )
-      }
-    >
-      <span className="min-w-0 truncate">
-        {intl.formatMessage({
-          id: gitRemoteSummary.hasPushableCommits
-            ? "chat.statusPanel.unpushedCommits"
-            : gitRemoteSummary.behind > 0
-              ? "chat.statusPanel.behindRemote"
-              : "chat.statusPanel.remoteSynced",
-        })}
-      </span>
-      {gitRemoteSummaryCount > 0 ? (
-        <span className="shrink-0 text-[var(--color-foreground-subtle)]">
-          {gitRemoteSummaryCount}
-        </span>
-      ) : null}
-    </StatusSummaryMetric>
-  ) : goalTitle && isDoneGoal ? (
-    <StatusSummaryMetric icon={<GoalIcon className="size-4 text-[var(--color-foreground)]" />}>
-      <span className="min-w-0 truncate">{goalTitle}</span>
-    </StatusSummaryMetric>
-  ) : completedPlanItem ? (
-    <StatusSummaryMetric icon={<CheckCircle2Icon className="size-4 text-[var(--color-success)]" />}>
-      <span className="min-w-0 truncate">{completedPlanItem.content}</span>
-    </StatusSummaryMetric>
-  ) : model.plan ? (
-    <StatusSummaryMetric
-      icon={<ListChecksIcon className="size-4 text-[var(--color-foreground-subtle)]" />}
-    >
-      <span className="min-w-0 truncate">
-        {intl.formatMessage({ id: "chat.statusPanel.todo" })}
-      </span>
-      <span className="shrink-0 text-[var(--color-foreground-subtle)]">
-        {model.plan.completedCount}/{model.plan.totalCount}
-      </span>
-    </StatusSummaryMetric>
-  ) : latestSessionPlan ? (
-    <StatusSummaryMetric
-      icon={<ListChecksIcon className="size-4 text-[var(--color-foreground)]" />}
-    >
-      <span className="min-w-0 truncate">
-        {latestSessionPlan.title ?? intl.formatMessage({ id: "chat.statusPanel.planFallback" })}
-      </span>
-    </StatusSummaryMetric>
-  ) : runningCount > 0 ? (
-    <StatusSummaryMetric
-      icon={<RunningSummaryIcon className="size-4 text-[var(--color-foreground)]" />}
-    >
-      {/* 产品规则：实时活动只能在没有 Goal/Todo/Git 等主状态时兜底，
-          避免胶囊把主状态和输入框已展示的实时计数重复拼接。 */}
-      <span className="shrink-0">
-        {hasRunningSubagent
-          ? formatRunningSubagentCount(intl.formatMessage, runningCount)
-          : formatRunningCount(intl.formatMessage, runningCount)}
-      </span>
-    </StatusSummaryMetric>
-  ) : endedWorkflowRunCount > 0 ? (
-    // 胶囊的兜底链止步于「活动计数」，而面板级的卸载闸门（!hasContent &&
-    // !canRenderEndedWorkflows）为了保住 run 目录入口，会在**只剩已结束 run**时仍保留
-    // 整个壳——工作区无 Git 变更时 workflow 一结束，胶囊各分支全 null，只剩一条 2px
-    // 空壳线（与 goal notSatisfied 那次是同一个失效形状）。这里补上最低优先级的终态
-    // 分支：图标沿用 Workflow 域，文案与 Workflows 分区页脚同 key，点开即展开面板。
-    <StatusSummaryMetric
-      icon={<Workflow className="size-4 text-[var(--color-foreground-subtle)]" />}
-    >
-      <span className="min-w-0 truncate">
-        {intl.formatMessage({ id: "chat.statusPanel.endedWorkflows" })}
-      </span>
-      <span className="shrink-0 text-[var(--color-foreground-subtle)]">
-        {endedWorkflowRunCount}
-      </span>
-    </StatusSummaryMetric>
-  ) : null;
-
-  if (!summaryMetric) {
-    return null;
-  }
-
-  return (
-    <ControlHintTooltip title={expandLabel} sideOffset={4} side="left">
-      <button
-        type="button"
-        aria-label={expandLabel}
-        className="group inline-flex w-max max-w-80 cursor-pointer flex-col items-stretch text-left text-[var(--color-foreground)] transition-colors hover:bg-[var(--color-menu-hover)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-input-border-focused)]"
-        onClick={() => onVariantChange?.("panel")}
-      >
-        {summaryMetric}
-      </button>
-    </ControlHintTooltip>
-  );
-}
-
 function ConversationStatusPanelImpl({
   workspacePath,
   workspaceIdentity,
-  gitSummary,
-  gitDirtyFileCount = 0,
-  gitWorktreeReviewSourceId,
-  gitWorktreeChangeSummary,
-  activeTaskChangeSummary,
-  commitMessageModelSelection = null,
   goal,
   sessionPlans,
   plan,
   backgroundWorks = EMPTY_BACKGROUND_WORKS,
   runningSubagents = EMPTY_RUNNING_SUBAGENTS,
   workflowRuns = EMPTY_WORKFLOW_RUNS,
+  orchestrationRuns = EMPTY_ORCHESTRATION_RUNS,
   endedWorkflowRunCount = 0,
   endedSubagentCount = 0,
   rootSessionId,
   parentSessionId,
-  isMobileViewport = false,
-  layoutMode = "none",
-  summaryPanelVariantOverride,
-  onVariantChange,
+  open,
+  onClose,
   terminalSectionOpen,
   onTerminalSectionOpenChange,
   agentSectionOpen,
   onAgentSectionOpenChange,
   workflowSectionOpen,
   onWorkflowSectionOpenChange,
-  onRefreshGit,
-  onOpenGitReview,
+  orchestrationSectionOpen,
+  onOrchestrationSectionOpenChange,
   onPauseGoal,
   onResumeGoal,
   onOpenPlanDetail,
@@ -1882,18 +1850,12 @@ function ConversationStatusPanelImpl({
   onOpenSubagentDirectory,
   onOpenWorkflowRun,
   onOpenWorkflowRunDirectory,
-  className,
+  onStopOrchestrationRun,
+  onRequestOrchestrationReplan,
 }: ConversationStatusPanelProps) {
-  const isOfficeMode = useIsOfficeMode();
-  const miniMeasureRef = useRef<HTMLDivElement | null>(null);
-  const [miniWidth, setMiniWidth] = useState(320);
   const model = useMemo(
     () =>
       buildConversationStatusPanelModel({
-        isOfficeMode,
-        gitSummary,
-        gitDirtyFileCount,
-        gitWorktreeChangeSummary,
         goal,
         sessionPlans,
         workspacePath,
@@ -1901,14 +1863,12 @@ function ConversationStatusPanelImpl({
         backgroundWorks,
         runningSubagents,
         workflowRuns,
+        orchestrationRuns,
       }),
     [
-      isOfficeMode,
       backgroundWorks,
-      gitDirtyFileCount,
-      gitSummary,
-      gitWorktreeChangeSummary,
       goal,
+      orchestrationRuns,
       sessionPlans,
       plan,
       runningSubagents,
@@ -1916,30 +1876,15 @@ function ConversationStatusPanelImpl({
       workspacePath,
     ],
   );
-  const variant = resolveConversationStatusPanelVariant({
-    variantOverride: summaryPanelVariantOverride ?? null,
-  });
-  const isVariantAutomatic = summaryPanelVariantOverride == null;
-  const useVerticalFloatingPanels = false;
-  const panelModeValue = isVariantAutomatic ? "auto" : variant;
   const { intl } = useZCodeIntl();
-  const panelMenuLabel = intl.formatMessage({
-    id: "chat.summaryPanel.displayMode",
-  });
-  const shellStyle = useMemo(
-    () =>
-      ({
-        "--chat-summary-panel-mini-width": `${miniWidth}px`,
-      }) as CSSProperties,
-    [miniWidth],
-  );
-  const canRenderGit = Boolean(model.git && gitSummary && onRefreshGit);
+  // 面板是右下覆盖式浮层，分区内的二级浮层统一向左展开。
+  const useVerticalFloatingPanels = false;
   const canRenderGoal = Boolean(model.goal);
   const canRenderSessionPlans = Boolean(model.sessionPlans);
   const canRenderPlan = Boolean(model.plan);
+  const canRenderOrchestration = model.activeOrchestrationRuns.length > 0;
   const canRenderTerminals = model.runningBashWorks.length > 0;
-  // 已结束的 run 也开门（与 canRenderAgents 同判断）：重启后活动数为零，若只按它开门，
-  // 通往 run 目录的唯一入口会连带消失。
+  // 已结束的 run 也开门：重启后活动数为零，若只按它开门，通往 run 目录的唯一入口会消失。
   const canRenderEndedWorkflows = Boolean(
     endedWorkflowRunCount > 0 && parentSessionId && onOpenWorkflowRunDirectory,
   );
@@ -1947,79 +1892,26 @@ function ConversationStatusPanelImpl({
   const canRenderEndedAgents = Boolean(
     endedSubagentCount > 0 && parentSessionId && onOpenSubagentDirectory,
   );
-  // 已结束目录入口过去渲染在 Agent StatusSection 之后，视觉和 DOM 都被提升成
-  // 并列顶层 section。Agent 的运行态和已结束目录属于同一领域，统一由 Agent 折叠分组承载。
   const canRenderAgents = model.runningSubagentWorks.length > 0 || canRenderEndedAgents;
-  const handlePanelModeChange = useCallback(
-    (value: string) => {
-      if (value === "auto") {
-        onVariantChange?.(null);
-        return;
-      }
-      if (value === "panel" || value === "mini") {
-        onVariantChange?.(value);
-      }
-    },
-    [onVariantChange],
-  );
-  const handleCollapseToMini = useCallback(() => {
-    onVariantChange?.("mini");
-  }, [onVariantChange]);
-
-  useEffect(() => {
-    const element = miniMeasureRef.current;
-    if (!element) {
-      return;
-    }
-    const updateMiniWidth = () => {
-      const nextWidth = Math.ceil(element.getBoundingClientRect().width);
-      if (nextWidth > 0) {
-        const nextMiniWidth = Math.min(nextWidth, 320);
-        setMiniWidth((currentMiniWidth) =>
-          currentMiniWidth === nextMiniWidth ? currentMiniWidth : nextMiniWidth,
-        );
-      }
-    };
-
-    updateMiniWidth();
-
-    if (typeof ResizeObserver === "undefined") {
-      return;
-    }
-    const observer = new ResizeObserver(updateMiniWidth);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [model]);
-
-  // `model.hasContent` 只认**活的**内容（模型手上的投影都是活状态），所以「只剩历史」的
-  // 会话会连整个胶囊一起消失——而那正是重启后打开一条旧对话的样子，run 目录的入口于是又没了。
-  // 已结束的 run 因此单独开这道门。（Agents 的已结束行有同一个洞：`endedSubagentCount` 也
-  // 没进 `hasContent`。那是既有行为，不在本轮一起翻。）
-  if (!model.hasContent && !canRenderEndedWorkflows) {
+  const hasStatusSections =
+    canRenderGoal ||
+    canRenderSessionPlans ||
+    canRenderPlan ||
+    canRenderTerminals ||
+    canRenderWorkflows ||
+    canRenderOrchestration ||
+    canRenderAgents;
+  // 面板由标题栏「会话状态」图标唤醒；没有内容时也渲染空态，保证点击图标有反馈。
+  if (!open) {
     return null;
   }
-
+  const closeLabel = intl.formatMessage({ id: "common.close" });
   return (
-    <div
-      className={cn(
-        "pointer-events-none absolute top-0 z-20 pt-4",
-        // 旧 ChatView 的 inline 面板直接钉在右侧，正文列通过独立 translate 让位。
-        // v4 若继续用 inset-x-0 + justify-end，会让面板容器宽铺满并改变宽屏下的横向对齐。
-        layoutMode === "inline"
-          ? "right-4"
-          : layoutMode === "auto"
-            ? "inset-x-0 flex justify-end px-4 @min-[1280px]/conversation:left-auto @min-[1280px]/conversation:right-4 @min-[1280px]/conversation:px-0"
-            : "inset-x-0 flex justify-end px-4",
-        className,
-      )}
-    >
-      {/* 状态面板恢复旧 ChatView 的同 shell 收起/展开模型。
-          之前 v4 用固定展开卡片替代 summary panel，窄屏会遮挡聊天正文，也丢失用户 override。 */}
+    <div className="pointer-events-none absolute right-4 top-0 z-20 pt-4">
       <aside
         aria-label={intl.formatMessage({ id: "chat.summaryPanel.title" })}
-        data-testid={TID_CHAT_SUMMARY_PANEL}
-        data-state={variant === "mini" ? "collapsed" : "expanded"}
-        data-display-mode={variant}
+        data-testid={TID_CHAT_STATUS_SECTIONS_PANEL}
+        data-state="expanded"
         data-goal-status={model.goal?.status}
         data-goal-objective={model.goal?.objective}
         data-running-background-count={
@@ -2031,194 +1923,129 @@ function ConversationStatusPanelImpl({
         data-running-agent-count={model.runningSubagentWorks.length}
         data-running-workflow-count={model.runningWorkflowRuns.length}
         data-ended-workflow-count={endedWorkflowRunCount}
-        style={shellStyle}
-        className={cn(
-          "pointer-events-auto relative overflow-hidden rounded-2xl border border-[var(--color-popover-border)] bg-[var(--color-popover)] text-[var(--color-foreground)] shadow-md transition-[border-radius,padding,background-color,box-shadow] duration-300 ease-in-out",
-          variant === "mini"
-            ? "inline-flex max-h-8.5 w-[var(--chat-summary-panel-mini-width)] max-w-[calc(100vw-1.5rem)] flex-col"
-            : variant === "panel"
-              ? "flex max-h-[min(64dvh,32rem)] w-80 max-w-[calc(100vw-1.5rem)] flex-col"
-              : "inline-flex max-h-8.5 w-[var(--chat-summary-panel-mini-width)] max-w-[calc(100vw-1.5rem)] flex-col @min-[1280px]/conversation:max-h-[min(64dvh,32rem)] @min-[1280px]/conversation:w-80",
-        )}
+        className="pointer-events-auto relative flex max-h-[min(70dvh,36rem)] w-80 max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-2xl border border-[var(--color-popover-border)] bg-[var(--color-popover)] text-[var(--color-foreground)] shadow-md"
       >
-        {variant !== "mini" ? (
-          <div
-            className={cn(
-              "absolute right-3 top-3 z-10 items-center gap-1",
-              variant === "auto" ? "hidden @min-[1280px]/conversation:flex" : "flex",
-            )}
-          >
-            <DropdownMenu>
-              <ControlHintTooltip title={panelMenuLabel} side="left">
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    className="size-6"
-                    aria-label={panelMenuLabel}
-                  >
-                    <EllipsisIcon className="size-3.5" />
-                  </Button>
-                </DropdownMenuTrigger>
-              </ControlHintTooltip>
-              <DropdownMenuContent align="end" side="bottom" className="w-44">
-                <DropdownMenuRadioGroup
-                  value={panelModeValue}
-                  onValueChange={handlePanelModeChange}
-                >
-                  <DropdownMenuRadioItem value="auto">
-                    {intl.formatMessage({
-                      id: "chat.summaryPanel.displayModeAuto",
-                    })}
-                  </DropdownMenuRadioItem>
-                </DropdownMenuRadioGroup>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            <ControlHintTooltip
-              title={intl.formatMessage({ id: "chat.summaryPanel.showMini" })}
-              side="left"
+        {/* 关闭按钮必须高于粘性分区头，否则滚上来的标题会盖住它的点击区。 */}
+        <div className="absolute right-3 top-3 z-20 flex items-center">
+          <ControlHintTooltip title={closeLabel} side="left">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              className="size-6"
+              aria-label={closeLabel}
+              onClick={onClose}
             >
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                className="size-6"
-                aria-label={intl.formatMessage({
-                  id: "chat.summaryPanel.showMini",
-                })}
-                onClick={handleCollapseToMini}
-              >
-                <Minimize2Icon className="size-3.5" />
-              </Button>
-            </ControlHintTooltip>
-          </div>
-        ) : null}
-        {variant !== "mini" ? (
-          // 单个区块限高后，多区块同时展开仍可能超过 shell；外层必须提供
-          // 第二层兜底滚动，保证后续区块标题和操作始终可达，不能继续直接裁切。
-          <div
-            className={cn(
-              "min-h-0 flex-1 flex-col gap-2 overflow-x-hidden overflow-y-auto p-2",
-              variant === "auto" ? "hidden @min-[1280px]/conversation:flex" : "flex",
-            )}
-          >
-            {canRenderGit ? (
-              <GitStatusSection
-                model={model}
-                gitSummary={gitSummary}
-                gitWorktreeReviewSourceId={gitWorktreeReviewSourceId}
-                workspacePath={workspacePath}
-                workspaceIdentity={workspaceIdentity}
-                activeTaskChangeSummary={activeTaskChangeSummary}
-                commitMessageModelSelection={commitMessageModelSelection}
-                onRefreshGit={onRefreshGit}
-                onOpenGitReview={onOpenGitReview}
-                separated={false}
-                useVerticalFloatingPanels={useVerticalFloatingPanels}
-              />
-            ) : null}
-            {canRenderGoal ? (
-              <GoalStatusSection
-                model={model}
-                separated={canRenderGit}
-                onPauseGoal={onPauseGoal}
-                onResumeGoal={onResumeGoal}
-              />
-            ) : null}
-            {canRenderSessionPlans ? (
-              <SessionPlansStatusSection
-                model={model}
-                parentSessionId={parentSessionId}
-                onOpenPlanDetail={onOpenPlanDetail}
-                separated={canRenderGit || canRenderGoal}
-              />
-            ) : null}
-            {canRenderPlan ? (
-              <PlanStatusSection
-                model={model}
-                popoverSide={useVerticalFloatingPanels ? "bottom" : "left"}
-                separated={canRenderGit || canRenderGoal || canRenderSessionPlans}
-              />
-            ) : null}
-            {canRenderTerminals ? (
-              <BackgroundWorkStatusSection
-                onOpenBackgroundBash={onOpenBackgroundBash}
-                section="terminal"
-                title={intl.formatMessage({ id: "chat.statusPanel.terminals" })}
-                works={model.runningBashWorks}
-                open={terminalSectionOpen}
-                onOpenChange={onTerminalSectionOpenChange}
-                separated={canRenderGit || canRenderGoal || canRenderSessionPlans || canRenderPlan}
-                onCancelBackgroundWork={onCancelBackgroundWork}
-              />
-            ) : null}
-            {canRenderWorkflows ? (
-              <WorkflowStatusSection
-                title={intl.formatMessage({ id: "chat.statusPanel.workflows" })}
-                runs={model.runningWorkflowRuns}
-                endedRunCount={canRenderEndedWorkflows ? endedWorkflowRunCount : 0}
-                open={workflowSectionOpen}
-                onOpenChange={onWorkflowSectionOpenChange}
-                separated={
-                  canRenderGit ||
-                  canRenderGoal ||
-                  canRenderSessionPlans ||
-                  canRenderPlan ||
-                  canRenderTerminals
-                }
-                parentSessionId={parentSessionId}
-                onCancelBackgroundWork={onCancelBackgroundWork}
-                onOpenWorkflowRun={onOpenWorkflowRun}
-                onOpenDirectory={onOpenWorkflowRunDirectory}
-              />
-            ) : null}
-            {canRenderAgents ? (
-              <SubagentStatusSection
-                title={intl.formatMessage({ id: "chat.statusPanel.agents" })}
-                subagents={model.runningSubagentWorks}
-                workspacePath={workspacePath}
-                workspaceIdentity={workspaceIdentity}
-                endedSubagentCount={canRenderEndedAgents ? endedSubagentCount : 0}
-                onCancelBackgroundWork={onCancelBackgroundWork}
-                open={agentSectionOpen}
-                onOpenChange={onAgentSectionOpenChange}
-                separated={
-                  canRenderGit ||
-                  canRenderGoal ||
-                  canRenderSessionPlans ||
-                  canRenderPlan ||
-                  canRenderTerminals ||
-                  canRenderWorkflows
-                }
-                parentSessionId={parentSessionId}
-                rootSessionId={rootSessionId}
-                onOpenSubagentSession={onOpenSubagentSession}
-                onOpenSubagentDirectory={onOpenSubagentDirectory}
-              />
-            ) : null}
-          </div>
-        ) : null}
+              <XIcon className="size-3.5" />
+            </Button>
+          </ControlHintTooltip>
+        </div>
+        {/* 全面板唯一的滚动视口：分区不再各自限高滚动，标题用 sticky 常驻。
+            scrollbar-gutter 保证滚动条出现/消失时行宽不跳动，overscroll-contain 阻止滚动链传回时间线。 */}
         <div
-          ref={miniMeasureRef}
-          aria-hidden={variant === "panel"}
-          className={cn(
-            "w-max max-w-80 transition-opacity duration-150",
-            variant === "mini"
-              ? "pointer-events-auto relative visible opacity-100"
-              : variant === "panel"
-                ? "pointer-events-none invisible absolute left-0 top-0 opacity-0"
-                : "pointer-events-auto relative visible opacity-100 @min-[1280px]/conversation:hidden",
-          )}
+          data-status-panel-scroll="panel"
+          className="flex min-h-0 flex-1 flex-col overflow-x-hidden overflow-y-auto overscroll-contain px-2 pt-1 pb-2 [scrollbar-gutter:stable]"
         >
-          <StatusSummaryRow
-            model={model}
-            // 与页脚同一道门（canRenderEndedWorkflows）：缺会话或缺回调时目录打不开，
-            // 胶囊也就不该报一个点了没反应的数。
-            endedWorkflowRunCount={canRenderEndedWorkflows ? endedWorkflowRunCount : 0}
-            gitWorktreeChangeSummary={gitWorktreeChangeSummary}
-            onVariantChange={onVariantChange}
-          />
+          {!hasStatusSections ? (
+            <p
+              data-status-section="empty"
+              className="px-2 py-6 text-center text-ui-sm text-[var(--color-foreground-subtle)]"
+            >
+              {intl.formatMessage({ id: "chat.statusPanel.empty" })}
+            </p>
+          ) : null}
+          {canRenderGoal ? (
+            <GoalStatusSection
+              model={model}
+              separated={false}
+              onPauseGoal={onPauseGoal}
+              onResumeGoal={onResumeGoal}
+            />
+          ) : null}
+          {canRenderSessionPlans ? (
+            <SessionPlansStatusSection
+              model={model}
+              parentSessionId={parentSessionId}
+              onOpenPlanDetail={onOpenPlanDetail}
+              separated={canRenderGoal}
+            />
+          ) : null}
+          {canRenderPlan ? (
+            <PlanStatusSection
+              model={model}
+              popoverSide={useVerticalFloatingPanels ? "bottom" : "left"}
+              separated={canRenderGoal || canRenderSessionPlans}
+            />
+          ) : null}
+          {canRenderTerminals ? (
+            <BackgroundWorkStatusSection
+              onOpenBackgroundBash={onOpenBackgroundBash}
+              section="terminal"
+              title={intl.formatMessage({ id: "chat.statusPanel.terminals" })}
+              works={model.runningBashWorks}
+              open={terminalSectionOpen}
+              onOpenChange={onTerminalSectionOpenChange}
+              separated={canRenderGoal || canRenderSessionPlans || canRenderPlan}
+              onCancelBackgroundWork={onCancelBackgroundWork}
+            />
+          ) : null}
+          {canRenderWorkflows ? (
+            <WorkflowStatusSection
+              title={intl.formatMessage({ id: "chat.statusPanel.workflows" })}
+              runs={model.runningWorkflowRuns}
+              endedRunCount={canRenderEndedWorkflows ? endedWorkflowRunCount : 0}
+              open={workflowSectionOpen}
+              onOpenChange={onWorkflowSectionOpenChange}
+              separated={
+                canRenderGoal || canRenderSessionPlans || canRenderPlan || canRenderTerminals
+              }
+              parentSessionId={parentSessionId}
+              onCancelBackgroundWork={onCancelBackgroundWork}
+              onOpenWorkflowRun={onOpenWorkflowRun}
+              onOpenDirectory={onOpenWorkflowRunDirectory}
+            />
+          ) : null}
+          {canRenderOrchestration ? (
+            <OrchestrationStatusSection
+              title={intl.formatMessage({ id: "chat.statusPanel.orchestration" })}
+              runs={model.activeOrchestrationRuns}
+              open={orchestrationSectionOpen}
+              onOpenChange={onOrchestrationSectionOpenChange}
+              separated={
+                canRenderGoal ||
+                canRenderSessionPlans ||
+                canRenderPlan ||
+                canRenderTerminals ||
+                canRenderWorkflows
+              }
+              onStopRun={onStopOrchestrationRun}
+              onRequestReplan={onRequestOrchestrationReplan}
+            />
+          ) : null}
+          {canRenderAgents ? (
+            <SubagentStatusSection
+              title={intl.formatMessage({ id: "chat.statusPanel.agents" })}
+              subagents={model.runningSubagentWorks}
+              workspacePath={workspacePath}
+              workspaceIdentity={workspaceIdentity}
+              endedSubagentCount={canRenderEndedAgents ? endedSubagentCount : 0}
+              onCancelBackgroundWork={onCancelBackgroundWork}
+              open={agentSectionOpen}
+              onOpenChange={onAgentSectionOpenChange}
+              separated={
+                canRenderGoal ||
+                canRenderSessionPlans ||
+                canRenderPlan ||
+                canRenderTerminals ||
+                canRenderWorkflows ||
+                canRenderOrchestration
+              }
+              parentSessionId={parentSessionId}
+              rootSessionId={rootSessionId}
+              onOpenSubagentSession={onOpenSubagentSession}
+              onOpenSubagentDirectory={onOpenSubagentDirectory}
+            />
+          ) : null}
         </div>
       </aside>
     </div>

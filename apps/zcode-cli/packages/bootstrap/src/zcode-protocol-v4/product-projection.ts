@@ -489,6 +489,9 @@ export class ProductProjection {
   // goal continuation 等维护 turn）。SessionStart 摘要的 pending 归位不得以维护
   // turn 为收口目标，必须等下一条 user-visible 真实 turn。
   private currentTurnStartedModelOnly = false;
+  // 当前 runtime turn 的编排执行语义；turn-steer 排队的 userInput 行没有自己的
+  // TurnStarted，只能沿用所属 runtime turn 的标记，否则运行中插入的编排指令会漏掉边框。
+  private currentTurnOrchestrationEnabled = false;
   // contextWindow=null 时协议不暴露分母与已用量，但 reducer 仍需保留最新 context 用量，
   // 以便 registry 后续恢复已知容量时原子重建 usage，而不是错误归零。
   private contextWindowState: ContextWindowProjectionState = {
@@ -1254,6 +1257,7 @@ export class ProductProjection {
     clone.deliveryByPendingInputId = new Map(this.deliveryByPendingInputId);
     clone.currentTurnId = this.currentTurnId;
     clone.currentTurnStartedModelOnly = this.currentTurnStartedModelOnly;
+    clone.currentTurnOrchestrationEnabled = this.currentTurnOrchestrationEnabled;
     clone.contextWindowState = { ...this.contextWindowState };
     clone.lastTurnModel = { ...this.lastTurnModel };
     clone.configModelTouchedByEvent = this.configModelTouchedByEvent;
@@ -1297,6 +1301,7 @@ export class ProductProjection {
     this.deliveryByPendingInputId = candidate.deliveryByPendingInputId;
     this.currentTurnId = candidate.currentTurnId;
     this.currentTurnStartedModelOnly = candidate.currentTurnStartedModelOnly;
+    this.currentTurnOrchestrationEnabled = candidate.currentTurnOrchestrationEnabled;
     this.contextWindowState = candidate.contextWindowState;
     this.lastTurnModel = candidate.lastTurnModel;
     this.configModelTouchedByEvent = candidate.configModelTouchedByEvent;
@@ -2048,6 +2053,7 @@ export class ProductProjection {
     const turnId = fact.productTurnId;
     this.currentTurnId = runtimeTurnId;
     this.currentTurnStartedModelOnly = fact.visibility === "modelOnly";
+    this.currentTurnOrchestrationEnabled = fact.orchestrationEnabled === true;
     // 新 runtimeTurn：product turn 映射归零（1:1），工时基准 = 本轮起点。
     this.productTurnIdByRuntimeTurnId.delete(runtimeTurnId);
     if (turnId !== runtimeTurnId) this.productTurnIdByRuntimeTurnId.set(runtimeTurnId, turnId);
@@ -2173,6 +2179,11 @@ export class ProductProjection {
         ...(fact.clientId ? { clientId: fact.clientId } : {}),
         ...(fact.workflowLaunch ? { workflowLaunch: fact.workflowLaunch } : {}),
         ...(fact.epilogueStart === undefined ? {} : { epilogueStart: fact.epilogueStart }),
+        // 只有真实用户发出的指令气泡需要与经典消息区分；系统通知、工作流启动卡
+        // 等 synthetic 来源即使在同一编排会话里也不打标记。
+        ...(fact.orchestrationEnabled && fact.origin === "realUser"
+          ? { orchestrationEnabled: true }
+          : {}),
         ...(attachments && attachments.length > 0 ? { attachments } : {}),
       };
       // workspace checkpoint 以 user messageId 为 targetMessageId。
@@ -2297,8 +2308,9 @@ export class ProductProjection {
         ),
       ];
       this.currentTurnId = null;
-      // turn 收口后 model-only 标记随之失效，避免影响下一次归属判断。
+      // turn 收口后 model-only / 编排标记随之失效，避免影响下一次归属判断。
       this.currentTurnStartedModelOnly = false;
+      this.currentTurnOrchestrationEnabled = false;
       return deltas;
     }
     const phase: SessionControl["phase"] =
@@ -2364,8 +2376,9 @@ export class ProductProjection {
       },
     ];
     this.currentTurnId = null;
-    // turn 收口后 model-only 标记随之失效，避免影响下一次归属判断。
+    // turn 收口后 model-only / 编排标记随之失效，避免影响下一次归属判断。
     this.currentTurnStartedModelOnly = false;
+    this.currentTurnOrchestrationEnabled = false;
     return deltas;
   }
 
@@ -2406,8 +2419,9 @@ export class ProductProjection {
         ...this.leaveDraftAfterControlOnlyTurn("error"),
       ];
       this.currentTurnId = null;
-      // turn 收口后 model-only 标记随之失效，避免影响下一次归属判断。
+      // turn 收口后 model-only / 编排标记随之失效，避免影响下一次归属判断。
       this.currentTurnStartedModelOnly = false;
+      this.currentTurnOrchestrationEnabled = false;
       return deltas;
     }
     // TurnError 结束的是当前 turn，
@@ -3691,6 +3705,9 @@ export class ProductProjection {
         ...(item.intent?.sourceCommandId ? { sourceCommandId: item.intent.sourceCommandId } : {}),
         ...(rootSourceCommandId ? { rootSourceCommandId } : {}),
         ...(item.intent?.clientId ? { clientId: item.intent.clientId } : {}),
+        // 排队/引导输入在运行中插入，没有自己的 TurnStarted：沿用所属 runtime turn 的
+        // 编排执行语义，保证同一会话里的编排指令边框一致。
+        ...(this.currentTurnOrchestrationEnabled ? { orchestrationEnabled: true as const } : {}),
         ...(item.intent?.attachmentRefs?.length ? { attachments: item.intent.attachmentRefs } : {}),
       };
       // queue/guide 消费后的 real-user row 与普通 TurnStarted 共用完整 canonical target；

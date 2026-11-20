@@ -99,14 +99,14 @@ test("Create 工具返回 async_launched 并把模型计划原样交给用例层
   assert.equal(service.calls.start.length, 1);
 });
 
-test("Amend 工具要求 runId，并返回 previousRunId", async () => {
+test("Amend 工具要求 runId，并保持同一 run 身份", async () => {
   const service = fakeService();
   const output = (await amendOrchestrationPlanToolEntry.handler(
     { runId: "run-previous", plan: plan() },
     contextWith(service),
   )) as Record<string, unknown>;
   assert.equal(output.runId, "run-amended");
-  assert.equal(output.previousRunId, "run-previous");
+  assert.equal("previousRunId" in output, false);
   assert.deepEqual(service.calls.amend, ["run-previous"]);
 });
 

@@ -48,7 +48,9 @@ const RUN_STATUSES = [
 ] as const;
 const EVENT_TYPES = [
   "run_created",
+  "plan_revised",
   "attempt_claimed",
+  "attempt_quiesced",
   "child_bound",
   "attempt_completed",
   "attempt_failed",
@@ -178,13 +180,22 @@ export function parseOrchestrationChildReference(value: unknown): OrchestrationC
 }
 
 function stepState(value: unknown, stepId: string): OrchestrationStepState {
-  const input = object(value, ["stepId", "status", "attempts", "startedAt", "endedAt", "error"]);
+  const input = object(value, [
+    "stepId",
+    "status",
+    "attempts",
+    "generation",
+    "startedAt",
+    "endedAt",
+    "error",
+  ]);
   if (recordText(input.stepId) !== stepId)
     return invalidRecord("Step map key does not match stepId.");
   const result: OrchestrationStepState = {
     stepId,
     status: enumeration(input.status, STEP_STATUSES),
     attempts: recordInteger(input.attempts),
+    ...(input.generation !== undefined ? { generation: recordInteger(input.generation) } : {}),
     ...(input.startedAt !== undefined ? { startedAt: timestamp(input.startedAt) } : {}),
     ...(input.endedAt !== undefined ? { endedAt: timestamp(input.endedAt) } : {}),
     ...(input.error !== undefined ? { error: recordText(input.error, true) } : {}),
@@ -198,6 +209,15 @@ function stepState(value: unknown, stepId: string): OrchestrationStepState {
   return result;
 }
 
+function persistedPlan(value: unknown, team: string[], writableRoles: string[]) {
+  const parsed = parseOrchestrationPlan(value);
+  if (!parsed.success) return invalidRecord("Invalid orchestration plan structure.");
+  recordInteger(parsed.data.revision);
+  if (validateOrchestrationPlan(parsed.data, { team, writableRoles }).issues.length)
+    return invalidRecord("Invalid orchestration plan semantics.");
+  return parsed.data;
+}
+
 function runState(value: unknown, team: string[], writableRoles: string[]): OrchestrationRunState {
   const input = object(value, [
     "plan",
@@ -206,27 +226,25 @@ function runState(value: unknown, team: string[], writableRoles: string[]): Orch
     "startedAt",
     "updatedAt",
     "cancelled",
+    "interrupted",
   ]);
-  const parsed = parseOrchestrationPlan(input.plan);
-  if (!parsed.success) return invalidRecord("Invalid orchestration plan structure.");
-  recordInteger(parsed.data.revision);
-  if (validateOrchestrationPlan(parsed.data, { team, writableRoles }).issues.length)
-    return invalidRecord("Invalid orchestration plan semantics.");
+  const plan = persistedPlan(input.plan, team, writableRoles);
   const stepMap = object(input.steps);
   if (
-    Object.keys(stepMap).length !== parsed.data.steps.length ||
-    parsed.data.steps.some((step) => !Object.hasOwn(stepMap, step.stepId))
+    Object.keys(stepMap).length !== plan.steps.length ||
+    plan.steps.some((step) => !Object.hasOwn(stepMap, step.stepId))
   )
     return invalidRecord("Plan and step map differ.");
   const result: OrchestrationRunState = {
-    plan: parsed.data,
+    plan,
     generation: recordInteger(input.generation),
     steps: Object.fromEntries(
-      parsed.data.steps.map((step) => [step.stepId, stepState(stepMap[step.stepId], step.stepId)]),
+      plan.steps.map((step) => [step.stepId, stepState(stepMap[step.stepId], step.stepId)]),
     ),
     startedAt: timestamp(input.startedAt),
     updatedAt: timestamp(input.updatedAt),
     cancelled: boolean(input.cancelled),
+    ...(input.interrupted !== undefined ? { interrupted: boolean(input.interrupted) } : {}),
   };
   if (result.updatedAt < result.startedAt) return invalidRecord();
   return result;
@@ -240,6 +258,7 @@ function attemptRecord(value: unknown): OrchestrationAttemptRecord {
     "stepId",
     "attempt",
     "status",
+    "cancellationPending",
     "startedAt",
     "endedAt",
     "child",
@@ -266,6 +285,9 @@ function attemptRecord(value: unknown): OrchestrationAttemptRecord {
     stepId: recordText(input.stepId),
     attempt: recordInteger(input.attempt, 1),
     status: enumeration(input.status, ATTEMPT_STATUSES),
+    ...(input.cancellationPending !== undefined
+      ? { cancellationPending: boolean(input.cancellationPending) }
+      : {}),
     startedAt: timestamp(input.startedAt),
     ...(input.endedAt !== undefined ? { endedAt: timestamp(input.endedAt) } : {}),
     ...(input.child !== undefined ? { child: parseOrchestrationChildReference(input.child) } : {}),
@@ -285,16 +307,46 @@ function attemptRecord(value: unknown): OrchestrationAttemptRecord {
     return invalidRecord("Completed attempt has no artifact.");
   if (result.artifact && result.artifact.attemptKey !== result.key)
     return invalidRecord("Artifact attempt key differs.");
+  if (result.cancellationPending !== undefined && result.status !== "cancelled")
+    return invalidRecord("Only cancelled attempts may reserve child cleanup.");
   return result;
 }
 
-function eventRecord(value: unknown): OrchestrationRunEvent {
-  const input = object(value, ["sequence", "type", "generation", "at", "attemptKey"]);
-  return {
+function eventRecord(
+  value: unknown,
+  team: string[],
+  writableRoles: string[],
+): OrchestrationRunEvent {
+  const input = object(value, [
+    "sequence",
+    "type",
+    "generation",
+    "at",
+    "attemptKey",
+    "previousPlan",
+    "plan",
+  ]);
+  const type = enumeration(input.type, EVENT_TYPES);
+  const base = {
     sequence: recordInteger(input.sequence, 1),
-    type: enumeration(input.type, EVENT_TYPES),
     generation: recordInteger(input.generation),
     at: timestamp(input.at),
+  };
+  if (type === "plan_revised") {
+    if (input.attemptKey !== undefined)
+      return invalidRecord("Plan revisions must not carry an attempt key.");
+    return {
+      ...base,
+      type,
+      previousPlan: persistedPlan(input.previousPlan, team, writableRoles),
+      plan: persistedPlan(input.plan, team, writableRoles),
+    };
+  }
+  if (input.plan !== undefined || input.previousPlan !== undefined)
+    return invalidRecord("Unexpected plan revision payload.");
+  return {
+    ...base,
+    type,
     ...(input.attemptKey !== undefined ? { attemptKey: recordText(input.attemptKey) } : {}),
   };
 }
@@ -331,6 +383,6 @@ export function parseOrchestrationRunShape(input: unknown): OrchestrationRunReco
     status: enumeration(value.status, RUN_STATUSES),
     state: runState(value.state, team, writableRoles),
     attempts: array(value.attempts).map(attemptRecord),
-    events: array(value.events).map(eventRecord),
+    events: array(value.events).map((event) => eventRecord(event, team, writableRoles)),
   };
 }

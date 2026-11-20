@@ -13,6 +13,8 @@ export interface OrchestrationStepState {
   stepId: string;
   status: OrchestrationStepStatus;
   attempts: number;
+  /** 步骤工作代；旧 v1 缺省沿用 run generation，不等同于整 run fence。 */
+  generation?: number;
   startedAt?: number;
   endedAt?: number;
   error?: string;
@@ -25,6 +27,8 @@ export interface OrchestrationRunState {
   startedAt: number;
   updatedAt: number;
   cancelled: boolean;
+  /** 冷恢复的 run 级暂停；旧 v1 缺省 false，退出确认不会自动解除。 */
+  interrupted?: boolean;
 }
 
 export interface OrchestrationRunOwner {
@@ -76,6 +80,8 @@ export interface OrchestrationAttemptRecord {
   stepId: string;
   attempt: number;
   status: OrchestrationAttemptStatus;
+  /** 已取消但执行尚未确认退出，仍占并发名额与领取时的写范围。 */
+  cancellationPending?: boolean;
   startedAt: number;
   endedAt?: number;
   child?: OrchestrationChildReference;
@@ -85,7 +91,9 @@ export interface OrchestrationAttemptRecord {
 
 export type OrchestrationEventType =
   | "run_created"
+  | "plan_revised"
   | "attempt_claimed"
+  | "attempt_quiesced"
   | "child_bound"
   | "attempt_completed"
   | "attempt_failed"
@@ -93,13 +101,28 @@ export type OrchestrationEventType =
   | "run_cancelled"
   | "run_interrupted";
 
-export interface OrchestrationRunEvent {
+interface OrchestrationRunEventBase {
   sequence: number;
-  type: OrchestrationEventType;
+  /** 提交时的整 run fence，不是 attempt 工作代。 */
   generation: number;
   at: number;
-  attemptKey?: string;
 }
+
+export type OrchestrationRunEvent = OrchestrationRunEventBase &
+  (
+    | {
+        type: "plan_revised";
+        previousPlan: OrchestrationPlan;
+        plan: OrchestrationPlan;
+        attemptKey?: never;
+      }
+    | {
+        type: Exclude<OrchestrationEventType, "plan_revised">;
+        attemptKey?: string;
+        previousPlan?: never;
+        plan?: never;
+      }
+  );
 
 export interface OrchestrationRunRecord {
   version: 1;
@@ -149,6 +172,18 @@ export interface CreateOrchestrationRunInput {
   generation?: number;
 }
 
+export interface ReviseOrchestrationRunInput {
+  runId: string;
+  expectedRevision: number;
+  plan: OrchestrationPlan;
+}
+
+export interface OrchestrationRunRevision {
+  record: OrchestrationRunRecord;
+  /** 所有尚未确认退出的占位，包含更早修订留下的清理项。 */
+  invalidatedAttemptKeys: string[];
+}
+
 export interface ClaimedOrchestrationAttempt {
   runId: string;
   step: OrchestrationStep;
@@ -166,6 +201,8 @@ export type OrchestrationAttemptOutcome =
 export interface OrchestrationRunStorePort {
   readonly owner: OrchestrationRunOwner;
   create(input: CreateOrchestrationRunInput): Promise<OrchestrationRunRecord>;
+  revise(input: ReviseOrchestrationRunInput): Promise<OrchestrationRunRevision>;
+  confirmAttemptQuiesced(runId: string, attemptKey: string): Promise<boolean>;
   get(runId: string): Promise<OrchestrationRunRecord | undefined>;
   claim(runId: string): Promise<ClaimedOrchestrationAttempt[]>;
   bindChild(

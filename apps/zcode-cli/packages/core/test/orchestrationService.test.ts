@@ -270,7 +270,7 @@ test("Cancel：显式取消停止在飞 child，并把 run 收口为 cancelled",
   });
 });
 
-test("Amend：旧 run 被取消或保留终态，新 run 使用递增 revision 与新 runId", async () => {
+test("Amend：同一 run 原地修订，未变步骤保留产物，只重跑改动的步骤", async () => {
   await withOrchestrationDirectory(async (directory) => {
     const child = new AutoSubagent();
     const { service, context, notices } = setup(directory, child, TEAM);
@@ -278,12 +278,23 @@ test("Amend：旧 run 被取消或保留终态，新 run 使用递增 revision �
 
     const created = await service.start({ plan, context });
     await waitFor(() => notices.length === 1, "first completion");
+    assert.equal(child.started.length, 3);
 
-    const amended = await service.amend({ runId: created.runId, plan: phase3Plan(), context });
-    assert.notEqual(amended.runId, created.runId);
+    const amendedPlan = phase3Plan();
+    amendedPlan.revision = 1;
+    amendedPlan.steps[2]!.task = "Verify the revised build";
+    const amended = await service.amend({ runId: created.runId, plan: amendedPlan, context });
+    assert.equal(amended.runId, created.runId);
     assert.equal(amended.state.plan.revision, 1);
     assert.equal(amended.state.plan.planId, "phase3-plan");
+    assert.equal(amended.state.steps.design?.status, "completed");
+    assert.equal(amended.state.steps.build?.status, "completed");
+    assert.equal(amended.state.steps.verify?.status, "pending");
     await waitFor(() => notices.length === 2, "amended completion");
+    const final = await service.get(created.runId);
+    assert.equal(final?.status, "completed");
+    // 只有 task 改变的 verify 被重新派发，已完成步骤不重复执行。
+    assert.equal(child.started.length, 4);
   });
 });
 

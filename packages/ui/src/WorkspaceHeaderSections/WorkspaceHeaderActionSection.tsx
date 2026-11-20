@@ -4,6 +4,8 @@ import { WorkspaceTerminalToggleButton } from "@/WorkspaceTerminalToggleButton.j
 import { cn } from "@/components/lib/utils.js";
 import type { WorkspaceHeaderActionSectionProps } from "@/WorkspaceHeaderSections/shared.js";
 import { WorkspaceHelpMenuButton } from "@/WorkspaceHelpMenuButton.js";
+import { WorkspaceGitToolsEntry } from "@/WorkspaceGitToolsEntry.js";
+import { WorkspaceStatusEntry } from "@/WorkspaceStatusEntry.js";
 import { ConversationShareMenu } from "@/ConversationShareMenu.js";
 import { DesktopWindowControls } from "@/DesktopWindowControls.js";
 
@@ -12,6 +14,7 @@ export type { WorkspaceHeaderActionSectionProps } from "@/WorkspaceHeaderSection
 export function WorkspaceHeaderActionSection({
   variant = "task",
   activeTaskId,
+  activeSessionId,
   user,
   readOnlyReason,
   workspaceAbsPath,
@@ -28,6 +31,13 @@ export function WorkspaceHeaderActionSection({
   hideHelpMenu = false,
   showWindowControls = false,
   useWindowsCaptionSpacing = false,
+  gitTools = null,
+  gitToolsPanelOpen = false,
+  onGitToolsPanelOpenChange,
+  gitWorktreeReviewSourceId,
+  activeTaskChangeSummary,
+  onRefreshGit,
+  onOpenGitReview,
 }: WorkspaceHeaderActionSectionProps) {
   return (
     <div
@@ -54,6 +64,25 @@ export function WorkspaceHeaderActionSection({
           useWindowsCaptionSpacing={useWindowsCaptionSpacing}
         />
       ) : null}
+      {/* Git 入口紧邻帮助按钮：Git 有事可做（gitTools 非 null）时始终出现，点击展开浮层。
+          `gitTools` 为 null 已覆盖 Office / 非仓库 / 无事可做。
+          手机远控窄头部也保留这一个图标：Git 工具不再有 chip 作为窄屏入口。 */}
+      {gitTools && onGitToolsPanelOpenChange && onRefreshGit ? (
+        <WorkspaceGitToolsEntry
+          workspacePath={workspaceAbsPath}
+          workspaceIdentity={workspaceIdentity}
+          gitTools={gitTools}
+          open={gitToolsPanelOpen}
+          onOpenChange={onGitToolsPanelOpenChange}
+          gitWorktreeReviewSourceId={gitWorktreeReviewSourceId}
+          activeTaskChangeSummary={activeTaskChangeSummary}
+          onRefreshGit={onRefreshGit}
+          onOpenGitReview={onOpenGitReview}
+        />
+      ) : null}
+      {/* 会话状态入口紧邻 Git 图标右侧：有 active session 就常驻，点击唤醒/收起状态面板。
+          面板内容由 SessionPane 提供，这里只负责唤醒（与 Git 工具同一套交互）。 */}
+      {activeSessionId ? <WorkspaceStatusEntry sessionId={activeSessionId} /> : null}
       {!simplifyForNarrowRemote ? (
         <>
           {!hideHelpMenu ? <WorkspaceHelpMenuButton isDesktop={Boolean(isDesktop)} /> : null}

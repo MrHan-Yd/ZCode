@@ -135,6 +135,9 @@ export const userInputRowSchema = z.object({
   rootSourceCommandId: z.string().optional(),
   // 提交端身份由 CLI admission 写入；旧 transcript 可缺省。
   clientId: z.string().optional(),
+  // 该轮开跑时 session runtime 的编排配置为 enabled；仅可见用户轮下发 true。
+  // 纯展示标记（气泡边框），缺省 = 经典轮；旧行/旧客户端不做区分。
+  orchestrationEnabled: z.literal(true).optional(),
   attachments: z
     .array(
       z.object({

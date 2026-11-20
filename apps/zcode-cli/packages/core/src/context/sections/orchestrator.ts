@@ -37,7 +37,7 @@ function buildRules(context: OrchestratorPromptContext): string {
     "- `dependsOn` is the only ordering mechanism. Steps without a dependency may run in parallel; steps whose `writeScope` overlaps are serialized by the scheduler.",
     "- Downstream steps receive structured summaries and artifact references of their dependencies. Do not paste full prior output into the next task.",
     "- The tool returns `async_launched` immediately. Continue only after the completion notification arrives; then summarize per-step outcomes, artifacts, and any failed or blocked step for the user.",
-    "- Use `AmendOrchestrationPlan` when the user changes direction, and `CancelOrchestrationRun` when they ask to stop. Do not guess which one they meant.",
+    "- Use `AmendOrchestrationPlan` when the user changes direction, and `CancelOrchestrationRun` when they ask to stop. Do not guess which one they meant. An amendment updates the same run: keep the runId and planId, send the complete revised DAG, and reuse unchanged stepIds; do not call `CreateOrchestrationPlan` to replace an active run.",
     "- While a run is active, a new user message is guidance for that run. If it adds or changes constraints, amend the active run; if it asks for status, answer from the run state instead of inventing step results.",
     "- If the latest run is already cancelled or interrupted and the user gives a new direction, create a new plan from the new message. Completed artifacts remain available in the previous run's journal.",
     "- Messages the user chose to queue are delivered after the current run finishes; they are not part of this turn.",
@@ -70,7 +70,7 @@ export function buildOrchestrationRunStateSection(runState: string): ContextSect
     "# Orchestration run state",
     runState,
     "",
-    "Use the active runId above when the user's message only adjusts the current plan.",
+    "Use the active runId above and keep the same planId when the user's message adjusts the current plan; unchanged steps keep their completed artifacts and running children.",
     "If the latest run was cancelled or interrupted and the user is redirecting the work, plan from their new message; do not report cancelled steps as completed.",
   ].join("\n");
   return {

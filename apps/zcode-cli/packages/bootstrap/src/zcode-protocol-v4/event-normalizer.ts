@@ -74,6 +74,8 @@ export interface CanonicalUserIntentFact extends CanonicalConversationFactBase {
   workflowLaunch?: WorkflowLaunchMeta;
   /** `input` 从此下标起是引擎附加文本。 */
   epilogueStart?: number;
+  /** 本轮开跑时 runtime 编排配置为 enabled；只用于 userInput 气泡的展示标记。 */
+  orchestrationEnabled?: boolean;
   sourceCommandId?: string;
   foregroundExecutionId?: string;
   clientId?: string;
@@ -256,6 +258,7 @@ function normalizeTurnStarted(
     ...(payload.originMeta ? { originMeta: payload.originMeta } : {}),
     ...(payload.workflowLaunch ? { workflowLaunch: payload.workflowLaunch } : {}),
     ...(payload.epilogueStart === undefined ? {} : { epilogueStart: payload.epilogueStart }),
+    ...(payload.orchestrationEnabled ? { orchestrationEnabled: true } : {}),
     ...((payload.intent?.sourceCommandId ?? payload.inputId)
       ? { sourceCommandId: payload.intent?.sourceCommandId ?? payload.inputId }
       : {}),

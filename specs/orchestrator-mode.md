@@ -18,7 +18,7 @@ ZCode 现有两种使用方式：
 - 架构设计 → UI 设计 → 开发 → 测试的顺序依赖。
 - 前端等待后端接口契约；契约确定后前后端可并行；两者完成后再测试。
 - 按角色配置模型，默认“继承默认”。
-- 执行中用户插入消息：追加指导 / 排队 / 停止并重排。
+- 执行中用户插入消息：默认排队；显式打断走队列项的「立即发送」或计划分区的停止 / 重排。
 - 经典模式完全不变；所有新字段可选、默认关闭、缺省即经典。
 
 非目标（v1 不做）：
@@ -131,15 +131,15 @@ interface OrchestrationStep {
 UI 草稿/会话意图
   → createSession / setOrchestration 命令
   → Host 校验 + 持久化投影
-  → CLI runtime: agentRole + subagents.visibleProfiles
-  → Agent 工具描述只包含 visibleProfiles
+  → CLI runtime: 由 `orchestration.team` 派生新派发可见角色
+  → DAG 派发解析与会话内 Agent/Task 描述共用这份派生名单
   → 主会话 turn 级 denylist：Edit/Write/Bash 不可见且执行边界拒绝
   → 子代理完整工具面，agentRole=default，不递归派发
 ```
 
 唯一事实源：
 
-- **运行期权威**：CLI session store 的 `runtime/orchestration` entry（`agentRole` + `subagentPool`），冷恢复只信它。
+- **运行期权威**：CLI session store 的 `runtime/orchestration` entry（`enabled` + `team` + `maxConcurrency`），冷恢复只信它。
 - **列表/UI 投影**：`ZCodeTaskMeta.meta_json` 增加同名字段；snapshot 同步时必须 `?? existingMeta` 保留，不能把字段冲掉。
 - **UI 草稿**：`V4ComposerDraft` 保存意图；发送时冻结进 submission。
 - **内置角色定义**：`packages/shared/src/builtin-subagents.ts` 存纯展示元数据；CLI core 存 system prompt 与 `permissionMode/maxTurns`；services 消费同一份元数据，避免多处漂移。
@@ -158,7 +158,7 @@ Phase 2 提供 CLI core 的独立执行能力及公开接口；Phase 3 在其上
   → run 终态：RunStore 已提交 → 构造有界摘要
   → enqueueBackgroundTaskNotification → 主会话下一轮汇总
 
-Amend → 取消旧 run（保留已完成产物）→ revision + 1 → 新建 run
+Amend → 同一 run：plan_revised + revision + 1 → 只取消失效 attempt → 复用已完成 / 未变在飞步骤
 Cancel → RunStore.cancel + generation + 1 → stopTask → 迟到结果拒绝
 ```
 
@@ -285,7 +285,7 @@ cold restore → 校验 owner / snapshot → completed 不动，running 无证�
 - [x] 3.1 `CreateOrchestrationPlan` / `AmendOrchestrationPlan` / `CancelOrchestrationRun` 工具与 JSON schema。
   - `core/src/orchestration/tools.ts` 提供三个工具入口；`OrchestrationService` 是工具面唯一用例入口，工具 handler 不直接接触 store / journal / dispatcher。
   - 团队与并发上限来自会话配置（`AgentRuntimeConfig.orchestration`），工具入参只接受计划本身，模型不能自行改写团队。
-  - `AmendOrchestrationPlan` v1 语义：先取消旧 run，再以 `revision + 1` 启动新 run；已完成步骤产物保留在旧 journal，自动复用与 guide 注入属 Phase 4。
+  - `AmendOrchestrationPlan` 的 v1 语义（先取消旧 run 再新建 run）已被 2026-11-20 原地修订取代；当前规则见 Phase 4「原地修订」。
 - [x] 3.2 编排模式工具白名单 + executor 硬拒绝 Edit/Write/Bash。
   - provider 边界：`resolveOrchestratorHiddenToolNames` 把 registry 中白名单之外的工具加入 turn 级 `toolDisallowlist`，模型请求只看到 `ORCHESTRATOR_ALLOWED_TOOL_NAMES`（三个规划工具、AskUserQuestion、TodoRead/TodoWrite、Read/Glob/Grep/WebFetch/WebSearch）。
   - 执行边界：executor 的 `hardAllowedToolNames` 对白名单之外的任何调用（包括 Edit/Write/Bash/Agent/Task/js 与 MCP 工具）在 handler、hook、权限判定之前返回 `permission_denied`。
@@ -315,14 +315,47 @@ cold restore → 校验 owner / snapshot → completed 不动，running 无证�
 
 ### Phase 4 — 执行中插入消息（6–10 人日）
 
+#### 2026-11-20 原地修订（当前规则，取代旧版 cancel + 新 run 的 Amend）
+
+- **同一任务身份**：`AmendOrchestrationPlan` 复用同一个 `runId` 和 `planId`，只把计划 `revision` 加一；不调用整 run 的 cancel，不新建 journal，不投递「旧 run 已取消」通知。输入仍是完整 DAG，主会话必须保留未改变的 `stepId` 与任务约束。用户显式停止 / 重排以及现有 queue / startNow 交互本次不改。
+- **单一状态所有者**：RunStore 在同一 journal 事务内校验预期 revision、计算步骤差异、保存新计划和 `plan_revised` 事件。service 只协调命令与通知，dispatcher 只持有执行 Promise、每 attempt 取消信号与退出等待，不复制可写步骤状态。无效 DAG、错 owner、改变 planId、过期 revision 在任何取消副作用前拒绝；相同目标 revision 与相同计划的重复事务幂等。
+- **步骤差异与产物复用**：按 `stepId` 比较执行语义（role、task、dependsOn、inputs、规范化 writeScope、acceptance、maxAttempts、optional）；仅标题 / 顺序 / goal 展示变化不重启 child。新增步骤为 pending；未变化步骤保留状态、attempt key、child 与产物；删改步骤及依赖其失效输出的后继重新进入 pending（删除项只保留在历史中）。失效 completed 产物仍保存但不作为新步骤的有效依赖。有效 completed 不重新执行，其已有摘要 / artifact 引用直接传给后继。未变化的在飞 attempt 可以跨计划 revision 继续绑定与完成，只有删改 / 依赖失效的 attempt 被取消。
+- **选择性 fencing**：`state.generation` 仍表示整 run 的取消 / 恢复 fence；原地修订不递增它。步骤新增可选 `generation`（旧 v1 缺省使用原 run generation），只为失效步骤分配下一个工作代。attempt 的 key、revision、generation 一旦领取不修改；回写核对当前 step 工作代、attempt live 状态及唯一执行身份，不再要求保留的 attempt revision 必须等于当前计划 revision。旧结果不能恢复被删改步骤或误放行后继。
+- **持久化回放**：保持记录 `version: 1`，新增字段可选。`plan_revised` 携带 previousPlan 与新 plan，使首次修订前的 v1 原始事件无需改写也可按原 DAG 回放；随后 revision 链、差异、重试与依赖准入逐事件严格校验。`attempt_quiesced` 只关闭已经失效的写范围占位。历史 removed / 旧 revision attempt 不删除，损坏 revision 链、伪造保留状态或过早重派必须拒绝，不能只放宽旧 schema。
+- **取消与物理退出**：修订事务先将受影响 live attempt 标记 cancelled + `cancellationPending`，保留旧 child 和旧 writeScope 占位；dispatcher 再取消对应 attempt（不 abort 未变 attempt）。已领取但尚未返回 child 身份的 start 同样占位，晚到 child 必须先绑定历史身份再停止。现有 `stopTask` / `waitForTask` 的 killed 或 terminal 账本不当作物理退出；新增可选 `SubagentPort.waitForTaskQuiescence` 返回匹配 task/agent/child 的真实执行退出凭据。runner 保留后台执行的 single-flight finally/drain Promise，启动期的 abort 也必须收口。缺失能力、unknown/lost 身份或停止失败不释放占位，不自动重放写入，错误如实上报；未受影响的在飞步骤继续。
+- **调度边界**：claim 同时计入 retained live 和 cancellationPending 的并发占位及旧规范写范围。退出确认前不重派相同步骤或任何旧 scope 冲突步骤；无关且并发空位充足的步骤可继续。确认退出后先持久化 `attempt_quiesced` 再唤醒 driver。取消整 run 可以与修订并发，但 cancel 一旦先提交，后来的修订被拒绝；修订先提交时 cancel 收口同一 run 的新计划与旧清理占位。
+- **通知与恢复**：活动 run 的修订不建立第二条 execution 或 completion wait；driver 收口前再次读取最新提交 revision，避免旧 completion 覆盖新计划。completed run 追加步骤仍用同一 run 重新武装 driver，已完成步骤不重跑。冷恢复保留修订链和产物，未知在飞 / 未退出占位 fail-closed，不因加载新 plan 而自动重放。
+- **传输边界**：不新增 UI 状态或 RPC；Desktop continuous 与手机 replayable 都读取同一 run 的已提交 `orchestrationState`。标准计划工具与 SubagentPort 端口增强通过公开包入口接线；不改 tasks-index / 数据库结构。
+
+```text
+主会话 Amend(runId, 完整 DAG)
+  → service 验证 owner / 原计划身份
+  → RunStore.revise(expectedRevision)
+       ├─ 同一 run：plan_revised + revision + 1
+       ├─ 未变 completed / running 保留原 key、工作代、child、artifact
+       └─ 失效 attempt：cancelled + cancellationPending（旧 scope 仍占位）
+  → dispatcher 仅取消失效 attempt
+       ├─ start 未完成：保持占位 → late child 身份绑定 → stop 请求
+       └─ SubagentPort.waitForTaskQuiescence（真实 finally / drain 完成）
+  → RunStore.confirmAttemptQuiesced → attempt_quiesced
+  → driver 读取最新计划 → 领取新增 / 变更 pending（依赖与写范围校验不变）
+  → 同一 run 最新 revision 完成 → 一次 completion 通知
+```
+
+验收与正式测试：同一 runId / 单 journal；保留 completed 产物及未变 running child；标题变更不重启；依赖变更使后继失效；删除 / 修改 / 新增步骤；跨 revision retained 回写；旧 generation / key 拒绝；幂等与 stale revision；修订落盘失败无 stop 副作用；start 未 ACK 的取消与晚到身份；停止失败保留旧写占位但不影响未变步骤；真实退出前不重派同 scope；修订和整 run 取消并发；只在最新 revision 完成时通知；legacy v1 和多次修订的 journal 往返 / 损坏回放 / 冷恢复。
+
+- [ ] 4.6 同 run 原地修订、选择性取消与已完成产物复用（测试通过后勾选）。
+  - 已落地并有正式测试：同一 runId / planId、`plan_revised`、按执行语义差异失效、保留 completed 与未变 running、只重派新增/变更步骤、step 工作代与 `attempt_quiesced` 回放、old scope 占位、cancel/recover 交互。
+  - 未完成：`SubagentPort.waitForTaskQuiescence` 的 runner 实现尚未提供，当前 adapter 在存在该能力时使用，否则仍以 `stopTask` 的终态账本作为旧 child 收口边界。物理进程 / 深层写工具的静止证明未完成，因此本条保持未勾选；不能把当前 stop 账本宣称为物理退出保证。
+
 - [x] 4.1 运行中发送菜单：追加指导 / 排队 / 停止并重排。
   - Core 语义已落地：`PromptAdmissionOptions.orchestrationInput`（`guide` 默认 / `queue` / `interrupt`）由 `orchestration/input-policy.ts` 的纯决策表消费；未知值一律回落 guide，不会被猜成取消。
   - 菜单渲染、发送框三态与 composer 接线仍属 Phase 5.5；本阶段只保证 CLI admission 对三种语义的行为确定。
 - [x] 4.2 guide 注入主会话规划上下文；`AmendOrchestrationPlan` 应用新 revision。
   - 主会话 prompt 增加独立的 dynamic `Orchestration Run State` 段（`context/sections/orchestrator.ts`），每轮 context rebuild 从 `OrchestrationService.promptState()` 取 run 级摘要；稳定的调度约束仍保持 `cacheHint: "stable"`，不动 system prefix 缓存。
   - 静态规则明确：活动 run 期间的新用户消息按 guidance 处理，只调整约束时用活动 runId 调 `AmendOrchestrationPlan`；latest run 已 cancelled/interrupted 且用户改方向时重新规划，不得把取消步骤报成完成。
-  - `amend` 继续保证 `revision = max(请求 revision, 旧 revision + 1)`，旧 run 的 journal 与已完成产物保留可查。
-  - 明确边界：本阶段不把旧 run 的 completed 步骤种子化进新 run。持久记录要求每个 completed 步骤都有 claim/complete 事件历史，跨 run 复用需要新增事件类型或记录版本，留给后续增量；旧产物仍保留在旧 journal。
+  - `amend` 现改为同一 run 原地修订：`revision + 1`、按 stepId 保留已完成与未变在飞步骤、复用已完成产物；旧语义（取消+新 run）已弃用。
+  - 已完成的复用证据来自当前 run 的 journal；跨 revision 的 attempt 身份与产物引用原样保留，不复制产物、不伪造新 completed attempt。
 - [x] 4.3 停止并重排：cancel run、保留已完成产物、递增 generation、重规划。
   - `OrchestrationService.cancelActiveRuns()` 对全部在飞 run 先持久化取消（`generation + 1`、在飞 attempt/step 收口 cancelled），再显式 `stopTask`；任一 child 停止失败汇总为 `AggregateError` 记录，不会吞掉触发它的用户消息。
   - runtime 在 `interrupt` admission 先取消 run，再按正常路径接纳新消息；模型从 dynamic run 段看到 latest run 为 cancelled，并按新消息重新规划。旧 generation 的迟到结果继续由 RunStore fencing 拒绝。
@@ -387,6 +420,37 @@ Phase 5 设计（实现前先固定所有权与接线）：
   - 活动 run 时在输入框上方显示 `OrchestrationRunBar`；三态菜单写 `orchestrationInputMode`，提交时随 `sendText` 下发；运行数没有新增计数器。
 - [x] 5.6 每角色模型显示“继承默认/模型名”，编辑跳设置页。
   - 选择器读取 `SubagentsService.list()` 的 `modelSelectionOverride`，显示“继承默认模型 / Model: {model}”；编辑按钮跳 Settings → `subagents`（分区级定位）。
+- [x] 5.7 编排运行可视性与单一输入（2026-11-19 修订，取代 5.4 / 5.5 中的 composer 运行条与三态菜单）。
+  - **单一输入**：发送框仍然只有一个输入框、一个发送按钮。运行中发送不再选择 `guide / queue / interrupt`。存在活动 run 时，UI 在 `sendText` 携带 `orchestrationInput`：普通发送为 `queue`（消息进入既有队列列表，等 run 收口后由 Core 提升为下一条输入，不会 steer 或立即开启新 turn）；Ctrl/Cmd+Enter 的显式 `requestedDelivery: "startNow"` 映射为 `interrupt`，先取消活动 run 再立即开始。显式打断也可由用户在队列项点「立即发送」（`sendQueuedNow`，先取消活动 run 再抢占当前 turn）触发；计划分区的停止 / 重排仍是取消 run 的显式动作。无活动 run 时不下发该字段，保持经典 followup 路径。
+  - **停止与重排是动作，不是输入模式**：计划分区的「停止」取消当前 run；「重排」先取消当前 run，再聚焦同一个输入框。不弹第二个输入框、不预填、不代发消息；旧 run 已完成步骤与产物保留。
+  - **计划进入状态面板**：新增「编排计划」分区。run 头显示 `planId · rN · 状态 · 完成 X/Y · N 运行中`；步骤行沿用「进程」分区的图标语言——运行中 `→`、待执行 `○`、已完成 `✓` 且标题删除线，**不使用旋转加载图标**——并显示状态词、标题、角色、等待依赖、重试次数与「查看子会话」；运行级提供停止与重排。折叠态状态 chip 增加编排分支（存在活动 run 且无更高优先级主状态时显示进度），点击展开面板。数据只读 `orchestrationState`，不新增 RPC、持久化或第二份 run 状态。
+  - **子代理出现在主会话**：编排步骤的 child 已通过 `SubagentSpawned` 写入父会话投影（`parentToolCallId` = attempt key，`turnId` = 计划工具调用轮），不新增虚拟行、不改 transcript / 协议：
+    1. 存在活动编排 run 时，时间线保持最后一轮工作历史展开，与手动 Agent 工具运行中的形态一致；run 结束后按既有规则折叠。
+    2. 未与 Agent/Task 工具行配对的 subagent 行复用手动 Agent 工具行：在渲染派生层合成 Agent 节点后交给同一个 `ToolCallBlock`，不再使用 `SubagentAgentCard` 自定义卡片；字段映射、状态词与打开子会话动作见 `specs/conversation-orchestration-subagent-row.md`。步骤级细节（依赖、尝试次数、耗时、错误）只留在状态面板「编排计划」分区。
+  - **边界**：经典模式、关闭编排、主会话只读工具面、DAG 调度、异步 run + completion 唤醒、团队选择器均不变。`guide / queue / interrupt` 仍在 Core 保留以兼容旧客户端；当前 UI 只下发 `queue`，不再暴露三态选择。
+  - **E2E 锚点**：计划分区 `data-status-section="orchestration"`；run 行 `data-orchestration-run-id` / `data-orchestration-run-status`；步骤行 `data-orchestration-step-id` / `data-step-status`。时间线子代理行 `data-subagent-status` / `data-subagent-child-session-id`，行容器沿用既有 `data-row-id` 与 `v4-row-<rowId>`；`data-subagent-name` 只属于状态面板的运行中子智能体行，不再由时间线输出。
+- [x] 5.8 编排指令气泡标记（2026-11-20）。
+  - **规则**：用户消息气泡在“该轮开跑时会话 runtime 编排配置为 enabled”时使用浅蓝色边框（`border-sky-400/70`），与经典消息的 `border-border` 区分；关闭编排后的新消息恢复默认边框。只改变边框颜色，不新增徽标、不改变附件与操作区布局，经典轮 DOM 结构不变。
+  - **事实来源**：不是 UI 草稿意图，也不是当前 `orchestrationState`，而是 runtime 在 `TurnStarted` 时刻已经生效的 `config.orchestration.enabled`。因此运行中关闭编排后新开的轮不再标记；历史轮不会被之后的开关改写。只有 `origin === "realUser"` 的可见 userInput 行打标记，系统通知、工作流启动卡等 synthetic 行不打。运行中排队/引导的后续输入没有独立 `TurnStarted`，由投影沿用所属 runtime turn 的同一标记；turn 收口时该标记一并复位。
+  - **所有者与事件顺序**：
+
+    ```text
+    UI 发送（setOrchestration 先行） → CLI runtime.config.orchestration
+      → Core executeTurn 读取 config（唯一裁决）
+      → TurnStarted.orchestrationEnabled（活投影）
+      → ProductProjection → userInput row.orchestrationEnabled
+      → ConversationRowView 气泡边框
+
+    同一轮同时写入 user message metadata.orchestrationEnabled
+      → 冷恢复 transcript hydration 还原同一个 TurnStarted 字段
+      → 冷/热投影得到相同 row
+    ```
+
+  - **兼容**：`TurnStartedPayloadBase.orchestrationEnabled`、`userInputRow.orchestrationEnabled` 与消息 metadata 均为 optional，缺省 = 经典轮。旧 CLI 不写该字段时 UI 保持默认边框；行 schema 非 strict，旧桌面会丢弃未知字段而不会解析失败。
+  - **验收**：编排开启时发送的消息显示浅蓝色边框；关闭编排后发送的消息为默认边框；历史消息在开关切换后边框不变；冷恢复后边框与实时一致；无编排的经典会话 DOM/样式零变化。
+  - **测试**：CLI 投影测试覆盖 `TurnStarted{orchestrationEnabled}` → row 标记与冷恢复 metadata 回填；UI 纯样式测试锁定两种状态只差边框色（`data-v4-user-input-orchestration` 由 `ConversationRowView` 在编排轮输出）。
+  - **验证记录**：`orchestrationUserInputMarker.test.ts` 7/7（含排队后续输入继承与经典轮反例）、`userInputBubbleStyle.test.ts` 3/3；core 编排回归 127/127、bootstrap 回归 59/59；根 `pnpm typecheck` 通过，`pnpm lint` 0 errors / 69 warnings，`pnpm architecture:check --changed` 0 violations。
+
 - 验收：默认关闭无视觉变化；首次开启弹精简团队；运行中能看到顺序与并行；手机可用；切会话隔离。
 - 测试：纯模型测试（选择/预设/上限/空池）、draft 持久化、config picker 互斥、i18n 对齐；外部 E2E harness 场景（仓库内无 E2E 框架）。
 - 2026-11-19 预设简化（当前规则）：
@@ -473,7 +537,10 @@ Phase 6 实现原则：
 9. Plan + 编排：子代理只读；UI 明确提示。
 10. 旧 agent bundle/远程 workspace：不支持时隐藏编排入口；已存在会话降级为经典，不报错、不丢会话。
 11. DAG 顺序：architect 未完成时 frontend 不启动；契约完成后 frontend/backend 并行；tester 等两者完成。
-12. 用户插入：追加指导不打断当前步骤；停止并重排保留已完成产物；排队不打断当前 run。
+12. 用户插入：运行中普通发送进入队列列表并按 queue 处理，不立即开启新 turn、不打断当前步骤；在队列项点「立即发送」或使用计划分区的「停止 / 重排」才显式打断，已完成步骤与产物保留；重排只聚焦同一个输入框，不弹第二个输入框、不代发消息。
+13. 单一输入：运行中存在与否，发送框都只有一个输入框和一个发送按钮；composer 不再渲染运行条、三态菜单或计划弹窗。
+14. 主会话可见性：run 活跃时最后一轮「已工作」保持展开，步骤卡片显示角色名、状态与子会话入口；run 结束后按既有规则折叠。经典模式的卡片与折叠行为不变。
+15. 编排指令气泡：编排开启时发送的消息带浅蓝色边框；关闭编排后发送的消息保持默认边框；历史消息与冷恢复后的边框不随后续开关变化；经典会话无视觉差异。
 
 ## 7. 风险
 
@@ -482,7 +549,7 @@ Phase 6 实现原则：
 3. **计划质量**：DAG 由模型生成，必须严格校验；不合格计划直接拒绝并要求重规划，不能“带病执行”。
 4. **上下文膨胀**：步骤输出只回传摘要/产物引用；主会话不接收完整子会话。
 5. **恢复与 fencing**：run/step/attempt 必须有 generation 与幂等键；旧结果不能污染新计划。
-6. **用户插入语义**：默认 guide，打断必须显式选择；不能让模型自行猜测“用户想取消”。
+6. **用户插入语义**：编排运行中默认 queue；打断必须显式（队列项「立即发送」/ 停止 / 重排），不能让普通发送或模型自行取消“用户想打断”。
 7. **旧 bundle/远程**：能力不支持时 fail-closed 隐藏编排入口，已存在会话降级经典。
 8. **依赖迁移**：新增内置角色前必须先修 `subagent-state-migration.ts`，否则模型覆盖被删除。
 9. **范围**：这是 44–68 人日的中大型功能，不是两周的小改动；建议按阶段合入，每阶段可独立回归。

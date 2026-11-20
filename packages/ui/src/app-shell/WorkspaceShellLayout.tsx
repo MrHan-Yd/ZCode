@@ -37,6 +37,11 @@ import { WorkspacePluginPreview } from "@/WorkspacePluginPreview.js";
 import { useIsOfficeMode } from "@/hooks/useInterfaceMode.js";
 import { GitBranchSwitcher } from "@/GitBranchSwitcher.js";
 import { ScopedErrorBoundary } from "@/ErrorBoundary.js";
+import { buildGitToolsModel } from "@/v4/gitToolsModel.js";
+import {
+  resetStatusPanelOverlay,
+  subscribeStatusPanelOpened,
+} from "@/v4/statusPanelOverlayStore.js";
 
 import { AUTOMATIONS_TOAST_ANCHOR_ID, AutomationsSection } from "@/settings/AutomationsSection.js";
 import type {
@@ -737,6 +742,34 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
     // 这里按 path 去重后再统计，避免入口里“未提交更改文件数”被重复计算。
     return getGitDirtyFileCount(gitState.datasets);
   }, [gitState.datasets.staged, gitState.datasets.unstaged]);
+  // Git 模型只构建一次：标题栏 Popover 与状态面板 Git chip 共用这一份，
+  // 不在两处各算一次可见性。Office 模式在此直接得到 null。
+  const gitTools = useMemo(
+    () =>
+      buildGitToolsModel({
+        isOfficeMode,
+        gitSummary: gitState.summary,
+        gitDirtyFileCount,
+        gitWorktreeChangeSummary,
+      }),
+    [gitDirtyFileCount, gitState.summary, gitWorktreeChangeSummary, isOfficeMode],
+  );
+  // 标题栏两个浮层互斥（specs/status-panel-git-tools-split.md 规则 5）：
+  // Git 浮层打开时先收起会话状态面板；只在 open === true 时收起，关闭回调不能
+  // 顺手清掉用户刚打开的面板。
+  const handleGitToolsPanelOpenChange = useCallback(
+    (open: boolean) => {
+      if (open) resetStatusPanelOverlay();
+      onSummaryPanelVariantOverrideChange(open ? "panel" : null);
+    },
+    [onSummaryPanelVariantOverrideChange],
+  );
+  // 反向互斥：任何入口（标题栏图标 / composer 后台任务徽标）打开状态面板时收起 Git 浮层。
+  useEffect(() => {
+    return subscribeStatusPanelOpened(() => {
+      onSummaryPanelVariantOverrideChange(null);
+    });
+  }, [onSummaryPanelVariantOverrideChange]);
   const workspaceRemoteTarget = useMemo(
     () =>
       workspaceTabs.find(
@@ -1721,6 +1754,12 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                           workspaceHeaderState={workspaceShellZCodeState}
                           gitSummary={gitState.summary}
                           gitDirtyFileCount={gitDirtyFileCount}
+                          gitTools={gitTools}
+                          // Git 浮层只有开/关两态：打开写 "panel"，关闭写 null；打开时互斥收起状态面板。
+                          gitToolsPanelOpen={summaryPanelVariantOverride === "panel"}
+                          onGitToolsPanelOpenChange={handleGitToolsPanelOpenChange}
+                          gitWorktreeReviewSourceId={gitWorktreeReviewSourceId}
+                          onOpenGitReview={handleOpenGitReview}
                           isMacDesktop={isMacDesktop}
                           isMacFullscreen={isMacFullscreen}
                           isWindowsDesktop={isWindowsDesktop}
@@ -1852,17 +1891,6 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                               onPrimaryDraftDropTargetControllerChange={
                                 setDraftHeaderDropTargetController
                               }
-                              gitSummary={gitState.summary}
-                              gitDirtyFileCount={gitDirtyFileCount}
-                              activeTaskChangeSummary={activeTaskChangeSummary}
-                              gitWorktreeReviewSourceId={gitWorktreeReviewSourceId}
-                              gitWorktreeChangeSummary={gitWorktreeChangeSummary}
-                              summaryPanelVariantOverride={summaryPanelVariantOverride}
-                              onSummaryPanelVariantOverrideChange={
-                                onSummaryPanelVariantOverrideChange
-                              }
-                              onRefreshGit={handleRefreshGit}
-                              onOpenGitReview={handleOpenGitReview}
                               onPaneActiveSessionChange={handlePaneActiveSessionChange}
                               onOpenBrowserUrl={handleOpenBrowserUrl}
                               onOpenAutomationsMain={handleOpenAutomations}

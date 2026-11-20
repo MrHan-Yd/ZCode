@@ -131,6 +131,11 @@ export interface ExploreSubagentPortOptions {
    * 只影响新派发与工具描述，SendMessage/恢复仍使用完整 profile 集合。
    */
   visibleProfiles?: readonly string[];
+  /**
+   * 按调用读取可见角色。编排开关与团队属于运行期可变配置，静态数组在端口构造时就被冻结，
+   * 无法反映 `setOrchestration` 之后的团队变化，因此 runtime 装配必须走这一入口。
+   */
+  getVisibleProfiles?: () => readonly string[] | undefined;
   builtInModelSelectionOverrides?: BuiltInSubagentModelSelectionOverrides;
   runtimeTaskRegistry?: RuntimeTaskRegistry;
   createAgentId?: () => string;
@@ -144,10 +149,11 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
   const registry = options.runtimeTaskRegistry ?? new InMemoryRuntimeTaskRegistry();
   const abortControllers = new Map<string, AbortController>();
   const borrowedForegroundAgentIds = new Set<string>();
-  const resolveLaunchProfiles = (): AgentProfile[] =>
+  // 单次派发的显式名单（编排 run 的冻结团队）优先于会话实时配置；两者都缺席时回落经典两角色。
+  const resolveLaunchProfiles = (overrides?: readonly string[]): AgentProfile[] =>
     normalizeAgentProfiles(options.getProfiles?.() ?? options.profiles ?? [], {
       builtInModelSelectionOverrides: options.builtInModelSelectionOverrides,
-      visibleNames: options.visibleProfiles,
+      visibleNames: overrides ?? options.getVisibleProfiles?.() ?? options.visibleProfiles,
     });
   // 恢复已有 child 必须能看到全部内置角色，否则一个已被移出本轮团队的 agent
   // 会无法通过 SendMessage 继续；可见性只限制新派发。
@@ -163,7 +169,10 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       rawRequest: SubagentLaunchRequest,
       launchOptions?: SubagentLaunchOptions,
     ): Promise<AgentOutput> {
-      const { profile, request } = resolveAgentProfileForRequest(resolveLaunchProfiles(), rawRequest);
+      const { profile, request } = resolveAgentProfileForRequest(
+        resolveLaunchProfiles(launchOptions?.visibleProfiles),
+        rawRequest,
+      );
       const executionRequest = toSubagentExecutionRequest(request);
       const backgroundRequested =
         rawRequest.runInBackground === true || profile.background === true;
@@ -195,7 +204,10 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       rawRequest: SubagentRunRequest,
       runOptions?: SubagentRunOptions,
     ): Promise<AgentOutput> {
-      const { profile, request } = resolveAgentProfileForRequest(resolveLaunchProfiles(), rawRequest);
+      const { profile, request } = resolveAgentProfileForRequest(
+        resolveLaunchProfiles(runOptions?.visibleProfiles),
+        rawRequest,
+      );
       const lifecycle = createSubagentLifecycle(options, request, profile);
       const startedAt = new Date(lifecycle.startedAt);
 
@@ -461,7 +473,10 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       rawRequest: SubagentStartRequest,
       startOptions?: SubagentStartOptions,
     ): Promise<AgentBackgroundedOutput> {
-      const { profile, request } = resolveAgentProfileForRequest(resolveLaunchProfiles(), rawRequest);
+      const { profile, request } = resolveAgentProfileForRequest(
+        resolveLaunchProfiles(startOptions?.visibleProfiles),
+        rawRequest,
+      );
       const lifecycle = createSubagentLifecycle(options, request, profile);
       const startedAt = new Date(lifecycle.startedAt);
       const output = createAgentBackgroundedOutput(request, lifecycle);

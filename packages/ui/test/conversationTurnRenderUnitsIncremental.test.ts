@@ -332,3 +332,48 @@ test("随机混合操作序列：增量与全量逐步一致（300 轮）", () =
     assertUnitsEqual(incremental, baseline);
   }
 });
+
+test("keepLastTurnHistoryOpen 只展开最后一轮，并在选项翻转时使缓存失效", () => {
+  const turnId = "turn-orchestration";
+  const rows: ConversationRow[] = [
+    turnHeader(turnId, "completedSuccess"),
+    userInput(turnId, "按计划实现"),
+    toolCall(turnId, "call-plan", "success"),
+    rowOf({
+      kind: "subagent",
+      rowId: (rowIdSeq += 1),
+      turnId,
+      createdAt: 1767225600000,
+      createdAtSeq: rowIdSeq,
+      subagentType: "frontend",
+      status: "success",
+      summaryText: "实现入口",
+      childSessionId: "child-1",
+      startedAt: 1767225601000,
+      endedAt: 1767225602000,
+    }),
+    // 轮尾正文让这一轮默认折叠；编排 run 活跃时必须靠 keepLastTurnHistoryOpen 保持展开。
+    assistantText(turnId, "已启动编排", "complete"),
+  ];
+  const build = createConversationTurnRenderUnitsBuilder();
+
+  const closed = build(rows, { keepLastTurnHistoryOpen: false });
+  assert.equal(closed[0]?.assistantHistoryDefaultOpen, false);
+  // 与全量基线逐字段一致：选项不改变除默认展开态以外的任何语义。
+  assert.deepEqual(
+    closed,
+    buildConversationTurnRenderUnitsUncached(rows, { keepLastTurnHistoryOpen: false }),
+  );
+
+  const open = build(rows, { keepLastTurnHistoryOpen: true });
+  assert.equal(open[0]?.assistantHistoryDefaultOpen, true);
+  assert.equal(open[0]?.workSegments?.at(-1)?.assistantHistoryDefaultOpen, true);
+  assert.deepEqual(
+    open,
+    buildConversationTurnRenderUnitsUncached(rows, { keepLastTurnHistoryOpen: true }),
+  );
+
+  // 选项翻转必须重建缓存：run 结束后回到既有折叠规则。
+  const closedAgain = build(rows, { keepLastTurnHistoryOpen: false });
+  assert.equal(closedAgain[0]?.assistantHistoryDefaultOpen, false);
+});

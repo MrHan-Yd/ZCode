@@ -1,31 +1,14 @@
-import type { GitRepositorySummary } from "@zcode/shared";
 import type {
   BackgroundWorkSummary,
   GoalState,
+  OrchestrationRunProjection,
   PlanState,
   RunningSubagentSummary,
   ToolCallRow,
   WorkflowRunState,
 } from "@zcode/shared/zcode-protocol-v4";
 import { workflowRunStepCounts } from "@zcode/shared/zcode-protocol-v4";
-import { canPullGitBranch, canPushGitBranch } from "@/git-action-menu/display.js";
-import { shouldShowGitToolsEntry } from "@/v4/gitToolsEntryVisibility.js";
 import { extractPlanToolCallContent, getPlanDirectoryTitle } from "@/lib/planToolCall.js";
-
-export interface ConversationStatusPanelGitModel {
-  branchName: string | null;
-  headRefType: GitRepositorySummary["headRefType"];
-  dirtyFileCount: number;
-  added: number;
-  removed: number;
-  ahead: number;
-  behind: number;
-  /** 是否还有可推送的提交（与「推送」项的启用条件同一判据）。 */
-  hasPushableCommits: boolean;
-  /** 当前分支是否有上游（与「拉取」项的启用条件同一判据）。 */
-  canPull: boolean;
-  isClean: boolean;
-}
 
 export interface ConversationStatusPanelPlanModel {
   items: PlanState["items"];
@@ -113,21 +96,30 @@ export function workflowRunOpenTarget(
 }
 
 export interface ConversationStatusPanelModel {
+  /** 状态内容或 Git 可见，任一为真即 true（spec 规则 5）。 */
   hasContent: boolean;
-  git: ConversationStatusPanelGitModel | null;
+  /** 不含 Git 的会话状态内容；决定右下状态卡片是否存在、是否需要让位。 */
+  hasStatusContent: boolean;
   goal: GoalState | null;
   sessionPlans: ConversationStatusPanelSessionPlansModel | null;
   plan: ConversationStatusPanelPlanModel | null;
   runningBashWorks: BackgroundWorkSummary[];
   runningSubagentWorks: ConversationStatusPanelRunningSubagent[];
   runningWorkflowRuns: ConversationStatusPanelWorkflowRun[];
+  /** 活动编排 run；计划分区的唯一数据源（只读投影，按投影顺序）。 */
+  activeOrchestrationRuns: ConversationStatusPanelOrchestrationRun[];
+}
+
+export interface ConversationStatusPanelOrchestrationRun {
+  run: OrchestrationRunProjection;
+  completedCount: number;
+  runningCount: number;
+  totalCount: number;
 }
 
 interface BuildConversationStatusPanelModelInput {
-  isOfficeMode?: boolean;
-  gitSummary?: GitRepositorySummary | null;
-  gitDirtyFileCount?: number;
-  gitWorktreeChangeSummary?: { added: number; removed: number } | null;
+  /** Git 是否可见（由 gitTools !== null 得到），计入 hasContent。 */
+  hasGitTools?: boolean;
   goal?: GoalState | null;
   sessionPlans?: readonly ToolCallRow[];
   workspacePath?: string;
@@ -135,57 +127,7 @@ interface BuildConversationStatusPanelModelInput {
   backgroundWorks?: readonly BackgroundWorkSummary[];
   runningSubagents?: readonly RunningSubagentSummary[];
   workflowRuns?: readonly WorkflowRunState[];
-}
-
-function buildGitModel({
-  gitSummary,
-  gitDirtyFileCount = 0,
-  gitWorktreeChangeSummary,
-}: Pick<
-  BuildConversationStatusPanelModelInput,
-  "gitSummary" | "gitDirtyFileCount" | "gitWorktreeChangeSummary"
->): ConversationStatusPanelGitModel | null {
-  if (!gitSummary?.isGitAvailable || !gitSummary.isRepository) {
-    return null;
-  }
-  const added = gitWorktreeChangeSummary?.added ?? 0;
-  const removed = gitWorktreeChangeSummary?.removed ?? 0;
-  // 隐藏条件必须是「真的无事可做」：过去只看 worktree 的行级增减，提交之后工作区一干净，
-  // 整块 Git 工具（含「推送」）就消失了，而这是全 UI 唯一的提交/推送入口。
-  // 现在把「可推送/待拉取的提交」和「有文件数但行数为 0 的改动（二进制等）」也算进去。
-  const hasPushableCommits = canPushGitBranch(gitSummary);
-  const canPull = canPullGitBranch(gitSummary);
-  const shouldShow = shouldShowGitToolsEntry({
-    gitSummary,
-    dirtyFileCount: gitDirtyFileCount,
-    added,
-    removed,
-    hasPushableCommits,
-    behind: gitSummary.behind,
-    canPull,
-  });
-  if (!shouldShow) {
-    return null;
-  }
-  const isClean =
-    !gitSummary.isDirty &&
-    gitDirtyFileCount === 0 &&
-    added === 0 &&
-    removed === 0 &&
-    gitSummary.ahead === 0;
-
-  return {
-    branchName: gitSummary.branchName,
-    headRefType: gitSummary.headRefType,
-    dirtyFileCount: gitDirtyFileCount,
-    added,
-    removed,
-    ahead: gitSummary.ahead,
-    behind: gitSummary.behind,
-    hasPushableCommits,
-    canPull,
-    isClean,
-  };
+  orchestrationRuns?: readonly OrchestrationRunProjection[];
 }
 
 function buildPlanModel(plan: PlanState | null | undefined) {
@@ -318,7 +260,6 @@ export function resolveSoleRunningWorkflowRunTarget(
 export function buildConversationStatusPanelModel(
   input: BuildConversationStatusPanelModelInput,
 ): ConversationStatusPanelModel {
-  const git = input.isOfficeMode ? null : buildGitModel(input);
   const goal = input.goal ?? null;
   const sessionPlans = buildSessionPlansModel(input.sessionPlans, input.workspacePath);
   const plan = buildPlanModel(input.plan);
@@ -383,23 +324,45 @@ export function buildConversationStatusPanelModel(
   }
 
   const runningWorkflowRuns = buildRunningWorkflowRuns(input.workflowRuns, workflowWorkByWorkId);
+  const activeOrchestrationRuns = buildActiveOrchestrationRuns(input.orchestrationRuns);
+  const hasStatusContent = Boolean(
+    goal ||
+    sessionPlans ||
+    plan ||
+    runningBashWorks.length > 0 ||
+    runningSubagentWorks.length > 0 ||
+    runningWorkflowRuns.length > 0 ||
+    activeOrchestrationRuns.length > 0,
+  );
 
   return {
-    git,
     goal,
     sessionPlans,
     plan,
     runningBashWorks,
     runningSubagentWorks,
     runningWorkflowRuns,
-    hasContent: Boolean(
-      git ||
-      goal ||
-      sessionPlans ||
-      plan ||
-      runningBashWorks.length > 0 ||
-      runningSubagentWorks.length > 0 ||
-      runningWorkflowRuns.length > 0,
-    ),
+    activeOrchestrationRuns,
+    hasStatusContent,
+    hasContent: Boolean(input.hasGitTools) || hasStatusContent,
   };
+}
+
+/**
+ * 编排计划分区只收活动 run：终态 run 的结果已经由主会话的收尾消息和 completion
+ * 通知呈现，留在面板里会和下一次 run 的活动行抢位置。计数与步骤顺序都直接来自只读投影。
+ */
+function buildActiveOrchestrationRuns(
+  runs: readonly OrchestrationRunProjection[] | undefined,
+): ConversationStatusPanelOrchestrationRun[] {
+  return (runs ?? []).flatMap((run) => {
+    if (!run.active) return [];
+    let completedCount = 0;
+    let runningCount = 0;
+    for (const step of run.steps) {
+      if (step.status === "completed") completedCount += 1;
+      else if (step.status === "running") runningCount += 1;
+    }
+    return [{ run, completedCount, runningCount, totalCount: run.steps.length }];
+  });
 }

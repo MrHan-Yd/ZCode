@@ -94,7 +94,7 @@ const AMEND_INPUT_SCHEMA = {
   $schema: "https://json-schema.org/draft/2020-12/schema",
   type: "object",
   properties: {
-    runId: { type: "string", description: "The active run to supersede." },
+    runId: { type: "string", description: "The active run whose plan should be updated." },
     plan: PLAN_SCHEMA,
   },
   required: ["runId", "plan"],
@@ -122,6 +122,7 @@ const LAUNCH_OUTPUT_SCHEMA = {
     stepCount: { type: "integer", minimum: 1 },
     team: { type: "array", items: { type: "string" } },
     previousRunId: { type: "string" },
+    revised: { type: "boolean" },
   },
   required: ["status", "runId", "planId", "revision", "stepCount", "team"],
   additionalProperties: false,
@@ -217,21 +218,10 @@ const amendHandler: ToolHandler = async (input, context) => {
   const service = requireOrchestrationService(context);
   const value = (input ?? {}) as { runId?: unknown; plan?: unknown };
   const runId = requireRunId(value.runId, context);
-  const previous = await runOrchestrationAction(context, () => service.get(runId));
-  if (!previous) {
-    throw createCoreError(
-      CoreErrorType.ToolExecutionFailed,
-      "not_found: Orchestration run was not found.",
-      {
-        context: { code: "not_found", toolCallId: context.toolCallId },
-        recoverable: true,
-      },
-    );
-  }
   const record = await runOrchestrationAction(context, () =>
     service.amend({ runId, plan: value.plan, context: dispatchContext(context) }),
   );
-  return { ...launchOutput(record), previousRunId: runId };
+  return { ...launchOutput(record), revised: true };
 };
 
 const cancelHandler: ToolHandler = async (input, context) => {
@@ -281,15 +271,21 @@ function summarizeForOutput(record: OrchestrationRunRecord) {
 }
 
 function formatLaunchOutput(output: unknown): string {
-  const value = output as ReturnType<typeof launchOutput> & { previousRunId?: string };
+  const value = output as ReturnType<typeof launchOutput> & {
+    previousRunId?: string;
+    revised?: boolean;
+  };
   return [
-    `Orchestration run launched: ${value.runId}`,
+    value.revised
+      ? `Orchestration run revised in place: ${value.runId}`
+      : `Orchestration run launched: ${value.runId}`,
     `plan: "${value.planId}" revision ${value.revision}`,
     `team: ${value.team.join(", ")}`,
     `steps: ${value.stepCount}`,
-    ...(value.previousRunId ? [`superseded run: ${value.previousRunId}`] : []),
     "",
-    "The deterministic scheduler is executing the DAG in the background. Do not launch the same plan again. You will receive a completion notification with per-step status and artifact references.",
+    value.revised
+      ? "The same run continues with the revised DAG. Unchanged steps keep their child sessions and completed artifacts; only new or changed steps are re-dispatched. Do not call CreateOrchestrationPlan for the same task."
+      : "The deterministic scheduler is executing the DAG in the background. Do not launch the same plan again. You will receive a completion notification with per-step status and artifact references.",
   ].join("\n");
 }
 
@@ -377,14 +373,14 @@ export const createOrchestrationPlanToolEntry: ToolEntry = {
 
 export const amendOrchestrationPlanToolEntry: ToolEntry = {
   ...createOrchestrationPlanToolEntry,
-  capability: "Supersede the active orchestration run with a new plan revision",
+  capability: "Update the active orchestration run's plan in place",
   metadata: {
     ...createOrchestrationPlanToolEntry.metadata,
     name: AMEND_ORCHESTRATION_PLAN_TOOL_NAME,
     description: [
-      "Replace the active orchestration plan with a new revision.",
+      "Update the active orchestration plan in place with a new revision.",
       "",
-      "The previous run is cancelled first; completed artifacts stay in its journal. The new run gets `revision + 1` (or the plan's revision if higher). Do not reuse a runId that already has a different plan.",
+      "Keep the runId and planId. Unchanged steps keep their child sessions and completed artifacts; only steps whose execution semantics changed, new steps, and dependent steps are re-dispatched. The revision must increase by one; send the complete plan, not a patch.",
     ].join("\n"),
   },
   handler: amendHandler,
@@ -392,7 +388,7 @@ export const amendOrchestrationPlanToolEntry: ToolEntry = {
   inputSchema: AMEND_INPUT_SCHEMA,
   outputSchema: LAUNCH_OUTPUT_SCHEMA,
   permission: basePermission(
-    "AmendOrchestrationPlan cancels the superseded run and starts its replacement",
+    "AmendOrchestrationPlan updates the active run and re-dispatches only invalidated steps",
   ),
   trace: baseTrace(),
 };

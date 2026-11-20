@@ -28,6 +28,7 @@ import {
   TID_V4_FORK,
   TID_V4_ROW,
   TID_V4_ROW_ATTACHMENTS,
+  TID_V4_SUBAGENT_OPEN_SIDE_PANE,
   testId,
 } from "@zcode/shared";
 import type {
@@ -85,6 +86,7 @@ import { isAmendWorkflowToolCall } from "@/lib/workflowToolNames.js";
 import { ToolCallBlock } from "@/ToolCallBlocks.js";
 import { resolveWorkflowRunOpenToolCallId } from "@/v4/workflowRunCardJoin.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import { subagentRowToAgentToolCallNode } from "@/v4/subagentRowAdapter.js";
 import { useOptionalPlatform } from "@/hooks/usePlatform.js";
 import { reportAppTelemetryEvent } from "@/lib/appTelemetry.js";
 import { runUserAction, runUserActionAsync } from "@/lib/userActionTelemetry.js";
@@ -126,6 +128,10 @@ import {
   splitUserInputEpilogue,
 } from "@/v4/ConversationUserInputEpilogue.js";
 import { ConversationHookDetailsAction } from "@/v4/ConversationHookDetailsAction.js";
+import {
+  USER_INPUT_BUBBLE_BASE_CLASS,
+  resolveUserInputBubbleBorderClass,
+} from "@/v4/userInputBubbleStyle.js";
 import { formatModelChangeLabel } from "@/v4/composer/modelTriggerDisplay.js";
 import { formatMessageTimeLabel } from "@/v4/messageTimeLabel.js";
 import { parseConversationShareContext } from "@/lib/conversationShareContext.js";
@@ -1256,7 +1262,12 @@ const UserInputRowView = memo(function UserInputRowView({
         // 气泡保留 flex item 的自动宽度；宿主至少 624px 时再以 36rem 封顶并保留 48px 余量。
         <div
           data-v4-user-input-bubble="true"
-          className="flex max-w-full flex-col gap-2 rounded-xl rounded-tr-xs border border-border bg-surface px-4 py-3 text-ui-base text-foreground @min-[624px]/conversation:max-w-xl"
+          {...(row.orchestrationEnabled ? { "data-v4-user-input-orchestration": "true" } : {})}
+          className={cn(
+            USER_INPUT_BUBBLE_BASE_CLASS,
+            // 编排指令与经典消息只差边框色：该轮开跑时 session 编排配置为 enabled。
+            resolveUserInputBubbleBorderClass(row.orchestrationEnabled),
+          )}
         >
           {hasVisibleText ? (
             <ConversationUserInputBody contentText={visibleText} rowId={row.rowId}>
@@ -2071,18 +2082,74 @@ const ToolCallRowView = memo(function ToolCallRowView({
   );
 });
 
-const SubagentRowView = memo(function SubagentRowView({ row }: { row: SubagentRow }) {
-  // subagent 行已经和 Agent/Task 工具行配对渲染；裸行只保留异常兜底摘要，
-  // 避免再生成一个“子会话”卡片或第二套下钻入口。
-  const summary = (
-    <>
-      {row.subagentType} · {row.status}
-      {row.summaryText ? ` — ${row.summaryText}` : ""}
-    </>
+const SubagentRowView = memo(function SubagentRowView({
+  row,
+  context,
+}: {
+  row: SubagentRow;
+  context: ConversationRowRenderContext;
+}) {
+  // 时间线复用 Agent 工具行：编排步骤没有对应的 Agent/Task 工具行（dispatcher 直接派发），
+  // 无法与工具卡配对，因此在渲染派生层合成 Agent 节点交给同一个 ToolCallBlock。
+  // 详细步骤（stepId/依赖/尝试次数/耗时/错误）只在状态面板「编排计划」分区展示；
+  // 行本身仍由投影驱动（SubagentSpawned / SubagentStopped），不新增虚拟行。
+  const toolCallNode = useMemo(() => subagentRowToAgentToolCallNode(row), [row]);
+  const parentSessionId = context.sessionId;
+  const childSessionId = row.childSessionId;
+  const canOpenChildSession = Boolean(
+    childSessionId && parentSessionId && context.onOpenSubagentSession,
   );
+  // 打开子会话的参数与手动 Agent 行一致：root 缺省回落到父 session，title 用摘要可见文案。
+  const handleOpenChildSession = useCallback(() => {
+    if (!childSessionId || !parentSessionId) return;
+    runUserAction({
+      input: { featureId: "conversation.subagent", action: "open_side_pane", trigger: "button" },
+      operation: () => {
+        context.onOpenSubagentSession?.({
+          rootSessionId: context.rootSessionId ?? parentSessionId,
+          parentSessionId,
+          childSessionId,
+          subagentType: row.subagentType,
+          title: row.summaryText.trim() || row.subagentType,
+        });
+        return true;
+      },
+      completed: { resultSource: "local_commit" },
+      failureStage: "subagent_open",
+    });
+  }, [childSessionId, context, parentSessionId, row.subagentType, row.summaryText]);
+  const agentSummaryAction = useMemo(
+    () =>
+      canOpenChildSession && childSessionId
+        ? {
+            onActivate: handleOpenChildSession,
+            testId: testId(TID_V4_SUBAGENT_OPEN_SIDE_PANE, childSessionId),
+          }
+        : undefined,
+    [canOpenChildSession, childSessionId, handleOpenChildSession],
+  );
+
   return (
     <RowShell rowId={row.rowId}>
-      <div className="text-ui-sm text-[var(--color-foreground-subtle)]">{summary}</div>
+      <div
+        data-subagent-child-session-id={childSessionId}
+        data-subagent-status={row.status}
+        data-conversation-selectable="true"
+      >
+        <ToolCallBlock
+          toolCallNode={toolCallNode}
+          workspacePath={context.workspacePath}
+          theme={context.theme}
+          codePreviewSettings={context.codePreviewSettings}
+          showTodoToolCalls={context.messageStreamShowTodos === true}
+          onOpenCodeViewer={context.onOpenCodeViewer}
+          onOpenFileLink={context.onOpenFileLink}
+          onOpenBrowserUrl={context.onOpenBrowserUrl}
+          onOpenAutomationsMain={context.onOpenAutomationsMain}
+          agentSummaryAction={agentSummaryAction}
+          authoritativeAgentType={row.subagentType}
+        />
+      </div>
     </RowShell>
   );
 });
@@ -2159,7 +2226,7 @@ function ConversationRowViewImpl({
       }
       return <ToolCallRowView row={row} context={context} />;
     case "subagent":
-      return <SubagentRowView row={row} />;
+      return <SubagentRowView row={row} context={context} />;
     case "artifact":
       return <ArtifactRowView row={row} />;
     default:

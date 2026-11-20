@@ -85,6 +85,25 @@ export function isOrchestrationHardDeniedTool(toolName: string): boolean {
 }
 
 /**
+ * 新派发可见的内置子代理名单。
+ *
+ * 编排开启时唯一事实源是已归一化的 `orchestration.team`：DAG 派发解析与 Agent/Task 描述都必须
+ * 从这里读，不能依赖另一份需要额外写入的 `subagents.visibleProfiles` 副本——该副本从未被写入，
+ * 导致 `resolveLaunchProfiles()` 回落到经典两角色，专业角色派发时报 `Agent type ... not found`。
+ * 关闭编排时保留宿主的显式名单；缺省由 `normalizeAgentProfiles` 回落为通用两角色。
+ */
+export function resolveVisibleSubagentProfileNames(config: {
+  orchestration?: { enabled?: boolean; team?: readonly string[] } | undefined;
+  subagents?: { visibleProfiles?: readonly string[] } | undefined;
+  taskType?: string | undefined;
+}): readonly string[] | undefined {
+  if (isOrchestratorRuntimeConfig(config)) {
+    return resolveOrchestrationTeamForPrompt(config.orchestration?.team);
+  }
+  return config.subagents?.visibleProfiles;
+}
+
+/**
  * provider 请求边界需要隐藏的工具名。
  *
  * registry 必须保持完整：子代理的 `allowedTools: ["*"]` 会从父 runtime 的实际工具表继承，

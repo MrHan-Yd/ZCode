@@ -7,7 +7,10 @@ import {
   resolveRuntimeDynamicWorkflowToolsIncluded,
 } from "../helpers/tool-allowlist.js";
 import { isToolNameDisallowed } from "../../tool/tool-visibility.js";
-import { isOrchestratorRuntimeConfig } from "../../orchestration/tool-policy.js";
+import {
+  isOrchestratorRuntimeConfig,
+  resolveVisibleSubagentProfileNames,
+} from "../../orchestration/tool-policy.js";
 
 export function resolveRuntimeEmbeddedSearchEnabled(runtime: AgentRuntimeInternal): boolean {
   // 编排主会话没有 Bash，内建搜索分支无法接管检索；必须保留 Glob/Grep，
@@ -42,7 +45,7 @@ export function refreshBranchAwareBuiltInTools(runtime: AgentRuntimeInternal): v
     // 共用同一个 helper，不能在这里重写一遍判断。
     includeDynamicWorkflow: resolveRuntimeDynamicWorkflowToolsIncluded(runtime.config),
     agentProfiles: runtime.config.subagents?.profiles,
-    visibleProfiles: runtime.config.subagents?.visibleProfiles,
+    visibleProfiles: resolveVisibleSubagentProfileNames(runtime.config),
     includeOrchestration: isOrchestratorRuntimeConfig(runtime.config),
     allowedTools: resolveBuiltInToolAllowlist(runtime.config),
     disallowedTools: runtime.config.toolDisallowlist,

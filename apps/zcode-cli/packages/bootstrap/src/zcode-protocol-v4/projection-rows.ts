@@ -98,6 +98,7 @@ export function buildUserInputRow(base: RowBaseInput, payload: TurnStartedPayloa
     ...(rootSourceCommandId ? { rootSourceCommandId } : {}),
     ...(payload.intent?.clientId ? { clientId: payload.intent.clientId } : {}),
     ...(payload.epilogueStart === undefined ? {} : { epilogueStart: payload.epilogueStart }),
+    ...(payload.orchestrationEnabled ? { orchestrationEnabled: true } : {}),
     ...(attachments && attachments.length > 0 ? { attachments } : {}),
   };
 }
