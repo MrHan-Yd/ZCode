@@ -1,45 +1,21 @@
 import { Buffer } from "node:buffer";
 import {
-  createSessionId,
-  SessionEventType,
-  selectActiveConversationBranch,
   type BackgroundTaskInfo,
   type MessageWithParts,
   type SessionEvent,
   type SessionInfo,
   type SessionProjection,
-  type ToolPart,
   STREAM_RECOVERY_DISCARDED_ERROR_NAME,
 } from "@zcode/contracts";
 import type { ZCodeSessionEndedSubagent, ZCodeSessionRunningSubagent } from "@zcode/shared";
+import {
+  asSubagentRecord as asRecord,
+  collectSubagentCandidates,
+  subagentStringField as stringField,
+  type SubagentCandidate,
+} from "./subagent-session-candidates.js";
 
-const SUBAGENT_TOOL_NAMES = new Set(["Agent", "Task", "subagent"]);
 const CANCELLATION_PATTERN = /abort|cancel|interrupt|stop/i;
-
-interface SubagentCandidate {
-  agentId?: string;
-  childSessionId: string;
-  runInBackground: boolean;
-  output: Record<string, unknown> | null;
-  part: ToolPart;
-  subagentType: string;
-  summary?: string;
-  startedAt?: number;
-  stoppedAt?: number;
-  stoppedStatus?: "success" | "failed" | "cancelled";
-  title: string;
-}
-
-interface SubagentEventRelation {
-  agentId?: string;
-  childSessionId?: string;
-  description?: string;
-  startedAt?: number;
-  stoppedAt?: number;
-  stoppedStatus?: "success" | "failed" | "cancelled";
-  subagentType?: string;
-  summary?: string;
-}
 
 interface SessionSubagentProjection {
   revision: number;
@@ -58,175 +34,8 @@ interface ProjectSessionSubagentsInput {
   parentEvents?: readonly SessionEvent[];
 }
 
-function asRecord(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : {};
-}
-
 function nonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
-}
-
-function stringField(source: Record<string, unknown>, ...keys: string[]): string | undefined {
-  for (const key of keys) {
-    const value = nonEmptyString(source[key]);
-    if (value) return value;
-  }
-  return undefined;
-}
-
-function parseJsonObject(value: string | undefined): Record<string, unknown> | null {
-  if (!value) return null;
-  try {
-    return asRecord(JSON.parse(value) as unknown);
-  } catch {
-    return null;
-  }
-}
-
-function agentIdFromLaunchAcknowledgement(value: string | undefined): string | undefined {
-  if (!value) return undefined;
-  return nonEmptyString(value.match(/(?:^|\n)agentId:\s*([^\s(]+)/)?.[1]);
-}
-
-function contentBlocksToText(value: unknown): string | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const text = value
-    .map((block) => nonEmptyString(asRecord(block).text))
-    .filter((item): item is string => Boolean(item))
-    .join("\n\n");
-  return text || undefined;
-}
-
-function subagentEventRelations(
-  events: readonly SessionEvent[] | undefined,
-): ReadonlyMap<string, SubagentEventRelation> {
-  const relations = new Map<string, SubagentEventRelation>();
-  for (const event of events ?? []) {
-    if (
-      event.type !== SessionEventType.SubagentSpawned &&
-      event.type !== SessionEventType.SubagentStopped
-    ) {
-      continue;
-    }
-    const payload = asRecord(event.payload);
-    const parentToolCallId = stringField(payload, "parentToolCallId");
-    if (!parentToolCallId) continue;
-    const current = relations.get(parentToolCallId) ?? {};
-    if (event.type === SessionEventType.SubagentSpawned) {
-      relations.set(parentToolCallId, {
-        ...current,
-        agentId: stringField(payload, "agentId") ?? current.agentId,
-        childSessionId: stringField(payload, "childSessionId") ?? current.childSessionId,
-        description: stringField(payload, "description", "prompt") ?? current.description,
-        startedAt: event.timestamp.getTime(),
-        subagentType: stringField(payload, "agentType") ?? current.subagentType,
-      });
-      continue;
-    }
-    const status = stringField(payload, "status");
-    relations.set(parentToolCallId, {
-      ...current,
-      agentId: stringField(payload, "agentId") ?? current.agentId,
-      childSessionId: stringField(payload, "childSessionId") ?? current.childSessionId,
-      stoppedAt: event.timestamp.getTime(),
-      stoppedStatus:
-        status === "cancelled" || status === "stopped"
-          ? "cancelled"
-          : status === "failed" || status === "error"
-            ? "failed"
-            : "success",
-      summary:
-        stringField(payload, "summaryText", "result", "error", "description") ?? current.summary,
-    });
-  }
-  return relations;
-}
-
-function activeBranchMessages(
-  session: SessionInfo,
-  messages: readonly MessageWithParts[],
-): MessageWithParts[] {
-  return selectActiveConversationBranch(messages, {
-    branchCutAfterMessageId: session.revert?.branchCutAfterMessageID,
-    rewindCreatedMessageId: session.revert?.createdMessageID,
-    rewindKeptMessageIds: session.revert?.keptMessageIDs,
-    rewindTargetMessageId: session.revert?.targetMessageID,
-  });
-}
-
-function candidateFromToolPart(
-  part: ToolPart,
-  relation?: SubagentEventRelation,
-): SubagentCandidate | null {
-  if (!SUBAGENT_TOOL_NAMES.has(part.tool)) return null;
-  const completedOutput =
-    part.state.status === "completed" ? nonEmptyString(part.state.output) : undefined;
-  const output = parseJsonObject(completedOutput);
-  const input = asRecord(part.state.input);
-  const stateMetadata = "metadata" in part.state ? asRecord(part.state.metadata) : {};
-  const metadata = { ...asRecord(part.metadata), ...stateMetadata };
-  const agentId =
-    stringField(output ?? {}, "agentId") ??
-    // 后台 Agent 的持久化 launch ACK 是纯文本，cold query 未携带
-    // 临时 spawn event 时无法恢复 childSessionId，导致真实 running Agent 被整条跳过。
-    // 标准 ACK 自带 agentId，按该稳定字段恢复，与 runtime 的 session id 规则对齐。
-    agentIdFromLaunchAcknowledgement(completedOutput) ??
-    stringField(metadata, "agentId") ??
-    relation?.agentId;
-  const childSessionId =
-    stringField(output ?? {}, "childSessionId") ??
-    stringField(metadata, "childSessionId") ??
-    relation?.childSessionId ??
-    (agentId ? createSessionId(`subagent_${agentId}`) : undefined);
-  if (!childSessionId) return null;
-  const title =
-    stringField(output ?? {}, "description") ??
-    stringField(input, "description") ??
-    stringField(metadata, "description") ??
-    relation?.description ??
-    stringField(input, "prompt") ??
-    "Subagent";
-  return {
-    childSessionId,
-    runInBackground: input.run_in_background === true,
-    part,
-    output,
-    agentId: agentId ?? part.callID,
-    subagentType:
-      stringField(output ?? {}, "agentType") ??
-      stringField(metadata, "agentType") ??
-      relation?.subagentType ??
-      stringField(input, "subagent_type", "agent", "agentType") ??
-      "subagent",
-    title,
-    summary:
-      contentBlocksToText(output?.content) ??
-      stringField(output ?? {}, "result", "summary") ??
-      (part.state.status === "error" ? nonEmptyString(part.state.error) : undefined) ??
-      relation?.summary,
-    ...(relation?.startedAt !== undefined ? { startedAt: relation.startedAt } : {}),
-    ...(relation?.stoppedAt !== undefined ? { stoppedAt: relation.stoppedAt } : {}),
-    ...(relation?.stoppedStatus ? { stoppedStatus: relation.stoppedStatus } : {}),
-  };
-}
-
-function collectCandidates(
-  session: SessionInfo,
-  messages: readonly MessageWithParts[],
-  parentEvents?: readonly SessionEvent[],
-): SubagentCandidate[] {
-  const candidates = new Map<string, SubagentCandidate>();
-  const relations = subagentEventRelations(parentEvents);
-  for (const message of activeBranchMessages(session, messages)) {
-    for (const part of message.parts) {
-      if (part.type !== "tool") continue;
-      const candidate = candidateFromToolPart(part, relations.get(part.callID));
-      if (candidate) candidates.set(candidate.childSessionId, candidate);
-    }
-  }
-  return [...candidates.values()];
 }
 
 export function collectSubagentChildSessionIds(
@@ -234,7 +43,7 @@ export function collectSubagentChildSessionIds(
   messages: readonly MessageWithParts[],
   parentEvents?: readonly SessionEvent[],
 ): string[] {
-  return collectCandidates(session, messages, parentEvents).map(
+  return collectSubagentCandidates(session, messages, parentEvents).map(
     (candidate) => candidate.childSessionId,
   );
 }
@@ -284,7 +93,7 @@ function findBackgroundTask(
     (task) =>
       task.taskKind === "subagent" &&
       (task.childSessionId === candidate.childSessionId ||
-        task.toolCallId === candidate.part.callID ||
+        task.toolCallId === candidate.toolCallId ||
         task.taskId === candidate.agentId),
   );
 }
@@ -318,15 +127,15 @@ function runningStatus(input: {
   if (
     input.parentProjection?.activeToolCalls.some(
       (tool) =>
-        tool.toolCallId === input.candidate.part.callID &&
+        tool.toolCallId === input.candidate.toolCallId &&
         (tool.status === "pending" || tool.status === "running"),
     )
   ) {
     return "running";
   }
   return input.parentProjection &&
-    (input.candidate.part.state.status === "pending" ||
-      input.candidate.part.state.status === "running")
+    (input.candidate.toolState?.status === "pending" ||
+      input.candidate.toolState?.status === "running")
     ? "running"
     : undefined;
 }
@@ -358,17 +167,23 @@ function endedStatus(input: {
 }): ZCodeSessionEndedSubagent["status"] {
   const backgroundStatus = terminalBackgroundStatus(input.background);
   if (backgroundStatus) return backgroundStatus;
+  // 同 child 可经 SendMessage 续跑；较新的持久终态不能被上一轮的后台通知覆盖。
+  if (
+    input.childOutcome.status &&
+    (input.childOutcome.endedAt ?? 0) > (input.candidate.stoppedAt ?? 0)
+  )
+    return input.childOutcome.status;
+  if (input.candidate.stoppedStatus) return input.candidate.stoppedStatus;
+  if (input.candidate.toolState?.status === "error") {
+    return CANCELLATION_PATTERN.test(input.candidate.toolState.error) ? "cancelled" : "failed";
+  }
   if (input.childProjection?.status === "error") return "failed";
   if (input.childProjection?.status === "completed") return "success";
-  if (input.candidate.part.state.status === "error") {
-    return CANCELLATION_PATTERN.test(input.candidate.part.state.error) ? "cancelled" : "failed";
-  }
-  if (input.candidate.stoppedStatus) return input.candidate.stoppedStatus;
   const outputStatus = stringField(input.candidate.output ?? {}, "status");
   if (outputStatus === "cancelled" || outputStatus === "stopped") return "cancelled";
   if (outputStatus === "failed" || outputStatus === "error") return "failed";
   if (outputStatus === "async_launched") return input.childOutcome.status ?? "lost";
-  if (input.candidate.part.state.status === "completed") return "success";
+  if (input.candidate.toolState?.status === "completed") return "success";
   return input.childOutcome.status ?? "lost";
 }
 
@@ -377,8 +192,16 @@ function startedAt(
   background?: BackgroundTaskInfo,
 ): number | undefined {
   if (background?.startedAt) return background.startedAt.getTime();
-  if (candidate.startedAt !== undefined) return candidate.startedAt;
-  return "time" in candidate.part.state ? candidate.part.state.time.start : undefined;
+  return candidate.startedAt;
+}
+
+export function isSubagentChildOfSession(child: SessionInfo, parent: SessionInfo): boolean {
+  // 旧 child 构造未继承 workspaceID；缺身份只沿真实 parentID 兼容，显式错误身份仍拒绝。
+  return (
+    child.taskType === "subagent_child" &&
+    child.parentID === parent.id &&
+    (child.workspaceID === undefined || child.workspaceID === parent.workspaceID)
+  );
 }
 
 export function projectSessionSubagents(
@@ -386,13 +209,13 @@ export function projectSessionSubagents(
 ): SessionSubagentProjection {
   const running: ZCodeSessionRunningSubagent[] = [];
   const ended: ZCodeSessionEndedSubagent[] = [];
-  for (const candidate of collectCandidates(
+  for (const candidate of collectSubagentCandidates(
     input.parentSession,
     input.messages,
     input.parentEvents,
   )) {
     const childSession = input.childSessionsById.get(candidate.childSessionId);
-    if (!childSession || childSession.taskType !== "subagent_child") continue;
+    if (!childSession || !isSubagentChildOfSession(childSession, input.parentSession)) continue;
     const childProjection = input.childProjectionsById.get(candidate.childSessionId);
     const background = findBackgroundTask(input.parentProjection, candidate);
     const childOutcome = lastChildOutcome(input.childMessagesById.get(candidate.childSessionId));
@@ -406,7 +229,7 @@ export function projectSessionSubagents(
     const common = {
       childSessionId: candidate.childSessionId,
       ...(candidate.agentId ? { agentId: candidate.agentId } : {}),
-      toolCallId: candidate.part.callID,
+      toolCallId: candidate.toolCallId,
       subagentType: candidate.subagentType,
       title: candidate.title,
       ...(startedAt(candidate, background) !== undefined
@@ -418,21 +241,22 @@ export function projectSessionSubagents(
       continue;
     }
     const stateEndedAt =
-      "time" in candidate.part.state && "end" in candidate.part.state.time
-        ? candidate.part.state.time.end
+      candidate.toolState && "time" in candidate.toolState && "end" in candidate.toolState.time
+        ? candidate.toolState.time.end
         : undefined;
+    const childIsLatest =
+      childOutcome.status && (childOutcome.endedAt ?? 0) > (candidate.stoppedAt ?? 0);
+    const summary = childIsLatest
+      ? childOutcome.summary
+      : (candidate.summary ?? childOutcome.summary);
+    const endedAt = childIsLatest
+      ? childOutcome.endedAt
+      : (candidate.stoppedAt ?? stateEndedAt ?? childOutcome.endedAt);
     ended.push({
       ...common,
       status: endedStatus({ background, candidate, childOutcome, childProjection }),
-      ...(candidate.summary || childOutcome.summary
-        ? { summary: candidate.summary ?? childOutcome.summary }
-        : {}),
-      endedAt:
-        background?.completedAt?.getTime() ??
-        candidate.stoppedAt ??
-        stateEndedAt ??
-        childOutcome.endedAt ??
-        childSession.time.updated,
+      ...(summary ? { summary } : {}),
+      endedAt: background?.completedAt?.getTime() ?? endedAt ?? childSession.time.updated,
     });
   }
   running.sort(

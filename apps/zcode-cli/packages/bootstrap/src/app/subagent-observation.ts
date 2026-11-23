@@ -10,6 +10,7 @@ import type { ZCodeSessionSubagentsResult } from "@zcode/shared";
 import { projectSessionTranscript, type SessionTranscriptMessage } from "../session-transcript.js";
 import {
   collectSubagentChildSessionIds,
+  isSubagentChildOfSession,
   paginateEndedSubagents,
   projectSessionSubagents,
 } from "../zcode-protocol/subagent-session-query.js";
@@ -45,12 +46,7 @@ export function createSubagentObservation(deps: ObservationDeps) {
         ids.map(async (id) => {
           const sessionId = id as SessionId;
           const session = await deps.sessionStore.getSession(sessionId);
-          if (
-            !session ||
-            session.parentID !== deps.sessionId ||
-            session.taskType !== "subagent_child"
-          )
-            return null;
+          if (!session || !isSubagentChildOfSession(session, parentSession)) return null;
           const [messages, events] = await Promise.all([
             deps.sessionStore.messages({ sessionID: sessionId }),
             eventStore.getEvents(sessionId),

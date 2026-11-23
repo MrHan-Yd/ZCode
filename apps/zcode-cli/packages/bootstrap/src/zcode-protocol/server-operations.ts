@@ -119,6 +119,7 @@ import { protocolMcpServersToRuntimeMcpConfig } from "./protocol-mcp-config.js";
 import { projectIdFromDirectory } from "../app/paths.js";
 import {
   collectSubagentChildSessionIds,
+  isSubagentChildOfSession,
   paginateEndedSubagents,
   projectSessionSubagents,
 } from "./subagent-session-query.js";
@@ -1825,7 +1826,7 @@ export async function listSessionSubagents(
   const childEntries = await Promise.all(
     childSessionIds.map(async (childSessionId) => {
       const childSession = await store.getSession(childSessionId as SessionId);
-      if (!childSession || childSession.taskType !== "subagent_child") return null;
+      if (!childSession || !isSubagentChildOfSession(childSession, parentSession)) return null;
       // manifest 只需要最后一条 assistant：旧实现为 37 个子会话各读一遍全量 messages，
       // 实测 48.7 MB parts / 470 ms。有 lastAssistantMessage 能力时不读全量；
       // 旧宿主缺该方法、或该方法失败时回退全量，不能把“缺能力”当成“没有消息”。

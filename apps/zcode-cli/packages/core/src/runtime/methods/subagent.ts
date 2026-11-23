@@ -1,6 +1,6 @@
 /* eslint-disable max-lines -- subagent runtime wiring 集中衔接 child runtime、tool pool、权限、MCP 与 activity watchdog，拆分需单独迁移。 */
 import { RESPOND_TO_COORDINATOR_TOOL_NAME } from "@zcode/contracts";
-import type { SubagentRunOptions } from "@zcode/contracts";
+import type { SubagentRunOptions, WorkspaceId } from "@zcode/contracts";
 import {
   defaultScheduler,
   PermissionService,
@@ -263,6 +263,11 @@ export function createDefaultSubagentPort(
           modelSelection: cloneModelSelection(childSelection),
           modelContextBudgetStrategy: this.config.modelContextBudgetStrategy,
           workingDirectory: request.workingDirectory,
+          // 旧 child 未继承隔离身份，远端历史查询只能看到空 workspaceID；持久化身份沿父会话传递。
+          workspacePath: this.config.workspacePath ?? request.workingDirectory,
+          workspaceIdentity:
+            this.config.workspaceIdentity ??
+            (this.config.memory?.workspaceIdentity?.trim() as WorkspaceId | undefined),
           // 执行模型只由 child Active Model 投影进 Context；envInfo 不保存第二份模型事实。
           envInfo: childRuntimeEnvInfo,
           // Explore 子运行时之前没有继承主会话的流式配置，Protocol 桌面端虽已默认
