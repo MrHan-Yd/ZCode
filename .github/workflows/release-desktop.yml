@@ -127,6 +127,27 @@ jobs:
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
 
+      - name: 发行环境回归
+        id: release-regressions
+        # 在真实打包前验证发行环境与仓库内原生工具归档，避免再次把问题拖到
+        # bootstrap/electron-builder 阶段才暴露。重打不含该入口的旧标签时只记录跳过，
+        # 不能用 main 的脚本覆盖旧标签源码。
+        run: |
+          # 退出码 3 专门表示“旧标签没有 test:release 入口”；其他非零一律失败，
+          # 避免脚本求值异常被当成旧标签静默跳过。
+          set +e
+          node -e "process.exit(require('./package.json').scripts?.['test:release'] ? 0 : 3)"
+          status=$?
+          set -e
+          if [ "${status}" -eq 0 ]; then
+            pnpm test:release
+          elif [ "${status}" -eq 3 ]; then
+            echo "::notice::该发行标签未包含 test:release 入口，跳过发行环境回归。"
+          else
+            echo "::error::检测 test:release 入口失败（退出码 ${status}），请检查 package.json。"
+            exit "${status}"
+          fi
+
       - name: 初始化（准备桌面运行资源 + 构建各 workspace 包）
         # 等价于 README 的 pnpm bootstrap：submodule 检查、依赖安装、
         # prepare:desktop-runtime，最后跑 build:bootstrap
@@ -180,7 +201,7 @@ jobs:
         run: cp force-update.json release-assets/force-update.json
 
       - name: 创建 Release 并附加安装包
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3.0.4
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           name: ZCode ${{ github.event.inputs.tag || github.ref_name }}

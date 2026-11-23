@@ -18,7 +18,7 @@
 | 格式检查         | `pnpm fmt:check`                          |
 | 桌面开发         | `pnpm dev:desktop`                        |
 | Web 开发         | `pnpm dev:web`                            |
-| 提交前检查       | `pnpm verify:pre-push`（Lint 与架构检查） |
+| 提交前检查       | `pnpm verify:pre-push`（Lint、架构检查与发行回归） |
 | 架构检查         | `pnpm architecture:check --changed`       |
 | 模块阅读包       | `pnpm architecture:context <module-id>`   |
 | 未使用依赖与导出 | `pnpm knip`                               |

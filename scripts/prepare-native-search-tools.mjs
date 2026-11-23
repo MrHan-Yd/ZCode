@@ -41,7 +41,7 @@ export async function prepareNativeSearchTools({
   // Check the entire target before replacing any prepared binaries.
   for (const artifact of plan.artifacts) {
     try {
-      verifyPrebuiltArchiveSha256(artifact.archivePath, artifact.archiveSha256);
+      await verifyPrebuiltArchiveSha256(artifact.archivePath, artifact.archiveSha256);
     } catch (error) {
       const reason = error instanceof Error ? error.message : String(error);
       throw new Error(

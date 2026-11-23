@@ -17,6 +17,7 @@ const ACTION_VERSIONS = {
   "actions/setup-node": "v7.1.0",
   "actions/upload-artifact": "v7.0.2",
   "actions/download-artifact": "v8.0.2",
+  "softprops/action-gh-release": "v3.0.4",
 };
 const quote = (value) => `'${value.replaceAll("'", "''")}'`;
 
@@ -51,7 +52,8 @@ test("官方 Action 使用 Node24 版本，项目 Node 与 pnpm 不改", () => {
     for (const step of job.steps) {
       if (!step.uses) continue;
       const [action, version] = step.uses.split("@");
-      if (ACTION_VERSIONS[action]) assert.equal(version, ACTION_VERSIONS[action]);
+      assert.ok(ACTION_VERSIONS[action], `Unverified release Action: ${action}`);
+      assert.equal(version, ACTION_VERSIONS[action]);
     }
   }
   const node = workflow.jobs.build.steps.find((step) =>
@@ -63,6 +65,32 @@ test("官方 Action 使用 Node24 版本，项目 Node 与 pnpm 不改", () => {
   assert.equal(node.with["node-version"], "24.14.0");
   assert.equal(pnpm.with.version, "10.33.2");
   assert.equal(workflow.jobs.build.defaults.run.shell, "bash");
+});
+
+test("发行回归在安装后、打包前执行，旧标签明确记录跳过", () => {
+  const steps = workflow.jobs.build.steps;
+  const tests = steps.findIndex((step) => step.id === "release-regressions");
+  const install = steps.findIndex((step) => step.name === "安装依赖");
+  const bootstrap = steps.findIndex((step) => step.name?.startsWith("初始化"));
+  assert.ok(tests > install && tests < bootstrap);
+  assert.match(steps[tests].run, /pnpm test:release/u);
+  assert.match(steps[tests].run, /test:release/u);
+  assert.match(steps[tests].run, /notice/u);
+});
+
+test("提交前门禁执行同一发行回归入口", async () => {
+  const manifest = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8"));
+  assert.match(manifest.scripts["test:release"], /release-desktop-ci\.test\.mjs/u);
+  assert.match(manifest.scripts["test:release"], /native-search-tools\.test\.mjs/u);
+  assert.match(manifest.scripts["verify:pre-push"], /pnpm (?:run )?test:release/u);
+});
+
+test("GitHub Actions 依赖更新只创建维护 PR，不定时发布", async () => {
+  const config = parse(await readFile(join(ROOT, ".github/dependabot.yml"), "utf8"));
+  const actions = config.updates.find((update) => update["package-ecosystem"] === "github-actions");
+  assert.equal(actions.directory, "/");
+  assert.equal(actions.schedule.interval, "weekly");
+  assert.equal(workflow.on.schedule, undefined);
 });
 
 test("Windows 模块环境准备先于安装与构建，并显式导出 PSModulePath", () => {
@@ -124,7 +152,7 @@ test(
         if (key.toLowerCase() === "psmodulepath") delete process.env[key];
       process.env.PSModulePath = modules;
       const extracted = join(directory, "fixed extract 中文 '");
-      extractPrebuiltArchive({
+      await extractPrebuiltArchive({
         archivePath: archive,
         archiveExt: "zip",
         extractDir: extracted,

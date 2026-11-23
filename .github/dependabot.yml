@@ -1,0 +1,8 @@
+# GitHub Actions 依赖只通过 PR 提醒维护；合并前仍要过发行回归、类型检查、
+# Lint 与架构检查。依赖更新不会自动打标签，也不会定时创建 Release。
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
