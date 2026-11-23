@@ -1,0 +1,27 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true
+  },
+  // Git 与子智能体回归进入正式门禁，不扩展到无关历史测试。
+  "include": [
+    "src/**/*.ts",
+    "src/**/*.tsx",
+    "src/**/*.d.ts",
+    "src/**/*.json",
+    "test/gitRepositoryRefresh.test.ts",
+    "test/gitAutoRefresh.test.ts",
+    "test/subagentIdentityColors.test.ts",
+    "test/subagentColors.test.ts",
+    "test/subagentColorUsage.test.ts",
+    "test/orchestrationStatusPanelRender.test.ts",
+    "test/subagentHistoryDirectory.browser.test.ts"
+  ],
+  "references": [
+    { "path": "../provider" },
+    { "path": "../shared" },
+    { "path": "../services" },
+    { "path": "../rpc" }
+  ]
+}
