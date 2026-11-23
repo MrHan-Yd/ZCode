@@ -3,6 +3,14 @@ import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { IServiceAccessor } from "@zcode/services";
+import {
+  BUILT_IN_SUBAGENT_DEFINITIONS,
+  ZCODE_AGENT_PROVIDER,
+  type AgentSummary,
+} from "@zcode/shared";
+import { SUBAGENT_TEXT_COLOR_CLASS } from "@/lib/subagentColors.js";
+import { getSubagentsContextKey, useSubagentsContextStore } from "@/store/subagentsContextStore.js";
+import { useSubagentsStore } from "@/store/subagentsStore.js";
 import type {
   OrchestrationRunProjection,
   RunningSubagentSummary,
@@ -55,7 +63,11 @@ const RUN: OrchestrationRunProjection = {
   ],
 };
 
-function renderPanel(locale: "zh-CN" | "en-US"): string {
+function renderPanel(
+  locale: "zh-CN" | "en-US",
+  runs: readonly OrchestrationRunProjection[] = [RUN],
+  workspaceIdentity?: string,
+): string {
   return renderToStaticMarkup(
     createElement(ZCodeIntlProvider, {
       initialLocale: locale,
@@ -64,9 +76,10 @@ function renderPanel(locale: "zh-CN" | "en-US"): string {
         null,
         createElement(ConversationStatusPanel, {
           workspacePath: "/workspace",
+          workspaceIdentity,
           parentSessionId: "session-1",
           open: true,
-          orchestrationRuns: [RUN],
+          orchestrationRuns: runs,
           orchestrationSectionOpen: true,
           onOrchestrationSectionOpenChange: () => {},
           onStopOrchestrationRun: () => {},
@@ -102,7 +115,10 @@ const RUNNING_SUBAGENTS: readonly RunningSubagentSummary[] = [
   },
 ];
 
-function renderSubagentPanel(): string {
+function renderSubagentPanel(
+  runningSubagents: readonly RunningSubagentSummary[] = RUNNING_SUBAGENTS,
+  workspaceIdentity?: string,
+): string {
   // useSessionPerformanceBatch 只在渲染期读取 zcodeAgentService；SSR 不执行 effect，
   // 因此这里只需要一个带该方法的最小 accessor，不触发任何请求。
   const services = {
@@ -113,22 +129,22 @@ function renderSubagentPanel(): string {
   return renderToStaticMarkup(
     createElement(ZCodeIntlProvider, {
       initialLocale: "zh-CN",
-      children: createElement(
-        ServiceProvider,
-        { services },
-        createElement(
+      children: createElement(ServiceProvider, {
+        services,
+        children: createElement(
           TooltipProvider,
           null,
           createElement(ConversationStatusPanel, {
             workspacePath: "/workspace",
+            workspaceIdentity,
             parentSessionId: "session-1",
             open: true,
-            runningSubagents: RUNNING_SUBAGENTS,
+            runningSubagents,
             agentSectionOpen: true,
             onAgentSectionOpenChange: () => {},
           }),
         ),
-      ),
+      }),
     }),
   );
 }
@@ -219,6 +235,107 @@ test("智能体分区用前置状态图标表达 running / waiting / blocked", (
   assert.match(blockedRow, /阻塞/u);
 
   assert.ok(!html.includes("animate-spin"));
+});
+
+function assertIdentityColor(
+  html: string,
+  name: string,
+  color: keyof typeof SUBAGENT_TEXT_COLOR_CLASS,
+): void {
+  const span = html.match(new RegExp(`<span[^>]*data-agent-name="${name}"[^>]*>`))?.[0];
+  assert.ok(span, `missing identity ${name}`);
+  assert.ok(span.includes(`data-agent-color="${color}"`), span);
+  for (const token of SUBAGENT_TEXT_COLOR_CLASS[color].split(" ")) {
+    assert.ok(span.includes(token), span);
+  }
+  assert.ok(!span.includes("text-warning"), span);
+  assert.ok(!span.includes("text-[var(--color-destructive)]"), span);
+}
+
+test("真实 SSR 中全部八角色在编排和智能体分区使用同源身份色，失败/阻塞状态保持独立", () => {
+  const statuses = ["running", "waiting", "blocked"] as const;
+  const runningSubagents = BUILT_IN_SUBAGENT_DEFINITIONS.map((definition, index) => ({
+    childSessionId: `child-${definition.name}`,
+    subagentType: definition.name,
+    title: `task-${index}`,
+    status: statuses[index % statuses.length]!,
+    startedAt: RUN.startedAt! + index,
+  }));
+  const run = {
+    ...RUN,
+    steps: BUILT_IN_SUBAGENT_DEFINITIONS.map((definition, index) => ({
+      stepId: `step-${definition.name}`,
+      title: `task-${index}`,
+      role: definition.name,
+      status: index % 2 === 0 ? ("failed" as const) : ("running" as const),
+      dependsOn: [],
+      attempts: 1,
+      startedAt: RUN.startedAt,
+      error: index % 2 === 0 ? "step failed" : undefined,
+    })),
+  };
+  const subagentsHtml = renderSubagentPanel(runningSubagents);
+  // 编排纯展示 SSR 不需要 Services；身份 hook 不能偷偷新增 service 依赖或请求。
+  const orchestrationHtml = renderPanel("zh-CN", [run]);
+  for (const definition of BUILT_IN_SUBAGENT_DEFINITIONS) {
+    assertIdentityColor(subagentsHtml, definition.name, definition.color);
+    const row = stepRowHtml(orchestrationHtml, `step-${definition.name}`);
+    assertIdentityColor(row, definition.name, definition.color);
+    const step = run.steps.find((entry) => entry.role === definition.name)!;
+    assert.ok(
+      row.includes(step.status === "failed" ? "text-[var(--color-destructive)]" : "text-warning"),
+    );
+  }
+  assert.ok(subagentsHtml.includes("text-warning"));
+  assert.ok(subagentsHtml.includes("text-[var(--color-destructive)]"));
+  assert.ok(subagentsHtml.includes('data-subagent-status="waiting"'));
+});
+
+test("真实 SSR 不通过 getState 兜底复用其他 workspace 的可变全局快照", () => {
+  const contextState = useSubagentsContextStore.getState();
+  const legacyState = useSubagentsStore.getState();
+  // SSR 使用 store 初始快照；已加载配置的 identity 选择由纯函数与浏览器回归覆盖。
+  const custom: AgentSummary = {
+    id: "user:workspace:frontend",
+    name: "frontend",
+    description: "custom frontend",
+    systemPrompt: "custom frontend",
+    path: "/workspace/agents/frontend.md",
+    enabled: true,
+    scope: "workspace",
+    source: "user",
+    color: "deepBlue",
+  };
+  const key = getSubagentsContextKey("/workspace", ZCODE_AGENT_PROVIDER, "remote-a");
+  try {
+    useSubagentsContextStore.setState({
+      contexts: {
+        [key]: {
+          workspacePath: "/workspace",
+          workspaceIdentity: "remote-a",
+          provider: ZCODE_AGENT_PROVIDER,
+          agents: [custom],
+          capability: null,
+          loading: false,
+          loaded: true,
+          error: null,
+        },
+      },
+    });
+    useSubagentsStore.setState({
+      agents: [{ ...custom, color: "fuchsia" }],
+      loadedWorkspacePath: "/workspace",
+      loadedWorkspaceIdentity: "remote-a",
+      loadedProvider: ZCODE_AGENT_PROVIDER,
+    });
+    assertIdentityColor(renderPanel("zh-CN", [RUN], "remote-b"), "frontend", "teal");
+    assertIdentityColor(renderSubagentPanel(RUNNING_SUBAGENTS, "remote-b"), "frontend", "teal");
+    assertIdentityColor(renderPanel("zh-CN", [RUN], "remote-c"), "frontend", "teal");
+    assertIdentityColor(renderSubagentPanel(RUNNING_SUBAGENTS, "remote-c"), "frontend", "teal");
+  } finally {
+    useSubagentsContextStore.setState(contextState, true);
+    useSubagentsStore.setState(legacyState, true);
+  }
 });
 
 test("计划分区随 locale 切换，不改动角色名与标题", () => {

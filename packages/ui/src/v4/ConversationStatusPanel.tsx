@@ -90,6 +90,8 @@ import {
   sortRunningSubagentsByStatus,
 } from "@/v4/subagentStatusModel.js";
 import { resolveSubagentDisplayName } from "@/lib/subagentName.js";
+import { SUBAGENT_TEXT_COLOR_CLASS } from "@/lib/subagentColors.js";
+import { useSubagentColorResolver } from "@/hooks/useSubagentColorResolver.js";
 import { useSessionPerformanceBatch } from "@/hooks/useSessionPerformanceBatch.js";
 import {
   buildConversationGoalIterationSummaries,
@@ -1225,12 +1227,15 @@ function OrchestrationStepRow({
   now,
   step,
   stepById,
+  resolveAgentColor,
 }: {
   now: number;
   step: OrchestrationStepProjection;
   stepById: ReadonlyMap<string, OrchestrationStepProjection>;
+  resolveAgentColor: ReturnType<typeof useSubagentColorResolver>;
 }) {
   const { intl } = useZCodeIntl();
+  const roleColor = resolveAgentColor(step.role);
   const waitingOn = step.dependsOn.filter((dependency) => {
     const state = stepById.get(dependency)?.status;
     return state !== "completed" && state !== "failed" && state !== "cancelled";
@@ -1273,7 +1278,14 @@ function OrchestrationStepRow({
             {intl.formatMessage({ id: `chat.orchestration.step.${step.status}` })}
           </span>
           {step.role ? (
-            <span className="min-w-0 max-w-24 truncate font-mono text-ui-xs text-[var(--color-foreground-subtlest)]">
+            <span
+              data-agent-name={step.role}
+              data-agent-color={roleColor}
+              className={cn(
+                "min-w-0 max-w-24 truncate font-mono text-ui-xs",
+                SUBAGENT_TEXT_COLOR_CLASS[roleColor],
+              )}
+            >
               {step.role}
             </span>
           ) : null}
@@ -1324,6 +1336,8 @@ function OrchestrationStatusSection({
   runs,
   separated,
   title,
+  workspacePath,
+  workspaceIdentity,
 }: {
   onOpenChange?: (open: boolean) => void;
   onRequestReplan?: () => void;
@@ -1332,8 +1346,11 @@ function OrchestrationStatusSection({
   runs: readonly ConversationStatusPanelOrchestrationRun[];
   separated: boolean;
   title: string;
+  workspacePath: string;
+  workspaceIdentity?: string;
 }) {
   const { intl } = useZCodeIntl();
+  const resolveAgentColor = useSubagentColorResolver(workspacePath, workspaceIdentity);
   const hasRunningStep = runs.some(({ run }) =>
     run.steps.some((step) => step.status === "running"),
   );
@@ -1373,6 +1390,7 @@ function OrchestrationStatusSection({
             key={entry.run.runId}
             entry={entry}
             now={now}
+            resolveAgentColor={resolveAgentColor}
             onRequestReplan={onRequestReplan}
             onStopRun={onStopRun}
             separated={index > 0}
@@ -1389,9 +1407,11 @@ function OrchestrationRunBlock({
   onRequestReplan,
   onStopRun,
   separated,
+  resolveAgentColor,
 }: {
   entry: ConversationStatusPanelOrchestrationRun;
   now: number;
+  resolveAgentColor: ReturnType<typeof useSubagentColorResolver>;
   onRequestReplan?: () => void;
   onStopRun?: (runId: string) => void;
   separated: boolean;
@@ -1463,7 +1483,13 @@ function OrchestrationRunBlock({
       </div>
       <ol className="flex flex-col gap-0.5 px-1">
         {run.steps.map((step) => (
-          <OrchestrationStepRow key={step.stepId} step={step} stepById={stepById} now={now} />
+          <OrchestrationStepRow
+            key={step.stepId}
+            step={step}
+            stepById={stepById}
+            now={now}
+            resolveAgentColor={resolveAgentColor}
+          />
         ))}
       </ol>
     </section>
@@ -1528,6 +1554,7 @@ function SubagentStatusSection({
   workspacePath: string;
 }) {
   const { intl } = useZCodeIntl();
+  const resolveAgentColor = useSubagentColorResolver(workspacePath, workspaceIdentity);
   const [now, setNow] = useState(() => Date.now());
   // 状态事实来自 snapshot.subagents.running[].status：running → waiting → blocked，
   // 组内按 startedAt 升序（缺失排组尾），同值保持投影原序（规则 11）。
@@ -1634,6 +1661,7 @@ function SubagentStatusSection({
           const speed = speeds.get(subagent.childSessionId);
           // 标题说的是「让它干什么」，名字说的是「它是谁」；缺名字时整段缺席（见 subagentName.ts）。
           const displayName = resolveSubagentDisplayName(subagent.subagentType);
+          const agentColor = resolveAgentColor(subagent.subagentType);
           // 状态图标与状态词表达同一事实（规则 10）：图标负责扫读，颜色只是辅助，
           // 可读状态始终由文字承担。
           const statusTone =
@@ -1699,7 +1727,12 @@ function SubagentStatusSection({
                   {displayName === undefined ? null : (
                     <span
                       data-subagent-name={displayName}
-                      className="max-w-40 shrink-0 truncate font-mono font-medium text-ui-base text-[var(--color-foreground-subtle)]"
+                      data-agent-name={displayName}
+                      data-agent-color={agentColor}
+                      className={cn(
+                        "max-w-40 shrink-0 truncate font-mono font-medium text-ui-base",
+                        SUBAGENT_TEXT_COLOR_CLASS[agentColor],
+                      )}
                     >
                       {displayName}
                     </span>
@@ -2009,6 +2042,8 @@ function ConversationStatusPanelImpl({
             <OrchestrationStatusSection
               title={intl.formatMessage({ id: "chat.statusPanel.orchestration" })}
               runs={model.activeOrchestrationRuns}
+              workspacePath={workspacePath}
+              workspaceIdentity={workspaceIdentity}
               open={orchestrationSectionOpen}
               onOpenChange={onOrchestrationSectionOpenChange}
               separated={

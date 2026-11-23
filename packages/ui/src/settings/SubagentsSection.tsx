@@ -70,8 +70,16 @@ import {
 import { resolveModelThoughtOption } from "@/lib/modelThoughtOption.js";
 import { parseModelPickerValue } from "@/lib/zcodeSessionProjection.js";
 import { encodeCustomModelValue } from "@/lib/zcodeCustomModelValue.js";
-import { SUBAGENT_COLORS, SUBAGENT_COLOR_CLASS } from "@/lib/subagentColors.js";
-import { countSubagentColorUsage, isSelfCreatedSubagent } from "@/lib/subagentColorUsage.js";
+import {
+  SUBAGENT_COLORS,
+  SUBAGENT_COLOR_CLASS,
+  SUBAGENT_DOT_COLOR_CLASS,
+} from "@/lib/subagentColors.js";
+import {
+  countSubagentColorUsage,
+  isSelfCreatedSubagent,
+  resolveSubagentDisplayColor,
+} from "@/lib/subagentColorUsage.js";
 import { SettingsResourceGroupHeader } from "@/settings/SettingsResourceGroupHeader.js";
 import { SettingsResourceHeaderActions } from "@/settings/SettingsResourceHeaderActions.js";
 import {
@@ -395,13 +403,11 @@ function FormFieldLabel({ children, trailing }: { children: string; trailing?: R
   );
 }
 
-function AgentColorDot({ color }: { color?: AgentColor }) {
+function AgentColorDot({ color }: { color: AgentColor }) {
   return (
     <span
-      className={cn(
-        "inline-flex size-2 shrink-0 rounded-full",
-        color ? COLOR_DOT_CLASS[color] : "bg-foreground-subtlest",
-      )}
+      data-agent-color={color}
+      className={cn("inline-flex size-2 shrink-0 rounded-full", SUBAGENT_DOT_COLOR_CLASS[color])}
       aria-hidden="true"
     />
   );
@@ -568,12 +574,10 @@ function AgentListRow({
             <Bot className="size-4" />
           </div>
         )}
-        {agent.color ? (
-          // 右下角颜色点之前溢出头像容器，会让列表行视觉高度变高。
-          <span className="absolute -bottom-1 -right-1 inline-flex size-3.5 items-center justify-center rounded-full border border-card bg-card p-px leading-none">
-            <AgentColorDot color={agent.color} />
-          </span>
-        ) : null}
+        {/* 缺色角色也显示统一解析后的身份点，与聊天和面板同源，不再只看可选 color 字段。 */}
+        <span className="absolute -bottom-1 -right-1 inline-flex size-3.5 items-center justify-center rounded-full border border-card bg-card p-px leading-none">
+          <AgentColorDot color={resolveSubagentDisplayColor(agent)} />
+        </span>
       </div>
 
       <div className="min-w-0">
@@ -1643,7 +1647,14 @@ export function SubagentsSection({
         setConfigSyncPhase("idle");
       }
     },
-    [configSyncScopeParams, intl, loadConfigSyncStatus, refresh, refreshMentionStore, subagentsService],
+    [
+      configSyncScopeParams,
+      intl,
+      loadConfigSyncStatus,
+      refresh,
+      refreshMentionStore,
+      subagentsService,
+    ],
   );
 
   const handlePreviewConfig = useCallback(async () => {

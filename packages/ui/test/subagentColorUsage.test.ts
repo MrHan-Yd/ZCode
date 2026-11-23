@@ -34,6 +34,27 @@ test("显式颜色优先，未设置颜色时按名称 hash 取兜底色", () =>
   );
 });
 
+test("缺色内置使用目录色，同名缺色自建角色仍按名称 hash 显示", () => {
+  assert.equal(
+    resolveSubagentDisplayColor(agent({ name: "frontend", scope: "built-in", source: "built-in" })),
+    "teal",
+  );
+  assert.equal(
+    resolveSubagentDisplayColor(
+      agent({ name: "UI_DESIGNER", scope: "built-in", source: "built-in" }),
+    ),
+    "pink",
+  );
+  assert.equal(
+    resolveSubagentDisplayColor(agent({ name: "frontend" })),
+    resolveSubagentColorFromName("frontend"),
+  );
+  assert.equal(
+    resolveSubagentDisplayColor(agent({ name: "plugin:reviewer", source: "plugin" })),
+    resolveSubagentColorFromName("plugin:reviewer"),
+  );
+});
+
 test("占用统计忽略内置与插件子智能体", () => {
   const counts = countSubagentColorUsage([
     agent({ name: "reviewer", color: "red" }),

@@ -1,8 +1,8 @@
 import type { AgentColor, AgentSummary } from "@zcode/shared";
-import { resolveSubagentColorFromName } from "./subagentColors.js";
+import { resolveSubagentIdentityColor, type SubagentIdentityProfile } from "./subagentColors.js";
 
-/** 颜色占用统计只关心这几个字段，便于测试直接构造最小对象。 */
-export type SubagentColorUsageAgent = Pick<AgentSummary, "name" | "color" | "scope" | "source"> &
+/** 颜色占用统计只关心身份字段，便于测试直接构造最小对象。 */
+export type SubagentColorUsageAgent = SubagentIdentityProfile &
   Pick<Partial<AgentSummary>, "readOnly">;
 
 /**
@@ -19,11 +19,11 @@ export function isSelfCreatedSubagent(agent: SubagentColorUsageAgent): boolean {
 }
 
 /**
- * 子智能体实际显示的身份色：显式 `color` 优先，未设置时按名称 hash 兜底。
- * 与列表行、工具调用区块的取色口径一致，否则会把「运行时显示成紫色」的 agent 当成没有颜色。
+ * 设置列表与占用提示复用统一身份解析：缺色内置取目录色，自建/插件按定义名兜底。
+ * 将当前行作为唯一已匹配配置，避免同名自建角色被误认成内置。
  */
 export function resolveSubagentDisplayColor(agent: SubagentColorUsageAgent): AgentColor {
-  return agent.color ?? resolveSubagentColorFromName(agent.name);
+  return resolveSubagentIdentityColor({ name: agent.name, profiles: [agent] });
 }
 
 /**

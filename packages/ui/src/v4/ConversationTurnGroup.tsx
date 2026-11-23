@@ -186,6 +186,7 @@ function ConversationExploreGroupRow({
       <ToolCallBlock
         toolCallNode={item.node}
         workspacePath={context.workspacePath}
+        workspaceIdentity={context.workspaceIdentity}
         theme={context.theme}
         codePreviewSettings={context.codePreviewSettings}
         showTodoToolCalls={context.messageStreamShowTodos === true}
@@ -245,6 +246,7 @@ function ConversationToolGroupRow({
       <ToolCallBlock
         toolCallNode={item.node}
         workspacePath={context.workspacePath}
+        workspaceIdentity={context.workspaceIdentity}
         theme={context.theme}
         codePreviewSettings={context.codePreviewSettings}
         showTodoToolCalls={context.messageStreamShowTodos === true}
@@ -303,6 +305,7 @@ function ConversationCuaGroupRow({
       <ToolCallBlock
         toolCallNode={item.node}
         workspacePath={context.workspacePath}
+        workspaceIdentity={context.workspaceIdentity}
         theme={context.theme}
         codePreviewSettings={context.codePreviewSettings}
         showTodoToolCalls={context.messageStreamShowTodos === true}

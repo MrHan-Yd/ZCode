@@ -4,9 +4,8 @@ import type { AgentColor } from "@zcode/shared";
 import { MessageResponse } from "@/components/ai-elements/message.js";
 import { cn } from "@/components/lib/utils.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
-import { resolveSubagentColorFromName, SUBAGENT_TEXT_COLOR_CLASS } from "@/lib/subagentColors.js";
-import { useSubagentsContextStore } from "@/store/subagentsContextStore.js";
-import { useSubagentsStore } from "@/store/subagentsStore.js";
+import { SUBAGENT_TEXT_COLOR_CLASS } from "@/lib/subagentColors.js";
+import { useSubagentColorResolver } from "@/hooks/useSubagentColorResolver.js";
 import { ToolCallBlock } from "@/ToolCallBlocks.js";
 import { ToolSnapshotFieldNotice } from "@/ToolCallBlocks/ToolSnapshotFieldNotice.js";
 import { ToolLayout } from "../ToolLayout.js";
@@ -28,6 +27,7 @@ const AGENT_TOOL_ICON = <BotIcon className="size-4 shrink-0 text-foreground-subt
 function AgentChildToolList({
   childToolCalls,
   workspacePath,
+  workspaceIdentity,
   theme,
   codePreviewSettings,
   onOpenCodeViewer,
@@ -38,6 +38,7 @@ function AgentChildToolList({
 }: {
   childToolCalls: ToolCallBlockRenderContext["toolCallNode"]["childToolCalls"];
   workspacePath: string;
+  workspaceIdentity?: string;
   theme?: ToolCallBlockRenderContext["theme"];
   codePreviewSettings?: ToolCallBlockRenderContext["codePreviewSettings"];
   onOpenCodeViewer?: ToolCallBlockRenderContext["onOpenCodeViewer"];
@@ -58,6 +59,7 @@ function AgentChildToolList({
           toolCallNode={childToolCallNode}
           depth={1}
           workspacePath={workspacePath}
+          workspaceIdentity={workspaceIdentity}
           theme={theme}
           codePreviewSettings={codePreviewSettings}
           showIcon={false}
@@ -129,6 +131,8 @@ function BackgroundAgentProcessRow({ label, children }: { label: string; childre
 function AgentNameText({ color, name }: { color: AgentColor; name: string }) {
   return (
     <span
+      data-agent-name={name}
+      data-agent-color={color}
       className={cn(
         // 子智能体名在 tool summary 行内不能依赖字体基线对齐。
         // inline-flex 负责垂直居中，1.5 倍行高保持和周围摘要文字一致的阅读节奏。
@@ -140,10 +144,6 @@ function AgentNameText({ color, name }: { color: AgentColor; name: string }) {
       {name}
     </span>
   );
-}
-
-function normalizeAgentLookupValue(value: string): string {
-  return value.trim().toLowerCase();
 }
 
 function BackgroundAgentProcessSection({
@@ -217,35 +217,11 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
   const fallbackLabel = formatAgentMessage(intl, "chat.toolCall.agent.fallback", "SubAgent");
   const primaryText = getAgentPrimaryText(toolCall, fallbackLabel);
   const agentName = getAgentKindLabel(toolCall, "", context.authoritativeAgentType);
-  const configuredAgentsFromContext = useSubagentsContextStore((state) => {
-    const candidates = Object.values(state.contexts).filter(
-      (candidate) => candidate.workspacePath === context.workspacePath && candidate.loaded,
-    );
-    // 同一 remote path 可能对应多个 workspaceIdentity；缺少 identity 时宁可回退默认色，
-    // 也不能猜一个桶并把另一远端 workspace 的 Agent 配置串进来。
-    return candidates.length === 1 ? candidates[0]?.agents : undefined;
-  });
-  const configuredAgentsFromHook = useSubagentsStore((state) => state.agents);
-  const configuredAgents =
-    configuredAgentsFromContext && configuredAgentsFromContext.length > 0
-      ? configuredAgentsFromContext
-      : configuredAgentsFromHook.length > 0
-        ? configuredAgentsFromHook
-        : useSubagentsStore.getState().agents;
-  const configuredAgentColor = useMemo(() => {
-    const lookupName = normalizeAgentLookupValue(agentName);
-    if (!lookupName) {
-      return undefined;
-    }
-    return configuredAgents.find((agent) => {
-      const name = normalizeAgentLookupValue(agent.name);
-      const id = normalizeAgentLookupValue(agent.id);
-      return name === lookupName || id === lookupName;
-    })?.color;
-  }, [agentName, configuredAgents]);
-  const agentColor = agentName
-    ? (configuredAgentColor ?? getAgentColor(toolCall) ?? resolveSubagentColorFromName(agentName))
-    : null;
+  const resolveAgentColor = useSubagentColorResolver(
+    context.workspacePath,
+    context.workspaceIdentity,
+  );
+  const agentColor = agentName ? resolveAgentColor(agentName, getAgentColor(toolCall)) : null;
   const agentNameDetail =
     agentName && agentColor ? <AgentNameText color={agentColor} name={agentName} /> : null;
   // Agent 父块的完成/进行中边界只由父 Agent tool 决定。
@@ -334,6 +310,7 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
         <AgentChildToolList
           childToolCalls={childToolCalls}
           workspacePath={context.workspacePath}
+          workspaceIdentity={context.workspaceIdentity}
           theme={context.theme}
           codePreviewSettings={context.codePreviewSettings}
           onOpenCodeViewer={context.onOpenCodeViewer}
@@ -356,6 +333,7 @@ export function AgentToolCallBlock(context: ToolCallBlockRenderContext) {
       context.onOpenFileLink,
       context.theme,
       context.workspacePath,
+      context.workspaceIdentity,
       intl,
       isAgentVisuallyRunning,
       prompt,

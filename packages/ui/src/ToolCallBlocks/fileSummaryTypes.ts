@@ -204,6 +204,8 @@ export interface ToolCallBlockRenderContext {
   isOfficeMode?: boolean;
   toolCallNode: TaskChatToolCallTreeNode;
   workspacePath: string;
+  /** 当前工作区身份仅用于 UI 配置隔离，不新增协议字段。 */
+  workspaceIdentity?: string;
   /**
    * 应用主题（store 耦合剥离）：由构建 render context 的宿主
    * （ToolCallBlock / PermissionDialog 等）从上层状态传入，供

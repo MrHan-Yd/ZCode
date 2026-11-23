@@ -30,7 +30,7 @@
    - 图标与「进程」分区一致：进行中用 `→`、待执行用 `○`、不可继续用 `⊘`；运行中**不使用旋转加载图标**，静态箭头即可表达「当前项」。
    - 状态图标前置在行首，状态词仍在信息行保留；状态词随 locale 变化，图标是语义装饰，`aria-hidden`，可读文本由状态词承担。
 
-3. **原样显示名字**：名字是用户/模型选定的子智能体名（`backend-developer`、`code-reviewer`、`general-purpose`、`Explore`…），照抄不改写、不本地化——它是标识符不是文案，本地化它等于改用户/模型说的话。因此它与同一会话里 Agent 工具行显示的名字逐字相同。
+3. **原样显示名字**：名字是用户/模型选定的子智能体名（`backend-developer`、`code-reviewer`、`general-purpose`、`Explore`…），照抄不改写、不本地化——它是标识符不是文案，本地化它等于改用户/模型说的话。因此它与同一会话里 Agent 工具行显示的名字逐字相同。身份文字按 `specs/subagent-color-consistency.md` 的统一角色色展示，与聊天工具行和设置身份点同源；规则 2 的状态语义色仍独立。
 
 4. **没有名字就不显示**：`subagentType` 缺失、只有空白，或等于投影哨兵值 `subagent`（payload 缺 `agentType` 时 `product-projection` / `transcript-hydration` 落的兜底）时，名字整段不渲染。此时行仍显示状态图标、状态词、时长、TPS（如有）与 Stop。理由：分区标题与行内状态词已经说明「这是子智能体」，再写一遍哨兵只是噪声；而 `subagent` 不是任何人的名字。
 

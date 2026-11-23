@@ -74,6 +74,7 @@ function ToolCallBlockComponent({
   toolCallNode,
   depth = 0,
   workspacePath,
+  workspaceIdentity,
   theme,
   codePreviewSettings,
   showIcon = true,
@@ -106,6 +107,7 @@ function ToolCallBlockComponent({
   toolCallNode: TaskChatToolCallTreeNode;
   depth?: number;
   workspacePath: string;
+  workspaceIdentity?: string;
   /** 应用主题（store 耦合剥离）：由宿主（v4 SessionPane 等）传入，缺省按 "system" 兜底。 */
   theme?: ToolCallBlockRenderContext["theme"];
   /** 代码预览设置（store 耦合剥离）：由宿主传入并保持引用稳定。 */
@@ -245,6 +247,7 @@ function ToolCallBlockComponent({
               toolCallNode={childToolCallNode}
               depth={depth + 1}
               workspacePath={workspacePath}
+              workspaceIdentity={workspaceIdentity}
               theme={theme}
               codePreviewSettings={codePreviewSettings}
               showIcon={showIcon}
@@ -282,6 +285,7 @@ function ToolCallBlockComponent({
       codePreviewSettings,
       toolPreviewCodeViewer,
       workspacePath,
+      workspaceIdentity,
     ],
   );
 
@@ -290,6 +294,7 @@ function ToolCallBlockComponent({
       isOfficeMode,
       toolCallNode,
       workspacePath,
+      workspaceIdentity,
       theme,
       codePreviewSettings,
       displayModel,
@@ -358,6 +363,7 @@ function ToolCallBlockComponent({
       workflowRun,
       workflowDraft,
       workspacePath,
+      workspaceIdentity,
     ],
   );
 

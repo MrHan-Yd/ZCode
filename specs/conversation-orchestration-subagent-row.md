@@ -48,7 +48,7 @@
 
 - **标题（primaryText）**：`row.summaryText`；为空时按 `getAgentPrimaryText` 回落到 `row.subagentType`，与手动行同一解析器。
 - **kind 标签**：Agent 渲染器的 `chat.toolCall.agent.fallback`（中文“子智能体”，英文“SubAgent”）。
-- **角色名**：`getAgentKindLabel(toolCall, "", authoritativeAgentType)`，其中 `authoritativeAgentType = row.subagentType`。不额外调用 `resolveSubagentDisplayName`，保证与手动行逐字一致。
+- **角色名**：`getAgentKindLabel(toolCall, "", authoritativeAgentType)`，其中 `authoritativeAgentType = row.subagentType`。不额外调用 `resolveSubagentDisplayName`，保证与手动行逐字一致。颜色按 `specs/subagent-color-consistency.md` 的统一身份解析器展示；`workspaceIdentity` 沿 renderer 上下文透传，不从同路径的其他远端配置取色。
 - **状态词**：合成节点的 `toolCall.status` 仍按旧状态词表映射——`running → in_progress`、`success → completed`、`failed → failed`、`cancelled → stopped`——但**复用 Agent 渲染器的既有可见性**：Agent 工具行只在失败时显示状态词，因此时间线行仅在 `failed` 时出现「执行失败 / Failed」，`running` / `success` / `cancelled` 不显示状态词。这是有意复用，不为编排行新增状态标签。
 - **摘要形态**：Agent 渲染器固定 `canToggle=false`；存在打开动作时整行摘要即动作入口，不存在动作时也不可展开。`childToolCalls` 为空、`output` / `content` 缺席，因此展开区不会出现伪造的活动内容或子工具。
 
