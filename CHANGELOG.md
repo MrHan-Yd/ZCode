@@ -1,5 +1,37 @@
 # Changelog
 
+## [4.0.1](https://github.com/MrHan-Yd/ZCode/compare/v3.19.4...v4.0.1) (2026-11-23)
+
+### Features
+
+* **orchestration:** 接入编排运行配置与状态管理 ([cfbcecd](https://github.com/MrHan-Yd/ZCode/commit/cfbcecd9581b4666f0007dc6fd13cac88235b4a6))
+
+* **orchestration:** 完善运行中断、围栏与恢复语义 ([55a6629](https://github.com/MrHan-Yd/ZCode/commit/55a66291a346c3f702e8dd4c3a8822f4b8ade2a6))
+
+* **orchestration:** 新增编排模块并修正请求统计与子代理配置 ([fea4161](https://github.com/MrHan-Yd/ZCode/commit/fea4161f950a4cd972c2a4d71b8f15fc9747f7ca))
+
+* **orchestration:** 新增编排模式与调度工具支持 ([4d58b16](https://github.com/MrHan-Yd/ZCode/commit/4d58b16fddef717ba65b06886c7dc1781c633aaf))
+
+* **orchestration:** 支持冷恢复并统一通用子代理与团队选择 ([a63c339](https://github.com/MrHan-Yd/ZCode/commit/a63c339f7b361ab1acd4ab5b42759467f33e6851))
+
+* **orchestration:** 注入运行状态并完善输入排队与中断处理 ([72e986a](https://github.com/MrHan-Yd/ZCode/commit/72e986a1dd8e68296b7ebec073a71cf3f30970ac))
+
+
+### Bug Fixes
+
+* **ci:** macOS 打包 runner 改用 macos-15（macos-14 镜像已下线） ([233cad4](https://github.com/MrHan-Yd/ZCode/commit/233cad48f9d37c44055f9edfb60a312f70c333c2))
+
+* **git:** 统一工作区刷新并恢复提交预览实时同步 ([e9f7b86](https://github.com/MrHan-Yd/ZCode/commit/e9f7b868ef6c36435f515b4079485fd0585cae02))
+
+* **orchestration:** 恢复已结束子代理历史目录与详情入口 ([88001e1](https://github.com/MrHan-Yd/ZCode/commit/88001e1eff91c76e35bb2c93c7af7c644481ad92))
+
+* **subagent:** 统一内置角色身份色并保持跨视图一致 ([a14e6a4](https://github.com/MrHan-Yd/ZCode/commit/a14e6a4ecc3f35f119a7bf9e9e54a2183bf6037e))
+
+
+### Documentation
+
+* 补充 README 的 v3.19.4 更新说明 ([095dce4](https://github.com/MrHan-Yd/ZCode/commit/095dce4fac80122edb222090af62199d0858ccb7))
+
 ## [3.19.4](https://github.com/MrHan-Yd/ZCode/compare/v3.19.3...v3.19.4) (2026-11-17)
 
 ### Features
