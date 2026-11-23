@@ -65,6 +65,7 @@ import {
   getCurrentSessionFilePaths,
 } from "@/git-action-menu/currentSessionFileScope.js";
 import { useServices } from "@/hooks/useServices.js";
+import { useGitRepositoryRefresh } from "@/hooks/useGitRepositoryRefresh.js";
 import { useSettings } from "@/hooks/useSettingService.js";
 import { useZCodeIntl, type IntlInstance } from "@/i18n/IntlProvider.js";
 import { getErrorMessage } from "@/lib/errorMessage.js";
@@ -117,9 +118,8 @@ const TID_GIT_COMMIT_SELECT_ALL = "git-commit-select-all";
 const EMPTY_COMMIT_EXCLUDED_PATHS: ReadonlySet<string> = new Set<string>();
 
 /** 默认折叠集合：空集表示全部展开。同样只作为不可变值使用。 */
-const EMPTY_COMMIT_COLLAPSED_FILE_GROUPS: ReadonlySet<GitCommitFileGroupId> = new Set<
-  GitCommitFileGroupId
->();
+const EMPTY_COMMIT_COLLAPSED_FILE_GROUPS: ReadonlySet<GitCommitFileGroupId> =
+  new Set<GitCommitFileGroupId>();
 
 type CommitDialogActionId = (typeof COMMIT_DIALOG_ACTION_IDS)[number];
 
@@ -543,24 +543,21 @@ function GitCommitDialog({
     }
   }, [actionPending, commitActions, loading, open, selectedActionId, state]);
 
-  const setFileGroupCollapsed = useCallback(
-    (groupId: GitCommitFileGroupId, collapsed: boolean) => {
-      setCollapsedGroupIds((current) => {
-        // 幂等：Radix 只在真的切换时回调，但折叠态回写仍按「已是目标值就不新建集合」处理。
-        if (current.has(groupId) === collapsed) {
-          return current;
-        }
-        const next = new Set(current);
-        if (collapsed) {
-          next.add(groupId);
-        } else {
-          next.delete(groupId);
-        }
-        return next;
-      });
-    },
-    [],
-  );
+  const setFileGroupCollapsed = useCallback((groupId: GitCommitFileGroupId, collapsed: boolean) => {
+    setCollapsedGroupIds((current) => {
+      // 幂等：Radix 只在真的切换时回调，但折叠态回写仍按「已是目标值就不新建集合」处理。
+      if (current.has(groupId) === collapsed) {
+        return current;
+      }
+      const next = new Set(current);
+      if (collapsed) {
+        next.add(groupId);
+      } else {
+        next.delete(groupId);
+      }
+      return next;
+    });
+  }, []);
 
   const handleFileGroupSelected = useCallback(
     (groupId: GitCommitFileGroupId, selected: boolean) => {
@@ -1146,7 +1143,23 @@ export function GitActionMenu({
   triggerIconOnly = false,
   triggerLayout = "header",
 }: GitActionMenuProps) {
-  const { gitService } = useServices();
+  const services = useServices();
+  const { gitService } = services;
+  const refreshGitRepository = useGitRepositoryRefresh();
+  const commitDialogScope = useMemo(
+    () => ({
+      workspaceKey: workspaceIdentity?.trim() || workspacePath,
+      workspacePath,
+      services,
+      gitService,
+    }),
+    [gitService, services, workspaceIdentity, workspacePath],
+  );
+  const commitDialogScopeRef = useRef(commitDialogScope);
+  commitDialogScopeRef.current = commitDialogScope;
+  const commitDialogMountedRef = useRef(true);
+  const commitDialogOpenRef = useRef(false);
+  const commitDialogLoadGenerationRef = useRef(0);
   const { intl, locale } = useZCodeIntl();
   const { settings } = useSettings();
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
@@ -1201,27 +1214,24 @@ export function GitActionMenu({
     });
   }, []);
 
-  const setCommitFilesSelected = useCallback(
-    (stagePaths: readonly string[], selected: boolean) => {
-      if (stagePaths.length === 0) {
-        return;
-      }
+  const setCommitFilesSelected = useCallback((stagePaths: readonly string[], selected: boolean) => {
+    if (stagePaths.length === 0) {
+      return;
+    }
 
-      // 只改这批路径的排除项：组级勾选不应连带影响其他分组已经取消勾选的文件。
-      setCommitExcludedStagePaths((current) => {
-        const next = new Set(current);
-        for (const stagePath of stagePaths) {
-          if (selected) {
-            next.delete(stagePath);
-          } else {
-            next.add(stagePath);
-          }
+    // 只改这批路径的排除项：组级勾选不应连带影响其他分组已经取消勾选的文件。
+    setCommitExcludedStagePaths((current) => {
+      const next = new Set(current);
+      for (const stagePath of stagePaths) {
+        if (selected) {
+          next.delete(stagePath);
+        } else {
+          next.add(stagePath);
         }
-        return next;
-      });
-    },
-    [],
-  );
+      }
+      return next;
+    });
+  }, []);
 
   const actionAvailable = canUseGitActionMenu(gitSummary);
   const currentBranchLabel = useMemo(
@@ -1279,6 +1289,9 @@ export function GitActionMenu({
   ]);
 
   const closeCommitDialog = useCallback(() => {
+    // 关闭/重开不能让上一代加载写回新草稿，loading 与错误也按同一代隔离。
+    commitDialogLoadGenerationRef.current += 1;
+    commitDialogOpenRef.current = false;
     setCommitDialogOpen(false);
     setCommitDialogLoading(false);
     setCommitDialogState(null);
@@ -1288,6 +1301,20 @@ export function GitActionMenu({
     setCommitMessageGenerationPending(false);
     clearCommitExcludedStagePaths();
   }, [clearCommitExcludedStagePaths]);
+
+  useEffect(() => {
+    commitDialogMountedRef.current = true;
+    return () => {
+      commitDialogMountedRef.current = false;
+      commitDialogOpenRef.current = false;
+      commitDialogLoadGenerationRef.current += 1;
+    };
+  }, []);
+
+  useEffect(() => {
+    // 同路径的服务/远端身份变化也是新弹窗作用域，不能保留旧预览或旧加载。
+    closeCommitDialog();
+  }, [closeCommitDialog, commitDialogScope]);
 
   const setAllCommitFilesSelected = useCallback(
     (selected: boolean) => {
@@ -1313,6 +1340,16 @@ export function GitActionMenu({
 
   const loadCommitDialogState = useCallback(
     async (options?: { resetMessage?: boolean }) => {
+      if (!commitDialogMountedRef.current || !commitDialogOpenRef.current) {
+        return;
+      }
+      const generation = ++commitDialogLoadGenerationRef.current;
+      const scope = commitDialogScope;
+      const isCurrentLoad = () =>
+        commitDialogMountedRef.current &&
+        commitDialogOpenRef.current &&
+        commitDialogLoadGenerationRef.current === generation &&
+        commitDialogScopeRef.current === scope;
       setCommitDialogLoading(true);
       setCommitError(null);
       if (options?.resetMessage) {
@@ -1321,10 +1358,10 @@ export function GitActionMenu({
       }
 
       try {
-        const refreshResult = await gitService.refresh({
-          workspacePath,
-          includeIdentity: true,
-        });
+        const refreshResult = await refreshGitRepository({ includeIdentity: true });
+        if (!isCurrentLoad()) {
+          return;
+        }
         const rawUnstagedFiles = buildGitBranchCommitPreviewFiles(refreshResult.unstagedChanges);
         const rawStagedFiles = buildGitBranchCommitPreviewFiles(refreshResult.stagedChanges);
         const unstagedFiles = filterCommitPreviewFilesByCurrentSession({
@@ -1350,6 +1387,9 @@ export function GitActionMenu({
         clearCommitExcludedStagePaths();
         setCommitDialogLoading(false);
       } catch (error: unknown) {
+        if (!isCurrentLoad()) {
+          return;
+        }
         const message = getErrorMessage(error);
         logger.warn("[GitActionMenu] 读取提交弹窗状态失败", {
           workspacePath,
@@ -1368,13 +1408,15 @@ export function GitActionMenu({
       activeTaskChangeSummary,
       clearCommitExcludedStagePaths,
       closeCommitDialog,
-      gitService,
+      commitDialogScope,
       intl,
+      refreshGitRepository,
       workspacePath,
     ],
   );
 
   const openCommitDialog = useCallback(async () => {
+    commitDialogOpenRef.current = true;
     setCommitDialogOpen(true);
     setCommitDialogState(null);
     setCommitMessage("");
@@ -1383,9 +1425,9 @@ export function GitActionMenu({
   }, [loadCommitDialogState]);
 
   const refreshCommitDialogAfterBranchChange = useCallback(() => {
-    onRefreshGit();
+    // 分支操作后这次 owner 读取已同步外层，不再同时触发 void 刷新形成第二次 RPC。
     void loadCommitDialogState({ resetMessage: true });
-  }, [loadCommitDialogState, onRefreshGit]);
+  }, [loadCommitDialogState]);
 
   /**
    * 提交消息用哪个模型：设置里指定了固定模型就用它，否则跟随当前会话的模型，都没有才交给
@@ -1406,10 +1448,7 @@ export function GitActionMenu({
   }, [commitMessageModelSelection, settings]);
 
   const generateCommitMessage = useCallback(
-    async (
-      state: GitCommitDialogState,
-      excludedPaths: ReadonlySet<string>,
-    ): Promise<string> => {
+    async (state: GitCommitDialogState, excludedPaths: ReadonlySet<string>): Promise<string> => {
       const selectedRows = getCommitDialogSelectedRows(state, excludedPaths);
       const { stagedPaths } = resolveCommitRequestMode(selectedRows);
       const currentSessionFilePaths = getCurrentSessionFilePaths(state.activeTaskChangeSummary);

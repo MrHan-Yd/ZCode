@@ -28,7 +28,7 @@ Git 工具（更改 / 分支切换 / 提交 / 推送 / 拉取）是 workspace �
    - `behind`：`behind`；
    - `synced`：无徽标。
      计数上限显示 `99+`；徽标不使用 success / destructive 语义色，统一 `--color-accent`。
-4. 点击图标切换 Git 浮层（`Popover`，`align="end"`、`side="bottom"`），按钮同步 `aria-expanded`。浮层根节点挂 `TID_GIT_TOOLS_PANEL`。
+4. 点击图标切换 Git 浮层（`Popover`，`align="end"`、`side="bottom"`），按钮同步 `aria-expanded`。浮层根节点挂 `TID_GIT_TOOLS_PANEL`。打开时通过 `useGitRepository` 的工作区刷新能力立即读取最新基线，关闭不刷新；与提交弹窗消费同一刷新结果，具体规则见 `specs/git-refresh-consistency.md`。
 5. 浮层内容顺序固定，且是全 UI 唯一的 Git 行渲染点：
    1. 标题行「Git 工具」（复用 `chat.statusPanel.environment`）；
    2. **更改**：`dirtyFileCount > 0 || added + removed > 0` 时渲染；点击调用 `onOpenGitReview`；

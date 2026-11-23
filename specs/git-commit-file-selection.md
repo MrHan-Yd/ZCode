@@ -36,7 +36,8 @@
 
 ## 状态所有者
 
-- **弹窗文件数据**（`stagedFiles` / `unstagedFiles`，两份 per-source 预览）由 `GitActionMenu` 持有。
+- **工作区 Git 基线**由 `useGitRepository` 唯一持有，提交弹窗通过工作区刷新能力读取；同一次 `GitRefreshResult` 同时更新外层 Git 工具，刷新/陈旧请求边界见 `specs/git-refresh-consistency.md`。
+- **弹窗文件预览**（`stagedFiles` / `unstagedFiles`，两份 per-source 预览）由 `GitActionMenu` 从本次基线派生，只服务于本次提交草稿，不是第二份工作区权威状态。
 - **排除集合**（`commitExcludedStagePaths`）由 `GitActionMenu` 持有，key 为 `GitCommitFileRow.stagePath`（= `GitFileChange.path`，仓库内绝对路径），与 `GitCommitRequest.paths` 同一坐标系，不做二次路径变换。因为归属规则保证一行一路径，key 仍可用裸路径。
 - 弹窗组件只读该集合并回调，不复制状态；唯一写入路径是 `onToggleFileSelection` / `onSetAllFilesSelected` / `onSetFilesSelected`。
 - **机器消息的勾选快照**（`generatedCommitMessageSelectionKey`）由 `GitActionMenu` 持有：它记录输入框里那份消息是为哪批勾选生成的（`buildCommitMessageSelectionKey(排除集合)`）。勾选 key 与它不一致时清空消息并清掉它本身（规则 9）；用户编辑文本时同步清掉（此后消息算用户内容）。生成成功时写入，是唯一写入点。

@@ -3,16 +3,13 @@ import type { IDisposable } from "@zcode/rpc";
 import type { GitRepositorySummary } from "@zcode/shared";
 import {
   buildGitAutoRefreshWatchPaths,
+  createGitAutoRefreshScheduler,
   parseGitAutoRefreshWatchPaths,
   shouldEnableGitAutoRefreshForWorkspace,
   stringifyGitAutoRefreshWatchPaths,
 } from "@/lib/gitAutoRefresh.js";
 import { logger } from "@/logger.js";
 import { useWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
-
-// agent 批量写文件时，150ms watcher 防抖 + 350ms Git 防抖仍会把长批次拆成多轮
-// `git status`。这里把 Git 自动刷新延后到 1 分钟，降低大工作区里的重复 Git I/O。
-const GIT_AUTO_REFRESH_DEBOUNCE_MS = 60_000;
 
 interface GitWatcherRegistration {
   subscription: IDisposable;
@@ -39,7 +36,6 @@ export function useGitAutoRefresh({
   const workspaceServices = useWorkspaceServices(workspacePath, remoteSessionId, workspaceIdentity);
   const { fileWatcherService, systemService } = workspaceServices;
   const refreshRef = useRef(onRefreshGit);
-  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentWorkspaceKey = workspaceIdentity?.trim() || workspacePath;
   const canWatchCurrentWorkspace = shouldEnableGitAutoRefreshForWorkspace({
     enabled,
@@ -107,19 +103,13 @@ export function useGitAutoRefresh({
     let cancelled = false;
     const registrations: GitWatcherRegistration[] = [];
 
-    const scheduleRefresh = (path: string) => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-      debounceTimerRef.current = setTimeout(() => {
-        debounceTimerRef.current = null;
-        logger.debug("[GitAutoRefresh] Git 状态变更，刷新仓库状态", {
-          workspacePath,
-          path,
-        });
-        refreshRef.current();
-      }, GIT_AUTO_REFRESH_DEBOUNCE_MS);
-    };
+    const scheduler = createGitAutoRefreshScheduler((path) => {
+      logger.debug("[GitAutoRefresh] Git 状态变更，刷新仓库状态", {
+        workspacePath,
+        path,
+      });
+      refreshRef.current();
+    });
 
     // Git summary 每次刷新都会带回新的 autoRefreshWatchPaths 数组引用。
     // 监听路径内容没变时不能重建 watcher，否则 agent 批量写文件会出现 unwatch/watch 风暴。
@@ -136,7 +126,7 @@ export function useGitAutoRefresh({
           }
 
           const subscription = fileWatcherService.onDynamicChange(id)((event) => {
-            scheduleRefresh(event.dirPath);
+            scheduler.schedule(event.dirPath);
           });
           registrations.push({
             subscription,
@@ -159,10 +149,7 @@ export function useGitAutoRefresh({
 
     return () => {
       cancelled = true;
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-        debounceTimerRef.current = null;
-      }
+      scheduler.dispose();
       for (const registration of registrations) {
         registration.subscription.dispose();
         void registration.unwatch().catch((error) => {
@@ -173,5 +160,5 @@ export function useGitAutoRefresh({
         });
       }
     };
-  }, [fileWatcherService, watchPaths, workspacePath]);
+  }, [currentWorkspaceKey, fileWatcherService, watchPaths, workspacePath]);
 }

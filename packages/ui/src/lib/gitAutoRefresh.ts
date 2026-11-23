@@ -5,6 +5,61 @@ interface GitAutoRefreshWatchPath {
   recursive: boolean;
 }
 
+const GIT_AUTO_REFRESH_QUIET_MS = 350;
+const GIT_AUTO_REFRESH_MAX_WAIT_MS = 2000;
+
+export function createGitAutoRefreshScheduler(onRefresh: (path: string) => void): {
+  schedule: (path: string) => void;
+  dispose: () => void;
+} {
+  let disposed = false;
+  let quietTimer: ReturnType<typeof setTimeout> | null = null;
+  let maxWaitTimer: ReturnType<typeof setTimeout> | null = null;
+  let latestPath: string | null = null;
+
+  const clearTimers = () => {
+    if (quietTimer !== null) {
+      clearTimeout(quietTimer);
+      quietTimer = null;
+    }
+    if (maxWaitTimer !== null) {
+      clearTimeout(maxWaitTimer);
+      maxWaitTimer = null;
+    }
+  };
+
+  const flush = () => {
+    clearTimers();
+    const path = latestPath;
+    latestPath = null;
+    if (!disposed && path !== null) {
+      onRefresh(path);
+    }
+  };
+
+  return {
+    schedule(path) {
+      if (disposed) {
+        return;
+      }
+      latestPath = path;
+      if (quietTimer !== null) {
+        clearTimeout(quietTimer);
+      }
+      quietTimer = setTimeout(flush, GIT_AUTO_REFRESH_QUIET_MS);
+      // 连续通知只延长静默窗口；最大等待固定从首次事件计时，不能被批量写文件饿死。
+      if (maxWaitTimer === null) {
+        maxWaitTimer = setTimeout(flush, GIT_AUTO_REFRESH_MAX_WAIT_MS);
+      }
+    },
+    dispose() {
+      disposed = true;
+      latestPath = null;
+      clearTimers();
+    },
+  };
+}
+
 export function shouldEnableGitAutoRefreshForWorkspace(params: {
   enabled: boolean;
   currentWorkspaceKey: string;

@@ -1,5 +1,5 @@
 /* eslint-disable max-lines */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type {
   ZCodePersistedFileChange,
   ZCodePersistedFileSnapshot,
@@ -15,6 +15,11 @@ import type {
 import { buildTurnChangeSummary, toWorkspaceRelativePath } from "@/lib/taskChangeSummary.js";
 import { logger } from "@/logger.js";
 import { shouldEnableWorkspaceRpc } from "@/lib/workspaceRpcAvailability.js";
+import {
+  createGitRepositoryRefreshCoordinator,
+  GitRepositoryRefreshInvalidatedError,
+  type GitRepositoryRefresh,
+} from "@/lib/gitRepositoryRefresh.js";
 import { useServices } from "@/hooks/useServices.js";
 import { useResolvedRemoteWorkspaceSessionId } from "@/hooks/useResolvedRemoteWorkspaceSessionId.js";
 
@@ -379,7 +384,7 @@ export function useGitRepository(options: {
   remoteSessionId?: string | null;
   remoteTarget?: unknown;
   workspaceIdentity?: string | null;
-}): GitPaneRepositoryState {
+}): GitPaneRepositoryState & { refresh: GitRepositoryRefresh } {
   const {
     workspacePath,
     includeExtendedData = false,
@@ -388,7 +393,8 @@ export function useGitRepository(options: {
     remoteTarget,
     workspaceIdentity = null,
   } = options;
-  const { gitService } = useServices();
+  const services = useServices();
+  const { gitService } = services;
   const remoteSessionId = useResolvedRemoteWorkspaceSessionId(
     workspacePath,
     preferredRemoteSessionId,
@@ -408,75 +414,55 @@ export function useGitRepository(options: {
     createInitialState(workspacePath, { workspaceKey }),
   );
   const requestVersionRef = useRef(0);
+  const includeExtendedDataRef = useRef(includeExtendedData);
+  includeExtendedDataRef.current = includeExtendedData;
   const lastLiveRefreshInputRef = useRef<GitLiveDataRefreshInput | null>(null);
   const lastFileChangeEntry = null;
   const lastSummaryEntry = null;
-
-  useEffect(() => {
-    const nextRefreshInput: GitLiveDataRefreshInput = {
-      workspacePath,
+  const refreshScope = useMemo(
+    () => ({
+      services,
+      gitService,
       workspaceKey,
-      includeExtendedData,
-      refreshToken,
-      workspaceRpcEnabled,
-    };
-
-    if (!workspaceRpcEnabled) {
-      requestVersionRef.current += 1;
-      lastLiveRefreshInputRef.current = nextRefreshInput;
-      // 断连远端 workspace 可以展示 Git 面板空壳，但不能在 session 未恢复前
-      // 主动查询远端 Git，否则会把断连代理错误放大成每次首屏挂载的日志噪音。
-      setRepositoryState((current) =>
-        createInitialState(workspacePath, {
-          workspaceKey,
-          loading: false,
-          error: null,
-          revision: current.revision,
-        }),
-      );
-      return;
-    }
-
-    const shouldRefresh = shouldRefreshLiveGitData(
-      lastLiveRefreshInputRef.current,
-      nextRefreshInput,
-    );
-    lastLiveRefreshInputRef.current = nextRefreshInput;
-    if (!shouldRefresh) {
-      return;
-    }
-
-    let disposed = false;
-    const requestVersion = requestVersionRef.current + 1;
-    requestVersionRef.current = requestVersion;
-
-    setRepositoryState((current) =>
-      current.workspaceKey === workspaceKey
-        ? {
-            ...current,
-            loading: true,
-            error: null,
-          }
-        : createInitialState(workspacePath, { workspaceKey }),
-    );
-
-    // agent 写文件会触发 Git 自动刷新。这里不能拆成 summary/unstaged/staged
-    // 三个 RPC，因为服务端每个 RPC 都会重新跑 git status，日志里会形成一轮一组三连。
-    // 统一走 refresh，让一次状态快照产出 header 和 Git pane 需要的基础数据。
-    const refreshPromise = gitService.refresh({
       workspacePath,
-      includeIdentity: includeExtendedData,
-      includeBranchComparison: includeExtendedData,
-    });
+      workspaceRpcEnabled,
+      remoteSessionId,
+    }),
+    [gitService, remoteSessionId, services, workspaceKey, workspacePath, workspaceRpcEnabled],
+  );
+  const committedScopeRef = useRef<typeof refreshScope | null>(refreshScope);
+  const publishedScopeRef = useRef<typeof refreshScope | null>(null);
+  const coordinatorRef = useRef<{
+    scope: typeof refreshScope;
+    coordinator: ReturnType<typeof createGitRepositoryRefreshCoordinator>;
+  } | null>(null);
 
-    // 关键业务逻辑：header 常驻时只需要 summary + staged/unstaged 统计；
-    // branch comparison 与 identity 只在真正展开 Git pane 后再拉取，避免首屏预取整套 Git pane 数据。
-    void refreshPromise
-      .then(({ summary, identity, unstagedChanges, stagedChanges, branchComparison }) => {
-        if (disposed || requestVersionRef.current !== requestVersion) {
-          return;
-        }
+  const ensureRefreshCoordinator = useCallback(() => {
+    if (!workspaceRpcEnabled || committedScopeRef.current !== refreshScope) {
+      return null;
+    }
+    if (coordinatorRef.current?.scope === refreshScope) {
+      return coordinatorRef.current.coordinator;
+    }
 
+    coordinatorRef.current?.coordinator.dispose();
+    const coordinator = createGitRepositoryRefreshCoordinator({
+      workspacePath,
+      initialSequence: requestVersionRef.current,
+      isCurrent: () => committedScopeRef.current === refreshScope,
+      read: (request) => gitService.refresh(request),
+      onStart: (sequence) => {
+        requestVersionRef.current = sequence;
+        setRepositoryState((current) =>
+          publishedScopeRef.current === refreshScope
+            ? { ...current, loading: true, error: null }
+            : createInitialState(workspacePath, { workspaceKey, revision: current.revision }),
+        );
+      },
+      publish: (
+        { summary, identity, unstagedChanges, stagedChanges, branchComparison },
+        sequence,
+      ) => {
         const repositoryDatasets = buildRepositoryDatasets({
           unstagedChanges,
           stagedChanges,
@@ -486,61 +472,111 @@ export function useGitRepository(options: {
           ...repositoryDatasets,
           "last-turn": createEmptyDataset("last-turn", true),
         };
-
+        publishedScopeRef.current = refreshScope;
+        // 弹窗 await 返回前先发布这次完整基线；不再独立读取后用第二次请求补外层。
         setRepositoryState({
           workspaceKey,
           summary,
           identity: identity ?? EMPTY_IDENTITY,
-          placeholder: {
-            enabled: false,
-          },
+          placeholder: { enabled: false },
           loading: false,
           error: null,
-          revision: requestVersion,
+          revision: sequence,
           sourceOptions: buildSourceOptions(datasets),
           datasets,
         });
-      })
-      .catch((error: unknown) => {
-        if (disposed || requestVersionRef.current !== requestVersion) {
-          return;
-        }
-
+      },
+      onError: (error) => {
         const message = getErrorMessage(error);
-        logger.warn("[useGitRepository] 读取 Git 仓库状态失败", {
-          workspacePath,
-          error: message,
-        });
-        setRepositoryState((current) => ({
-          ...createInitialState(workspacePath, {
+        logger.warn("[useGitRepository] 读取 Git 仓库状态失败", { workspacePath, error: message });
+        publishedScopeRef.current = refreshScope;
+        setRepositoryState((current) =>
+          createInitialState(workspacePath, {
             workspaceKey,
             loading: false,
             error: message,
             revision: current.revision,
           }),
-        }));
-      });
+        );
+      },
+    });
+    coordinatorRef.current = { scope: refreshScope, coordinator };
+    return coordinator;
+  }, [gitService, refreshScope, workspaceKey, workspacePath, workspaceRpcEnabled]);
 
+  // 服务/连接切换在 commit 阶段立即失效旧队列；不受 refreshToken 或 pane 开关影响。
+  useLayoutEffect(() => {
+    committedScopeRef.current = refreshScope;
+    lastLiveRefreshInputRef.current = null;
     return () => {
-      disposed = true;
+      committedScopeRef.current = null;
+      if (coordinatorRef.current?.scope === refreshScope) {
+        coordinatorRef.current.coordinator.dispose();
+        coordinatorRef.current = null;
+      }
     };
+  }, [refreshScope]);
+
+  const refresh = useCallback<GitRepositoryRefresh>(
+    (flags) => {
+      const coordinator = ensureRefreshCoordinator();
+      if (!coordinator) {
+        return Promise.reject(new GitRepositoryRefreshInvalidatedError());
+      }
+      // 常驻 header 只读基础数据；已打开 pane 的每次刷新仍保留 identity/branch 需求。
+      return coordinator.refresh({
+        includeIdentity: includeExtendedDataRef.current || Boolean(flags?.includeIdentity),
+        includeBranchComparison:
+          includeExtendedDataRef.current || Boolean(flags?.includeBranchComparison),
+      });
+    },
+    [ensureRefreshCoordinator],
+  );
+
+  useEffect(() => {
+    const nextRefreshInput: GitLiveDataRefreshInput = {
+      workspacePath,
+      workspaceKey,
+      includeExtendedData,
+      refreshToken,
+      workspaceRpcEnabled,
+    };
+    const shouldRefresh = shouldRefreshLiveGitData(
+      lastLiveRefreshInputRef.current,
+      nextRefreshInput,
+    );
+    lastLiveRefreshInputRef.current = nextRefreshInput;
+
+    if (!workspaceRpcEnabled) {
+      // 远端断连保留面板空壳，连接恢复前不向断连代理发 Git RPC。
+      publishedScopeRef.current = refreshScope;
+      setRepositoryState((current) =>
+        createInitialState(workspacePath, {
+          workspaceKey,
+          loading: false,
+          revision: current.revision,
+        }),
+      );
+    } else if (shouldRefresh) {
+      // owner 已记录真实错误；兼容的 void 入口只消费拒绝，不另建事实写入路径。
+      void refresh().catch(() => {});
+    }
   }, [
-    gitService,
     includeExtendedData,
+    refresh,
+    refreshScope,
     refreshToken,
-    workspaceIdentity,
     workspaceKey,
     workspacePath,
     workspaceRpcEnabled,
   ]);
 
   return useMemo(() => {
-    // useEffect 在 workspace 切换后的 commit 才会清理旧状态。render 阶段先按
-    // workspaceKey 投影为空状态，避免旧机器的 Git 路径通过新远端 fileWatcherService 注册。
+    // 同路径的远端 identity 或服务切换也不能沿用旧机器 watcher 路径。
     const currentRepositoryState =
-      repositoryState.workspaceKey === workspaceKey
+      repositoryState.workspaceKey === workspaceKey && publishedScopeRef.current === refreshScope
         ? repositoryState
-        : createInitialState(workspacePath, { workspaceKey });
+        : createInitialState(workspacePath, { workspaceKey, loading: workspaceRpcEnabled });
     const datasets = {
       ...currentRepositoryState.datasets,
     };
@@ -557,8 +593,18 @@ export function useGitRepository(options: {
 
     return {
       ...currentRepositoryState,
+      refresh,
       sourceOptions: buildSourceOptions(datasets),
       datasets,
     };
-  }, [lastFileChangeEntry, lastSummaryEntry, repositoryState, workspaceKey, workspacePath]);
+  }, [
+    lastFileChangeEntry,
+    lastSummaryEntry,
+    refresh,
+    refreshScope,
+    repositoryState,
+    workspaceKey,
+    workspacePath,
+    workspaceRpcEnabled,
+  ]);
 }

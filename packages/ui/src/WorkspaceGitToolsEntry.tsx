@@ -1,6 +1,7 @@
 import { TID_GIT_TOOLS_ENTRY, TID_GIT_TOOLS_PANEL } from "@zcode/shared";
 import type { GitChangeSourceId, ModelSelection, ZCodeTaskChangeSummary } from "@zcode/shared";
 import { GitBranchIcon } from "lucide-react";
+import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button.js";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
@@ -61,6 +62,15 @@ export function WorkspaceGitToolsEntry({
   onOpenGitReview,
 }: WorkspaceGitToolsEntryProps) {
   const { intl } = useZCodeIntl();
+  const previousOpenRef = useRef(false);
+  useEffect(() => {
+    const opened = open && !previousOpenRef.current;
+    previousOpenRef.current = open;
+    // 主动打开绕过 watcher 静默窗口；重渲、回调换引用和关闭都不追加读取。
+    if (opened) {
+      onRefreshGit();
+    }
+  }, [onRefreshGit, open]);
   const title = intl.formatMessage({ id: "chat.statusPanel.environment" });
   const badge = resolveGitToolsBadge(gitTools);
   const badgeKindLabel = badge ? intl.formatMessage({ id: badgeKindMessageId(badge) }) : title;

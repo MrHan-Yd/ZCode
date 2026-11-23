@@ -8,6 +8,7 @@ import { useTaskQueryCacheStore } from "@/store/taskQueryCacheStore.js";
 import { useAppPanels } from "@/hooks/useAppPanels.js";
 import { useGitAutoRefresh } from "@/hooks/useGitAutoRefresh.js";
 import { useGitRepository } from "@/hooks/useGitRepository.js";
+import { GitRepositoryRefreshProvider } from "@/hooks/useGitRepositoryRefresh.js";
 import { useAppKeyboard } from "@/hooks/useAppKeyboard.js";
 import { usePlatform } from "@/hooks/usePlatform.js";
 import { useWorkspaceActiveTaskState } from "@/hooks/useWorkspaceActiveTaskState.js";
@@ -346,7 +347,6 @@ export function App({
   const [fileChangeFindMatchCount, setFileChangeFindMatchCount] = useState(0);
   const [canOpenCommunityFromQuickPick, setCanOpenCommunityFromQuickPick] = useState(false);
   const [gitSelectedSourceId, setGitSelectedSourceId] = useState<GitChangeSourceId>("unstaged");
-  const [gitRefreshVersion, setGitRefreshVersion] = useState(0);
   const { browserRestoreUrls, handleBrowserUrlChange } = useTaskSidePaneMemoryBridge({
     activeTaskId,
     gitSelectedSourceId,
@@ -411,21 +411,21 @@ export function App({
   const isBrowserOpen = activeSidePaneTab?.type === "browser";
   const isGitOpen = activeSidePaneTab?.type === "git";
   const hasGitTab = sidePaneState?.tabs.some((tab) => tab.type === "git") ?? false;
-  const handleRefreshGit = useCallback(() => {
-    setGitRefreshVersion((value) => value + 1);
-  }, []);
   const openSettingsTab = useTabStore((state) => state.openSettingsTab);
   const gitState = useGitRepository({
     workspacePath: workspaceAbsPath,
     activeTaskId,
     includeExtendedData: hasGitTab,
-    // 关键逻辑：真实 Git 只在 workspace 变化、Git pane 打开、或用户显式点刷新时重拉。
-    // task 切换 / last-turn 摘要变化只更新本地衍生数据，不再顺带重跑 Git 命令。
-    refreshToken: gitRefreshVersion,
+    // task 切换 / last-turn 摘要变化只更新本地衍生数据，不顺带重跑 Git 命令。
     remoteSessionId: workspaceRpcTarget.remoteSessionId ?? null,
     remoteTarget: workspaceRpcTarget.remoteTarget,
     workspaceIdentity,
   });
+  const refreshGit = gitState.refresh;
+  const handleRefreshGit = useCallback(() => {
+    // 所有 void 动作复用同一 owner；失败由 owner 展示，不用 token 再触发第二次查询。
+    void refreshGit().catch(() => {});
+  }, [refreshGit]);
   useGitAutoRefresh({
     workspacePath: workspaceAbsPath,
     workspaceIdentity,
@@ -1104,7 +1104,7 @@ export function App({
   );
 
   return (
-    <>
+    <GitRepositoryRefreshProvider refresh={refreshGit}>
       <CommandCenterDialog
         open={isQuickPickOpen}
         commands={quickPickCommands}
@@ -1273,6 +1273,6 @@ export function App({
         // taskFindDialogProps 是对象 prop，内联创建会让 shell 在流式刷新中每轮都看到新引用。
         taskFindDialogProps={taskFindDialogProps}
       />
-    </>
+    </GitRepositoryRefreshProvider>
   );
 }
