@@ -26,7 +26,7 @@ permissions:
 # 同一 tag 同时只跑一条流水线；后续 tag 不受影响。不取消进行中的构建，
 # 避免半途中断留下不完整的 Release 产物。
 concurrency:
-  group: release-desktop-${{ github.event.inputs.tag || github.ref }}
+  group: release-desktop-${{ github.event.inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 env:
@@ -48,6 +48,9 @@ jobs:
     name: ${{ matrix.label }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 180
+    defaults:
+      run:
+        shell: bash
     strategy:
       # 一个平台失败不应连坐另一个平台，否则两个包都要重跑
       fail-fast: false
@@ -80,8 +83,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
         with:
+          # 手动重跑使用新工作流定义，但产品源码仍严格来自输入的发行标签。
+          ref: ${{ github.event.inputs.tag || github.ref }}
           # build-metadata 会执行 git rev-parse 写入产物；完整历史便于回溯
           fetch-depth: 0
 
@@ -97,13 +102,24 @@ jobs:
             exit 1
           fi
 
+      - name: 准备 Windows PowerShell 模块环境
+        id: windows-powershell
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # pwsh 继承的模块目录会让 Windows PowerShell 加载不兼容的 Archive/.NET 重载。
+          $env:PSModulePath = Join-Path $PSHOME 'Modules'
+          Import-Module Microsoft.PowerShell.Archive -ErrorAction Stop
+          "PSModulePath=$env:PSModulePath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6.1.1
         with:
           version: 10.33.2
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7.1.0
         with:
           node-version: 24.14.0
           cache: pnpm
@@ -128,7 +144,7 @@ jobs:
         run: ls -lh packages/desktop/dist/ || true
 
       - name: 上传产物
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: desktop-${{ matrix.targetOs }}-${{ matrix.targetArch }}
           path: ${{ matrix.distPatterns }}
@@ -144,10 +160,12 @@ jobs:
       # 发布 job 不继承 build job 的检出，但下面的强更标记要从仓库根读取；
       # 少了这一步 cp force-update.json 会在空工作区里失败，两个平台的包白打一遍且不产出 Release。
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
 
       - name: 下载全部平台产物
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8.0.2
         with:
           path: release-assets
           merge-multiple: true
