@@ -1599,6 +1599,21 @@ export function createConversationV4Gateway(
         ...(record.parentSessionId ? { parentSessionId: String(record.parentSessionId) } : {}),
       };
     },
+    /**
+     * 编排活动：主代理轮收口后 run 仍在派发子代理，phase 已是终态但会话没结束。
+     * 只读内存投影（`activitySummary` 不克隆记录），随每次会话事件 fan-out 计算；
+     * 无活动 run 时缺席，列表与通知保持经典行为。
+     */
+    getSessionOrchestrationActivity: (sessionId) => {
+      const record = context.sessions.get(sessionId);
+      if (!record) return null;
+      try {
+        return record.app.getOrchestrationActivity();
+      } catch {
+        // 列表发布是旁路：读活动失败不能影响会话事件本身的下行。
+        return null;
+      }
+    },
     listWorkspaceSessionIds: (workspaceId) =>
       [...context.sessions.values()]
         .filter(

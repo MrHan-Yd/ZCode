@@ -27,6 +27,7 @@ import type {
   BuiltInSubagentModelSelectionOverrides,
   ZCodeProviderAccountAccess,
 } from "@zcode/shared";
+import type { ExecutionState } from "@zcode/shared";
 import type { EffectiveModelSelectionResult } from "@zcode/shared/model-selection";
 import type { RuntimeMessageEntry } from "../agent/message-history.js";
 import type { SubagentProfilePort } from "../subagent/profile-port.js";
@@ -284,6 +285,8 @@ export interface ResumeSessionOptions {
    * 必须高于历史 session mode；交互式 resume 未指定时保持 undefined，让历史 mode 生效。
    */
   modeOverride?: CollaborationMode;
+  /** 子会话派发的当前 mode 与 Plan，恢复历史后最后生效。 */
+  executionStateOverride?: ExecutionState;
 }
 
 export interface MainTurnCacheHitAggregate {

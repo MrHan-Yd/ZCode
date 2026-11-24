@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { SessionId, SessionPerformanceQueryResult } from "@zcode/contracts";
 import {
   SESSION_PERFORMANCE_MAX_SESSIONS,
   sessionPerformanceBatchResultSchema,
@@ -10,7 +11,10 @@ import type { ZCodeProtocolAgentServerContext } from "../src/zcode-protocol/serv
 
 const PARENT_SESSION = "session-batch-parent";
 const CHILD_SESSION = "session-batch-child";
+const SECOND_CHILD_SESSION = "session-batch-second-child";
 const ORPHAN_SESSION = "session-batch-orphan";
+
+type Aggregate = Omit<SessionPerformanceQueryResult, "sessionID">;
 
 /** 每次聚合调用记录口径：口径是按会话种类在 CLI 侧裁决的，断言它才算真的验到规则。 */
 type RecordedCall = { sessionID: string; querySources: readonly string[] };
@@ -20,8 +24,9 @@ function createContext(options: {
   sessions?: Array<{ id: string; parentSessionId?: string }>;
   /** 持久化层的 parentID 关系：非驻留的子会话只能靠它找回归属。 */
   storedParents?: Record<string, string | null>;
-  /** 缺省给一个真实聚合实现；传 null 表示旧 store 没有该方法。 */
+  /** 缺省给一份完整聚合计量；false 表示旧 store 没有该方法。 */
   withAggregate?: boolean;
+  aggregates?: Record<string, Aggregate>;
   calls?: RecordedCall[];
 }): ZCodeProtocolAgentServerContext {
   const sessions = new Map(
@@ -37,21 +42,25 @@ function createContext(options: {
       ? { getSession: async (id: string) => storedSession(options, id) }
       : {
           getSession: async (id: string) => storedSession(options, id),
-          querySessionPerformance: async (input: RecordedCall) => {
+          querySessionPerformance: async (
+            input: RecordedCall,
+          ): Promise<SessionPerformanceQueryResult> => {
             options.calls?.push({
               sessionID: input.sessionID,
               querySources: [...input.querySources],
             });
             return {
-              sessionID: input.sessionID,
-              modelMs: 6_000,
-              toolMs: 0,
-              modelRequestCount: 1,
-              toolCallCount: 0,
-              ttftSumMs: 1_000,
-              ttftCount: 1,
-              tpsOutputTokens: 500,
-              generationMs: 5_000,
+              sessionID: input.sessionID as SessionId,
+              ...(options.aggregates?.[input.sessionID] ?? {
+                modelMs: 6_000,
+                toolMs: 0,
+                modelRequestCount: 1,
+                toolCallCount: 0,
+                ttftSumMs: 1_000,
+                ttftCount: 1,
+                tpsOutputTokens: 500,
+                tpsDurationMs: 6_000,
+              }),
             };
           },
         };
@@ -87,7 +96,7 @@ test("运行中的子会话（没有自己的 record）靠持久化 parentID 找
   assert.deepEqual(calls, [{ sessionID: CHILD_SESSION, querySources: ["subagent"] }]);
   const entry = entryById(result.entries, CHILD_SESSION);
   assert.ok(entry);
-  assert.equal(entry.summary.tokensPerSecond, 100);
+  assert.equal(entry.summary.tokensPerSecond, (500 * 1_000) / 6_000);
   sessionPerformanceBatchResultSchema.parse(result);
 });
 
@@ -117,6 +126,124 @@ test("父会话与子会话混在一批里：顺序同请求，口径各自独�
     result.entries.map((entry) => entry.sessionId),
     [PARENT_SESSION, CHILD_SESSION],
   );
+});
+
+test("父子截图计量按各自总耗时换算，不能再产生 239 / 502 / 803", async () => {
+  const calls: RecordedCall[] = [];
+  const samples = [
+    {
+      id: PARENT_SESSION,
+      outputTokens: 5_281,
+      durationMs: 195_313,
+      ttftMs: 173_257,
+      expectedTps: 27.03865,
+      rounded: 27,
+      oldRounded: 239,
+    },
+    {
+      id: CHILD_SESSION,
+      outputTokens: 11_522,
+      durationMs: 342_695,
+      ttftMs: 319_742,
+      expectedTps: 33.62173,
+      rounded: 34,
+      oldRounded: 502,
+    },
+    {
+      id: SECOND_CHILD_SESSION,
+      outputTokens: 9_164,
+      durationMs: 267_169,
+      ttftMs: 255_757,
+      expectedTps: 34.30039,
+      rounded: 34,
+      oldRounded: 803,
+    },
+  ];
+  const aggregates: Record<string, Aggregate> = Object.fromEntries(
+    samples.map((sample) => [
+      sample.id,
+      {
+        modelMs: sample.durationMs,
+        toolMs: 0,
+        modelRequestCount: 1,
+        toolCallCount: 0,
+        ttftSumMs: sample.ttftMs,
+        ttftCount: 1,
+        tpsOutputTokens: sample.outputTokens,
+        tpsDurationMs: sample.durationMs,
+      },
+    ]),
+  );
+  const context = createContext({
+    storedParents: { [CHILD_SESSION]: PARENT_SESSION, [SECOND_CHILD_SESSION]: PARENT_SESSION },
+    calls,
+    aggregates,
+  });
+  const result = await querySessionPerformanceBatch(context, {
+    sessionIds: samples.map((sample) => sample.id),
+  });
+
+  assert.deepEqual(calls, [
+    { sessionID: PARENT_SESSION, querySources: ["main_turn"] },
+    { sessionID: CHILD_SESSION, querySources: ["subagent"] },
+    { sessionID: SECOND_CHILD_SESSION, querySources: ["subagent"] },
+  ]);
+  assert.deepEqual(
+    result.entries.map((entry) => entry.sessionId),
+    samples.map((sample) => sample.id),
+  );
+  for (const sample of samples) {
+    const entry = entryById(result.entries, sample.id);
+    assert.ok(entry);
+    const tps = entry.summary.tokensPerSecond;
+    assert.ok(tps !== null);
+    assert.ok(Math.abs(tps - sample.expectedTps) < 0.0001);
+    assert.equal(Math.round(tps), sample.rounded);
+    assert.notEqual(Math.round(tps), sample.oldRounded);
+    assert.equal(entry.summary.averageTtftMs, sample.ttftMs);
+    assert.equal("tpsDurationMs" in entry.summary, false);
+  }
+  sessionPerformanceBatchResultSchema.parse(result);
+});
+
+test("子会话无 TTFT 仍有端到端 TPS，无合格耗时时才为 null", async () => {
+  const context = createContext({
+    storedParents: { [CHILD_SESSION]: PARENT_SESSION, [SECOND_CHILD_SESSION]: PARENT_SESSION },
+    aggregates: {
+      [CHILD_SESSION]: {
+        modelMs: 5_000,
+        toolMs: 0,
+        modelRequestCount: 1,
+        toolCallCount: 0,
+        ttftSumMs: 0,
+        ttftCount: 0,
+        tpsOutputTokens: 500,
+        tpsDurationMs: 5_000,
+      },
+      [SECOND_CHILD_SESSION]: {
+        modelMs: 0,
+        toolMs: 0,
+        modelRequestCount: 1,
+        toolCallCount: 0,
+        ttftSumMs: 0,
+        ttftCount: 0,
+        tpsOutputTokens: 0,
+        tpsDurationMs: 0,
+      },
+    },
+  });
+  const result = await querySessionPerformanceBatch(context, {
+    sessionIds: [CHILD_SESSION, SECOND_CHILD_SESSION],
+  });
+  const withDuration = entryById(result.entries, CHILD_SESSION);
+  const withoutDuration = entryById(result.entries, SECOND_CHILD_SESSION);
+
+  assert.ok(withDuration);
+  assert.ok(withoutDuration);
+  assert.equal(withDuration.summary.averageTtftMs, null);
+  assert.equal(withDuration.summary.tokensPerSecond, 100);
+  assert.equal(withoutDuration.summary.tokensPerSecond, null);
+  sessionPerformanceBatchResultSchema.parse(result);
 });
 
 test("查不到归属的会话整体缺席，同批里其他会话照常返回", async () => {

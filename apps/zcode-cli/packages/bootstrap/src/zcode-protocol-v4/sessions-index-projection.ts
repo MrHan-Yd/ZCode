@@ -5,6 +5,7 @@
 import {
   deriveSessionWorkflowActivity,
   type ConversationSnapshot,
+  type SessionOrchestrationActivity,
   type SessionSummary,
   type SessionsIndexDelta,
   type SessionsIndexSnapshot,
@@ -16,6 +17,11 @@ export interface SessionSummaryDeriveExtra {
   createdAt: number;
   lastActivityAt: number;
   parentSessionId?: string;
+  /**
+   * 活动编排 run 的摘要。来自 session runtime 的 OrchestrationService 只读投影，
+   * 不在 conversation snapshot 里；缺席 = 该会话没有活动 run（或旧宿主）。
+   */
+  orchestrationActivity?: SessionOrchestrationActivity;
 }
 
 const MAX_PREVIEW_CHARS = 120;
@@ -84,6 +90,9 @@ function deriveSessionSummary(
     sessionEnded: snapshot.control.sessionEnded,
     hasBackgroundWork,
     ...(workflowActivity === undefined ? {} : { workflowActivity }),
+    ...(extra.orchestrationActivity
+      ? { orchestrationActivity: extra.orchestrationActivity }
+      : {}),
     ...(pendingInteraction ? { pendingInteraction } : {}),
     ...(permissionCount > 0 || userInputCount > 0
       ? {
@@ -114,6 +123,9 @@ function summariesEqual(a: SessionSummary, b: SessionSummary): boolean {
     // phase 翻转 / 结算 / 在跑子代理数变化永不被 conflation 吃掉；反之只改 node 的事件在这里判等
     // （真实系统里它仍会因 lastActivityAt 推进而产帧——那是活动事实，语义不变）。
     JSON.stringify(a.workflowActivity ?? null) === JSON.stringify(b.workflowActivity ?? null) &&
+    // 编排活动在位/离位（run 起止、步数变化）必须产帧：通知与侧栏运行态都读这份摘要。
+    JSON.stringify(a.orchestrationActivity ?? null) ===
+      JSON.stringify(b.orchestrationActivity ?? null) &&
     JSON.stringify(a.pendingInteraction ?? null) === JSON.stringify(b.pendingInteraction ?? null) &&
     a.pendingInteractionSummary?.permissionCount === b.pendingInteractionSummary?.permissionCount &&
     a.pendingInteractionSummary?.userInputCount === b.pendingInteractionSummary?.userInputCount &&

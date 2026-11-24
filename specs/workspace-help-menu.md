@@ -21,7 +21,7 @@
 2. **仅桌面端可见**（`isDesktop` 为 true 时）：
    - 资源管理器：`DesktopCommandIds.OpenResourceManager`（`data-testid` 为 `TID_WORKSPACE_HELP_MENU_RESOURCE_MANAGER`）。
    - 发现新版本 / 重启更新：由 `useDesktopUpdateMenu(isDesktop)` 决定可见性与文案，点击触发检查更新或重启安装。
-   - 关于 ZCode：`DesktopCommandIds.ShowAbout`。
+   - 关于 ZCode：`DesktopCommandIds.ShowAbout`，发布到当前主 renderer 的同文档 About Dialog；不创建独立 native modal。展示 owner、关闭与白闪验收见 `specs/desktop-about-dialog.md`。
 
 `isDesktop` 由挂载处注入，不在组件内嗅探：Web 端的 `IPlatformService` 桩同样实现了
 `executeDesktopCommand`（no-op），靠它判断会让 Web 出现一个点了没反应的「资源管理器」。

@@ -253,6 +253,8 @@ export const PlatformChannels = {
   OpenWorkspace: "zcode:open-workspace",
   /** Main → Renderer：deep link 直接打开指定本地工作区目录 */
   OpenWorkspacePath: "zcode:open-workspace-path",
+  /** Main → Renderer：在主窗口内展示 About。 */
+  OpenAboutDialog: "zcode:open-about-dialog",
   /** Main → Renderer：打开内置反馈对话框 */
   OpenFeedbackDialog: "zcode:open-feedback-dialog",
   /** Main → Renderer：打开我的工单面板 */

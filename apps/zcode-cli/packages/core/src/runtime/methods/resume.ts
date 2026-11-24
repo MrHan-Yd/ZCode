@@ -215,6 +215,10 @@ export async function resumeFromStore(
   if (savedExecution.success && options?.modeOverride === undefined) {
     Object.assign(this.config, savedExecution.data);
   }
+  // 子会话历史执行状态曾覆盖父当前权限；调用级完整状态最后应用，不能只覆盖 mode 丢掉 Plan。
+  if (options?.executionStateOverride) {
+    Object.assign(this.config, options.executionStateOverride);
+  }
 
   // 编排配置与 run journal 的冷恢复：entry 是唯一持久事实源。放在 workspace/context
   // 已恢复之后，owner（workspacePath / identity / sessionId）才是会话真实身份；

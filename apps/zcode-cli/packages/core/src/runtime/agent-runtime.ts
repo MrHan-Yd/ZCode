@@ -88,6 +88,7 @@ import type { OrchestrationService } from "../orchestration/service.js";
 import type { OrchestrationRunRecord } from "../orchestration/contract.js";
 import type {
   OrchestrationConfigState,
+  SessionOrchestrationActivity,
   V4ConversationOrchestrationStateResult,
 } from "@zcode/shared/zcode-protocol-v4";
 import type {
@@ -373,6 +374,8 @@ export interface AgentRuntime {
   ): Promise<OrchestrationConfigState>;
   /** 时间线读取面：配置 + 活动/最近 run 的只读投影。 */
   getOrchestrationState(): V4ConversationOrchestrationStateResult;
+  /** sessions-index 用的轻量活动摘要；不克隆 run 记录。 */
+  getOrchestrationActivity(): SessionOrchestrationActivity | null;
   /** 取消单个 run；不停止主会话 turn。 */
   cancelOrchestrationRun(runId: string): Promise<OrchestrationRunRecord | undefined>;
   getSessionModelSelection(): ModelSelection | undefined;

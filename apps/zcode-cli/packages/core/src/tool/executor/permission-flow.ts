@@ -152,6 +152,9 @@ export async function resolveToolPermission(
   }
 
   const approval = resolveToolApproval(deps, toolCall, entry, executionInput, traceContext);
+  // Plan MCP 的单次审批不能被工具的会话/永久授权选项放宽，事件与 broker 消费同一策略。
+  if (permissionDecision.optionsPolicy && approval.optionsPolicy !== "no-always-allow")
+    approval.optionsPolicy = permissionDecision.optionsPolicy;
   if (approval.gate === "proceed") {
     telemetry?.setPermissionDecision("not_required");
     return { allowed: true, executionInput };
@@ -421,11 +424,7 @@ export async function resolveToolPermission(
         source: "permission",
       });
   const modifiedInputValidation = validateInput(modifiedInput, entry);
-  if (modifiedInputValidation) {
-    return {
-      allowed: false,
-      result: createErrorResult(toolCall, modifiedInputValidation),
-    };
-  }
-  return { allowed: true, executionInput: modifiedInput, permissionWaitMs };
+  return modifiedInputValidation
+    ? { allowed: false, result: createErrorResult(toolCall, modifiedInputValidation) }
+    : { allowed: true, executionInput: modifiedInput, permissionWaitMs };
 }

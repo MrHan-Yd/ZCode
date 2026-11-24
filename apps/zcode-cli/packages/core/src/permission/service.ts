@@ -8,6 +8,7 @@ import {
   PermissionCapabilityGroup,
   type PermissionCapabilityGroup as PermissionCapabilityGroupType,
   type PermissionRuleValue,
+  type PermissionOptionsPolicy,
   type PermissionRuleset,
   type PermissionUpdate,
   type CollaborationMode,
@@ -60,6 +61,7 @@ export interface PermissionToolCapability {
 export type PermissionBehavior = "allow" | "ask" | "deny";
 
 export interface PermissionDecisionResult {
+  optionsPolicy?: PermissionOptionsPolicy;
   decision: PermissionBehavior;
   allowed: boolean;
   reason?: string;
@@ -174,7 +176,16 @@ export class PermissionService {
     }
 
     if (planEnabled) {
-      return this.checkPlanMode(context, capability);
+      const planDecision = this.checkPlanMode(context, capability);
+      if (planDecision) return planDecision;
+      if (context.mode === "yolo") {
+        return this.allow(
+          context,
+          capability,
+          "mode.yolo",
+          "Yolo mode bypasses permission prompts",
+        );
+      }
     }
 
     if (this.matchesProjectRules(projectRules, "allow", context, capability, rulePolicy)) {
@@ -402,8 +413,8 @@ export class PermissionService {
   private checkPlanMode(
     context: PermissionContext,
     capability: ResolvedPermissionCapability,
-  ): PermissionDecisionResult {
-    if (capability.readOnly && !capability.destructive) {
+  ): PermissionDecisionResult | undefined {
+    if (capability.readOnly && !capability.destructive && !capability.needsApproval) {
       return this.allow(
         context,
         capability,
@@ -412,13 +423,20 @@ export class PermissionService {
       );
     }
 
+    // Plan 曾忽略 needsApproval 而比原模式更宽；只读需审批工具只过闸，仍由原模式裁决。
+    if (capability.readOnly && !capability.destructive) return undefined;
+
     if (this.isMcpToolCapability(capability) && !capability.destructive) {
-      return this.allow(
-        context,
-        capability,
-        "mode.plan.mcp",
-        "Plan mode allows non-destructive MCP tool execution",
-      );
+      if (context.mode === "yolo") return undefined;
+      return {
+        ...this.ask(
+          context,
+          capability,
+          "mode.plan.mcp",
+          "Plan mode requires approval for MCP tools that are not read-only",
+        ),
+        optionsPolicy: "no-always-allow",
+      };
     }
 
     if (

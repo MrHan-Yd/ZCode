@@ -6,6 +6,7 @@ import {
 import { normalizeOrchestrationTeamSelection } from "@zcode/shared";
 import type { OrchestrationConfigState } from "@zcode/shared/zcode-protocol-v4";
 import type { V4ConversationOrchestrationStateResult } from "@zcode/shared/zcode-protocol-v4";
+import type { SessionOrchestrationActivity } from "@zcode/shared/zcode-protocol-v4";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { traceContextToLogContext } from "../deps.js";
 import { rebuildContextPrefix } from "./context-refresh.js";
@@ -239,6 +240,16 @@ export function getOrchestrationState(
       activeRunIds: new Set(service?.activeRunIds() ?? []),
     }),
   };
+}
+
+/**
+ * sessions-index 用的活动摘要；与 `getOrchestrationState` 分开是因为后者会克隆 run 记录，
+ * 而会话事件 fan-out 的频率不允许每次发布都付这份成本。
+ */
+export function getOrchestrationActivity(
+  this: AgentRuntimeInternal,
+): SessionOrchestrationActivity | null {
+  return this.orchestrationService?.activitySummary() ?? null;
 }
 
 /** 时间线停止按钮：只取消指定 run；不会停止主会话 turn 或其他后台任务。 */

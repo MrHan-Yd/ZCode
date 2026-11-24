@@ -1,7 +1,15 @@
 import type { ConversationSnapshot } from "@zcode/shared/zcode-protocol-v4";
 // 同目录兄弟用相对路径：包内导入按 ui 的约定收敛到带 .js 后缀的相对路径，
 // 也让这个模块能被 node:test 直接加载（别名只在应用构建的 tsconfig paths 下可解析）。
-import { createTurnOutputTokenEstimator } from "./streamingOutputTokens.js";
+import {
+  createTurnOutputTokenEstimator,
+  resolveTurnOutputTokenScopeKey,
+} from "./streamingOutputTokens.js";
+
+export interface LiveOutputTokenReading {
+  tokens: number;
+  scopeKey: string | null;
+}
 
 /**
  * 实时输出 token 读数的采样边界：逐帧只挂最新快照（一次赋值），估算留到真正读的那一刻。
@@ -22,8 +30,8 @@ export interface LiveOutputTokenReader {
    * 于是读数恒为 0——与旧实现「不在 streaming 相位就写 0」同一语义。
    */
   setSnapshot(snapshot: ConversationSnapshot | null, streaming: boolean): void;
-  /** 只在采样时刻调用；每次调用做一次估算。 */
-  read(): number;
+  /** 只在采样时刻调用；估算与作用域来自同一帧快照，作用域为空时不能采样。 */
+  read(): LiveOutputTokenReading;
 }
 
 export function createLiveOutputTokenReader(
@@ -35,7 +43,7 @@ export function createLiveOutputTokenReader(
       latest = streaming ? snapshot : null;
     },
     read() {
-      return estimate(latest);
+      return { tokens: estimate(latest), scopeKey: resolveTurnOutputTokenScopeKey(latest) };
     },
   };
 }

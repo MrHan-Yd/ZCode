@@ -6,6 +6,7 @@ import type {
   SessionSummary,
   UserInputRequestPayload,
 } from "@zcode/shared/zcode-protocol-v4";
+import { isSessionOrchestrationActive } from "@zcode/shared/zcode-protocol-v4";
 import type { IntlInstance } from "@/i18n/index.js";
 
 type FormatMessage = IntlInstance["formatMessage"];
@@ -65,6 +66,15 @@ export function collectTerminalTaskNotificationPayloads(params: {
   for (const session of params.sessions) {
     const status = terminalStatusForPhase(session.phase);
     if (!status) continue;
+
+    // 主代理轮收口只代表这一轮结束，不代表整项工作结束：编排 run 仍在后台派发子代理时，
+    // phase 已经是 completedSuccess。若此时弹「任务完成」，用户会在子代理仍在跑时收到
+    // 错误的完成提示，run 结束唤醒的收尾轮再收口时又会弹第二次。这里把 completed 的
+    // 判定收紧为「进入终态的 phase 边沿 + 无活动编排 run」；收尾轮完成时 activity 已离位，
+    // 才会出现唯一一次完成通知。failed 仍然立即通知。
+    if (status === "completed" && isSessionOrchestrationActive(session.orchestrationActivity)) {
+      continue;
+    }
 
     const previous = params.previousBySessionId.get(session.sessionId);
     if (!previous) continue;

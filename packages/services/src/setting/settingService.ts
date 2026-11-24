@@ -19,6 +19,7 @@ import { isEffectiveDevelopmentNodeEnv } from "../runtime-tools/nodeEnv.js";
 import { maybeThrowInjectedFsFault } from "../fs/fsFaultInjection.js";
 import { atomicWriteText } from "../fs/atomicFileUtils.js";
 import { withSettingsWriteQueueTimeout } from "./settingsWriteQueue.js";
+import { createSettingsQuiescence } from "./settingsQuiescence.js";
 import {
   migrateLegacyAccountConnectionSettings,
   needsLegacyAccountConnectionMigration,
@@ -235,6 +236,8 @@ export function createSettingService(): ISettingService {
 /** Host 私有迁移入口，不加入 Setting RPC；普通 get/update 从不等待 OAuth 查询。 */
 export function createSettingServiceWithMigrations(): {
   service: ISettingService;
+  /** Main 清数据私有生命周期，不暴露为 Setting RPC。 */
+  quiesceForClearAllData: () => Promise<void>;
   prepareLegacyAccountConnections: (
     resolveOrganization: (connection: LegacyTeamConnection) => Promise<string | null>,
   ) => Promise<readonly ProviderFamilyDomain[]>;
@@ -242,6 +245,7 @@ export function createSettingServiceWithMigrations(): {
   let updateQueue = Promise.resolve();
   let commitQueue = Promise.resolve();
   let writeQueueGeneration = 0;
+  const lifecycle = createSettingsQuiescence();
 
   const runSettingsCommit = async (commit: () => Promise<void>) => {
     const queued = commitQueue.then(commit, commit);
@@ -252,11 +256,13 @@ export function createSettingServiceWithMigrations(): {
   const enqueueSettingsWrite = async (
     runUpdate: (shouldCommit: () => boolean, enterCommitPhase: () => void) => Promise<void>,
   ) => {
+    lifecycle.assertWritable();
     const runCurrentUpdate = () => {
       const currentGeneration = ++writeQueueGeneration;
       const shouldCommit = () => currentGeneration === writeQueueGeneration;
       return withSettingsWriteQueueTimeout(
-        (enterCommitPhase) => runUpdate(shouldCommit, enterCommitPhase),
+        // 普通超时 race 只释放队列，不会停止底层 IO；清数据必须等待真实写入退出临界区。
+        (enterCommitPhase) => lifecycle.track(runUpdate(shouldCommit, enterCommitPhase)),
         () => {
           if (writeQueueGeneration === currentGeneration) {
             writeQueueGeneration += 1;
@@ -274,26 +280,28 @@ export function createSettingServiceWithMigrations(): {
 
   const service: ISettingService = {
     async get(): Promise<AppSettings> {
-      // 设置切换后可能立即创建或冷恢复 Session；读取若越过已入队写入，
-      // runtime 会固定旧开关值。先等待现有写队列，保证启动偏好读取到已提交的选择。
-      await updateQueue;
-      const result = await readSettingsWithMeta();
-      if (!result.needsMigrationPersist) {
-        return result.settings;
-      }
-
-      await enqueueSettingsWrite(async (shouldCommit, enterCommitPhase) => {
-        const latest = await readSettingsWithMeta();
-        if (!latest.needsMigrationPersist) {
-          return;
+      return lifecycle.run(async () => {
+        // 设置切换后可能立即创建或冷恢复 Session；读取若越过已入队写入，
+        // runtime 会固定旧开关值。先等待现有写队列，保证启动偏好读取到已提交的选择。
+        await updateQueue;
+        const result = await readSettingsWithMeta();
+        if (!result.needsMigrationPersist) {
+          return result.settings;
         }
 
-        // 初始化原因：旧版设置可能已把无法区分来源的默认值落盘；升级后按 schema 统一迁移一次。
-        // 迁移写盘必须进入 updateQueue，并在队列内重读最新文件，避免覆盖并发保存的其他设置。
-        await writeSettings(latest.settings, shouldCommit, runSettingsCommit, enterCommitPhase);
-      });
+        await enqueueSettingsWrite(async (shouldCommit, enterCommitPhase) => {
+          const latest = await readSettingsWithMeta();
+          if (!latest.needsMigrationPersist) {
+            return;
+          }
 
-      return readSettings();
+          // 初始化原因：旧版设置可能已把无法区分来源的默认值落盘；升级后按 schema 统一迁移一次。
+          // 迁移写盘必须进入 updateQueue，并在队列内重读最新文件，避免覆盖并发保存的其他设置。
+          await writeSettings(latest.settings, shouldCommit, runSettingsCommit, enterCommitPhase);
+        });
+
+        return readSettings();
+      });
     },
 
     async update(patch: Partial<AppSettings>, expectedAccountSettings): Promise<void> {
@@ -337,42 +345,46 @@ export function createSettingServiceWithMigrations(): {
     },
 
     async updateDataBaseDir(newDir: string | undefined): Promise<void> {
-      const currentBaseDir = getDataBaseDir();
-      const targetBaseDir = newDir?.trim() || homedir();
-      const validation = validateDataBaseDirTarget(targetBaseDir);
-      if (!validation.ok) {
-        // Windows 安装目录由安装器/自动更新管理，把 .zcode/v2 放进去可能在升级时被覆盖。
-        // 迁移前在 service 层拦截，避免 UI 入口变化或 RPC 调用绕过前端判断。
-        const error = new Error(`${validation.code}: ${validation.forbiddenDir}`);
-        (error as Error & { code: string }).code = validation.code;
-        throw error;
-      }
+      return lifecycle.run(async () => {
+        const currentBaseDir = getDataBaseDir();
+        const targetBaseDir = newDir?.trim() || homedir();
+        const validation = validateDataBaseDirTarget(targetBaseDir);
+        if (!validation.ok) {
+          // Windows 安装目录由安装器/自动更新管理，把 .zcode/v2 放进去可能在升级时被覆盖。
+          // 迁移前在 service 层拦截，避免 UI 入口变化或 RPC 调用绕过前端判断。
+          const error = new Error(`${validation.code}: ${validation.forbiddenDir}`);
+          (error as Error & { code: string }).code = validation.code;
+          throw error;
+        }
 
-      if (currentBaseDir !== targetBaseDir) {
-        log("copying data directory from", currentBaseDir, "to", targetBaseDir);
-        await copyDataDirectory(currentBaseDir, targetBaseDir);
-        log("data directory copy done");
-      }
+        if (currentBaseDir !== targetBaseDir) {
+          log("copying data directory from", currentBaseDir, "to", targetBaseDir);
+          await copyDataDirectory(currentBaseDir, targetBaseDir);
+          log("data directory copy done");
+        }
 
-      await this.update({ dataBaseDir: newDir });
+        await this.update({ dataBaseDir: newDir });
+      });
     },
 
     async ensureDefaultProject(userHomeDir: string): Promise<{ path: string; created: boolean }> {
-      const path = join(userHomeDir, DEFAULT_PROJECT_NAME);
-      let existedBefore = true;
+      return lifecycle.run(async () => {
+        const path = join(userHomeDir, DEFAULT_PROJECT_NAME);
+        let existedBefore = true;
 
-      try {
-        await access(path).catch(() => {
-          existedBefore = false;
-        });
-        maybeThrowInjectedFsFault({ operation: "mkdir", path });
-        await mkdir(path, { recursive: true });
-      } catch (error) {
-        log("ensureDefaultProject failed:", error);
-        throw error;
-      }
+        try {
+          await access(path).catch(() => {
+            existedBefore = false;
+          });
+          maybeThrowInjectedFsFault({ operation: "mkdir", path });
+          await mkdir(path, { recursive: true });
+        } catch (error) {
+          log("ensureDefaultProject failed:", error);
+          throw error;
+        }
 
-      return { path, created: !existedBefore };
+        return { path, created: !existedBefore };
+      });
     },
   };
 
@@ -380,6 +392,11 @@ export function createSettingServiceWithMigrations(): {
   let migrationComplete = false;
   return {
     service,
+    quiesceForClearAllData: () =>
+      lifecycle.quiesce(async () => {
+        await updateQueue;
+        await commitQueue;
+      }),
     prepareLegacyAccountConnections(resolveOrganization) {
       // 已完成导入后不让每次请求鉴权重复读迁移文件。恢复旧备份需要重启 Host。
       if (migrationComplete) return Promise.resolve([]);

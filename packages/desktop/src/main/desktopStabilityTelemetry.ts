@@ -13,6 +13,7 @@ import {
 import type { CrashCapturePaths } from "./desktopCrashCapture.js";
 import { registerCrashEventMonitor as registerBaseCrashEventMonitor } from "./desktopCrashCapture.js";
 import { getResourceManagerWindowId } from "./resourceManagerWindow.js";
+import { redactAgentDiagnosticSecrets } from "@zcode/shared/process-diagnostic";
 
 /** ANR：主线程无响应阈值（与 Electron unresponsive 对齐） */
 const STABILITY_ANR_THRESHOLD_MS = 5_000;
@@ -24,10 +25,6 @@ const WINDOWS_CONTROLLED_TERMINATION_EXIT_CODE = 0x40010004;
 const AGENT_EXCEPTION_DEDUP_CAPACITY = 1024;
 const reportedAgentExceptions = new Set<string>();
 
-const AGENT_CRASH_SENSITIVE_ASSIGNMENT_PATTERN =
-  /(["']?(?:api[-_]?key|authorization|cookie|credential|password|secret|token)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;}]+)/gi;
-const AGENT_CRASH_AUTH_SCHEME_PATTERN = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi;
-const AGENT_CRASH_API_KEY_PATTERN = /\b(sk-)[A-Za-z0-9_-]{16,}\b/gi;
 const AGENT_CRASH_UUID_PATTERN =
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi;
 const AGENT_CRASH_STACK_LOCATION_PATTERN = /:\d+:\d+/g;
@@ -202,15 +199,14 @@ function redactRemainingAbsolutePaths(value: string): string {
 function sanitizeAgentCrashDetail(value: string, workspacePath: string): string {
   const withoutWorkspace = workspacePath ? value.split(workspacePath).join("<workspace>") : value;
   return truncateAgentCrashDetail(
-    redactRemainingAbsolutePaths(
-      withoutWorkspace
-        .replace(AGENT_CRASH_WINDOWS_HOME_PATTERN, "<home>")
-        .replace(AGENT_CRASH_POSIX_HOME_PATTERN, "<home>"),
-    )
-      .replace(AGENT_CRASH_SENSITIVE_ASSIGNMENT_PATTERN, "$1<redacted>")
-      .replace(AGENT_CRASH_AUTH_SCHEME_PATTERN, "$1 <redacted>")
-      // 修复原因：Host reporter 不是唯一输入边界，main 在发送 RUM 前必须再次遮盖裸 key。
-      .replace(AGENT_CRASH_API_KEY_PATTERN, "$1<redacted>"),
+    // 修复原因：官方 b95ebaff 要求 main 与 services 共用凭据规则，保留本地路径遮盖与归因。
+    redactAgentDiagnosticSecrets(
+      redactRemainingAbsolutePaths(
+        withoutWorkspace
+          .replace(AGENT_CRASH_WINDOWS_HOME_PATTERN, "<home>")
+          .replace(AGENT_CRASH_POSIX_HOME_PATTERN, "<home>"),
+      ),
+    ),
   );
 }
 

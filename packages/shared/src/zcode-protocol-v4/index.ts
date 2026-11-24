@@ -40,6 +40,7 @@ export * from "./wire-reassembly.js";
 export * from "./wire-assembler.js";
 export * from "./wire-fault.js";
 export * from "./sessions-index.js";
+export * from "./sessions-index-orchestration-activity.js";
 export * from "./sessions-index-workflow-activity.js";
 export * from "./workspace-config.js";
 export * from "./command.js";

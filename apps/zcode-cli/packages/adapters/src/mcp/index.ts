@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
-import { isDeepStrictEqual } from "node:util";
+import { isDeepStrictEqual, stripVTControlCharacters } from "node:util";
+import { StringDecoder } from "node:string_decoder";
 import {
   Client,
   ClientCredentialsProvider,
@@ -693,7 +694,7 @@ class NodeMcpAdapter implements McpPort {
         {
           name: request.toolName,
           arguments: request.arguments ?? {},
-          ...((request.trace || request.runtimeScope || request.workspaceKey || request.workspacePath)
+          ...(request.trace || request.runtimeScope || request.workspaceKey || request.workspacePath
             ? { _meta: mcpRequestMeta(request) }
             : {}),
         },
@@ -1581,27 +1582,20 @@ class NodeMcpAdapter implements McpPort {
   }
 
   private attachStdioLogging(name: string, transport: McpTransport): () => string | undefined {
-    const stderrBuffer = createBoundedTextBuffer(MCP_STDIO_STDERR_LOG_MAX_CHARS);
-    const stderr = (
-      transport as {
-        stderr?: { on(event: "data", handler: (chunk: Buffer) => void): void };
-      }
-    ).stderr;
-    stderr?.on("data", (chunk) => {
-      const text = chunk.toString("utf8");
-      stderrBuffer.append(text);
+    const stderrBuffer = createBoundedTextBuffer(MCP_STDIO_STDERR_LOG_MAX_CHARS, (text) => {
       this.logger?.debug("MCP stdio stderr", {
         event: "mcp.stdio.stderr",
         mcpServerName: name,
-        stderr: sanitizeMcpStdioStderr(text).slice(0, MCP_STDIO_STDERR_LOG_MAX_CHARS),
+        stderr: text,
       });
     });
+    const stderr = (transport as { stderr?: NodeJS.ReadableStream }).stderr;
+    stderr?.on("data", (chunk: Buffer) => stderrBuffer.append(chunk));
+    stderr?.once("end", () => stderrBuffer.finish());
+    stderr?.once("close", () => stderrBuffer.finish());
     return () => {
-      const text = stderrBuffer.read();
-      if (!text) return undefined;
-      // 生产日志里单独的 Connection closed 无法定位 stdio MCP 子进程退出原因。
-      // 只在失败事件附带尾部 stderr，并先脱敏，避免把凭据或高频输出写入生产日志。
-      return sanitizeMcpStdioStderr(text).slice(-MCP_STDIO_STDERR_LOG_MAX_CHARS);
+      // 生产失败日志与 debug 消费同一份已脱敏结果；不得对切掉键名的尾部重新猜凭据边界。
+      return stderrBuffer.read() || undefined;
     };
   }
 
@@ -1879,27 +1873,92 @@ function hasAuthorizationHeader(headers: Record<string, string> | undefined): bo
   return Object.keys(headers).some((name) => name.toLowerCase() === "authorization");
 }
 
-function createBoundedTextBuffer(maxChars: number): {
-  append(text: string): void;
+const MCP_STDIO_STDERR_SENSITIVE_KEY = String.raw`(?:[a-z0-9_.-]*[_-])?(?:api[_-]?key|access[_-]?key|secret(?:[_-]?key)?|private[_-]?key|token|password|passwd|pass|mysql_pass|mysql_password)`;
+const MCP_STDIO_STDERR_PENDING_VALUE_PATTERN = new RegExp(
+  String.raw`(?:(?:["'](?:${MCP_STDIO_STDERR_SENSITIVE_KEY}|authorization)["']|\b(?:${MCP_STDIO_STDERR_SENSITIVE_KEY}|authorization)\b)\s*[:=]\s*|(?:^|\s)bearer\s*)$`,
+  "i",
+);
+
+function createBoundedTextBuffer(
+  maxChars: number,
+  onText: (text: string) => void,
+): {
+  append(chunk: Buffer): void;
+  finish(): void;
   read(): string;
 } {
+  const decoder = new StringDecoder("utf8");
+  let pending = "";
+  let droppingLine = false;
+  let lineHasValue = false;
+  let awaitingValue = false;
   let value = "";
+  let finished = false;
+
+  const emitLine = (line: string, separator = "") => {
+    // 修复原因：原 sanitizer 的 \s+ 支持跨 CR/LF，逐行输出会丢掉键/header 待值上下文。
+    // 同一个 bounded owner 在下一非空值行 fail closed；debug 也必须在输出前遮盖，不能只补 tail。
+    const hasValue = stripVTControlCharacters(line).trim().length > 0;
+    const isContinuation = awaitingValue && hasValue;
+    const safe = isContinuation ? "[Redacted]" : sanitizeMcpStdioStderr(line);
+    if (isContinuation) awaitingValue = false;
+    else if (hasValue)
+      awaitingValue = MCP_STDIO_STDERR_PENDING_VALUE_PATTERN.test(stripVTControlCharacters(line));
+    value = `${value}${safe}${separator}`.slice(-maxChars);
+    if (safe || separator) onText(`${safe}${separator}`.slice(0, maxChars));
+  };
+  const consume = (text: string) => {
+    let start = 0;
+    for (let index = 0; index < text.length; index += 1) {
+      if (text[index] !== "\r" && text[index] !== "\n") continue;
+      const line = `${pending}${text.slice(start, index)}`;
+      if (!droppingLine && line.length <= maxChars) emitLine(line, text[index]);
+      else if (lineHasValue || line.trim()) awaitingValue = false;
+      pending = "";
+      droppingLine = false;
+      lineHasValue = false;
+      start = index + 1;
+    }
+    const rest = text.slice(start);
+    // 超长空白 continuation 不消费待值标志；丢弃了非空值后才恢复后续普通诊断。
+    lineHasValue ||= rest.trim().length > 0;
+    if (droppingLine) return;
+    pending += rest;
+    // 超长未闭合行中的空格/分隔符可能仍属于带引号凭据；丢弃到下一 CR/LF，不恢复秘密后缀。
+    if (pending.length > maxChars) {
+      pending = "";
+      droppingLine = true;
+    }
+  };
+
   return {
-    append(text: string) {
-      if (!text) return;
-      value = `${value}${text}`;
-      if (value.length > maxChars) {
-        value = value.slice(-maxChars);
-      }
+    append(chunk) {
+      if (!finished) consume(decoder.write(chunk));
+    },
+    finish() {
+      if (finished) return;
+      finished = true;
+      consume(decoder.end());
+      if (!droppingLine && pending) emitLine(pending);
+      pending = "";
     },
     read() {
-      return value;
+      // 失败可能早于 stderr EOF；只取有完整键/引号上下文的 pending 副本，不将其拆成下一块残片。
+      const lastLine =
+        !droppingLine && pending
+          ? awaitingValue && stripVTControlCharacters(pending).trim()
+            ? "[Redacted]"
+            : sanitizeMcpStdioStderr(pending)
+          : "";
+      return `${value}${lastLine}`.slice(-maxChars);
     },
   };
 }
 
 function sanitizeMcpStdioStderr(text: string): string {
-  const sensitiveKey = String.raw`(?:api[_-]?key|access[_-]?key|secret(?:[_-]?key)?|private[_-]?key|token|password|passwd|pass|mysql_pass|mysql_password)`;
+  // 修复原因：官方 a9fe401e 去 VT 后匹配前缀键，防止 ANSI 和 API_TOKEN 等环境键绕过遮盖。
+  text = stripVTControlCharacters(text);
+  const sensitiveKey = MCP_STDIO_STDERR_SENSITIVE_KEY;
   let result = text.replace(/(bearer\s+)[^\s"']+/gi, "$1[Redacted]");
   result = result.replace(
     /(\bauthorization\b\s*[:=]\s*)(bearer\s+)?[^\r\n]+/gi,
@@ -1907,8 +1966,14 @@ function sanitizeMcpStdioStderr(text: string): string {
       `${prefix}${bearer ? "Bearer " : ""}[Redacted]`,
   );
   result = result.replace(new RegExp(`([?&]${sensitiveKey}=)[^&\\s]+`, "gi"), "$1[Redacted]");
+  // 官方修复整体遮盖空格与转义引号；pending/EOF 的未闭合引号也丢弃到该完整行尾。
+  const quotedValue = String.raw`(["'])(?:\\.|(?!\2)[^\\\r\n])*(?:\2|$)`;
   result = result.replace(
-    new RegExp(`(["']${sensitiveKey}["']\\s*:\\s*)(["'])(?:(?!\\2).)*\\2`, "gi"),
+    new RegExp(String.raw`(["']${sensitiveKey}["']\s*:\s*)${quotedValue}`, "gi"),
+    "$1$2[Redacted]$2",
+  );
+  result = result.replace(
+    new RegExp(String.raw`(\b${sensitiveKey}\b\s*[:=]\s*)${quotedValue}`, "gi"),
     "$1$2[Redacted]$2",
   );
   result = result.replace(

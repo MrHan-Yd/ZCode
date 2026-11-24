@@ -5,6 +5,7 @@ import { utilityProcess as electronUtilityProcess } from "electron";
 import type { UtilityProcess as ElectronUtilityProcess } from "electron";
 import { HostMessageTypes } from "@zcode/shared";
 import { buildHostProcessEnv, schedulerModulePath } from "./desktopRuntimeEnv.js";
+import { createSchedulerShutdown } from "./desktopHostShutdown.js";
 import { ingestSchedulerSelfResourceSample } from "./processResourceSelfHeapSource.js";
 import { registerSchedulerProcess, unregisterSchedulerProcess } from "./resourceManagerWindow.js";
 import type {
@@ -52,10 +53,8 @@ export interface CronSchedulerHandle {
   /** manual run 落库后立即唤醒 scheduler，不等待下一次轮询。 */
   wake: (automationId: string) => void;
   /** app 退出前优雅收尾（通知 scheduler 释放认领 + 关库，兜底强杀）。 */
-  dispose: () => Promise<void>;
+  dispose: (options?: { requireCleanExit?: boolean }) => Promise<void>;
 }
-
-const DISPOSE_FORCE_KILL_MS = 1_500;
 
 export function spawnCronScheduler(deps: CronSchedulerDeps): CronSchedulerHandle {
   const child = electronUtilityProcess.fork(schedulerModulePath, [], {
@@ -71,7 +70,7 @@ export function spawnCronScheduler(deps: CronSchedulerDeps): CronSchedulerHandle
   // 资源遥测的 scheduler 角色 pid 只有 spawn 点知道，这里登记到进程角色注册表。
   registerSchedulerProcess(child);
   let isDisposing = false;
-  let disposePromise: Promise<void> | null = null;
+  const shutdown = createSchedulerShutdown(child);
 
   const postToScheduler = (message: MainToSchedulerMessage): void => {
     try {
@@ -208,29 +207,10 @@ export function spawnCronScheduler(deps: CronSchedulerDeps): CronSchedulerHandle
       if (isDisposing) return;
       postToScheduler({ type: "scheduler-wake", automationId });
     },
-    dispose() {
-      if (disposePromise) return disposePromise;
+    dispose(options) {
       isDisposing = true;
-      postToScheduler({ type: "scheduler-dispose" });
-      disposePromise = new Promise<void>((resolve) => {
-        let settled = false;
-        const done = () => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(timer);
-          resolve();
-        };
-        const timer = setTimeout(() => {
-          try {
-            child.kill();
-          } catch {
-            // 忽略。
-          }
-          done();
-        }, DISPOSE_FORCE_KILL_MS);
-        child.once("exit", done);
-      });
-      return disposePromise;
+      // 普通退出保留原强杀后放行；清数据必须由同一进程 owner 确认真实干净退出。
+      return shutdown.dispose(options);
     },
   };
 }

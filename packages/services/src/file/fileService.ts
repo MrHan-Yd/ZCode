@@ -225,6 +225,28 @@ async function statWorkspaceFileSearchIgnoreFingerprint(rootPath: string): Promi
   }
 }
 
+// 官方 ZCT-2113660144497782784：权限授权或网络盘可让 readdir 永久挂起且无法取消。
+// 阈值后重复读同一路径会继续占用 libuv 线程；只复用在途枚举，settle 后立即删除，不能缓存目录内容。
+const SLOW_DIRECTORY_READ_REUSE_MS = 30_000;
+const inFlightDirectoryReads = new Map<string, { startedAt: number; entries: Promise<Dirent[]> }>();
+
+function readDirectoryEntries(path: string): Promise<Dirent[]> {
+  const pending = inFlightDirectoryReads.get(path);
+  if (pending && Date.now() - pending.startedAt >= SLOW_DIRECTORY_READ_REUSE_MS) {
+    return pending.entries;
+  }
+  const read = { startedAt: Date.now(), entries: readdir(path, { withFileTypes: true }) };
+  if (!pending) {
+    const clear = () => {
+      if (inFlightDirectoryReads.get(path) === read) inFlightDirectoryReads.delete(path);
+    };
+    // 成功和失败都释放记录；较晚的健康并发读不能清掉最早仍挂起的读取。
+    read.entries.then(clear, clear);
+    inFlightDirectoryReads.set(path, read);
+  }
+  return read.entries;
+}
+
 export function createFileService(options: CreateFileServiceOptions = {}): IFileService {
   const workspaceFileSearchFilter =
     options.workspaceFileSearchFilter ?? defaultWorkspaceFileSearchFilter;
@@ -376,7 +398,7 @@ export function createFileService(options: CreateFileServiceOptions = {}): IFile
 
   return {
     async readdir(params: { path: string; includeHidden?: boolean }): Promise<FileEntry[]> {
-      const entries = await readdir(params.path, { withFileTypes: true });
+      const entries = await readDirectoryEntries(params.path);
       const visibleEntries = await Promise.all(
         entries
           .filter((e) => {

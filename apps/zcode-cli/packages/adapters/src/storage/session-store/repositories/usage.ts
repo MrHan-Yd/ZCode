@@ -755,6 +755,8 @@ export async function querySessionPerformance(
   // 口径是闭集且最多两个值：占位符按排序后的固定顺序拼，让同一套参数形状复用同一条
   // 预编译语句，避免每次都产生新 SQL 触发重编译。
   const sources = [...new Set(input.querySources)].sort();
+  // 首内容可能晚于隐藏推理或缓冲输出，扣除 TTFT 会放大累计速度，并漏掉无 TTFT 的成功请求。
+  // 与请求日志统一按正耗时请求的完整输出 / 总耗时聚合；TTFT 只参与独立平均，不影响 TPS 选样。
   const model = db
     .prepare(
       `select
@@ -762,14 +764,8 @@ export async function querySessionPerformance(
          count(*) as modelRequestCount,
          coalesce(sum(case when time_to_first_token_ms is not null then time_to_first_token_ms else 0 end), 0) as ttftSumMs,
          coalesce(sum(case when time_to_first_token_ms is not null then 1 else 0 end), 0) as ttftCount,
-         coalesce(sum(case
-           when duration_ms is not null and time_to_first_token_ms is not null
-             and duration_ms > time_to_first_token_ms
-           then output_tokens else 0 end), 0) as tpsOutputTokens,
-         coalesce(sum(case
-           when duration_ms is not null and time_to_first_token_ms is not null
-             and duration_ms > time_to_first_token_ms
-           then duration_ms - time_to_first_token_ms else 0 end), 0) as generationMs
+         coalesce(sum(case when duration_ms > 0 then output_tokens else 0 end), 0) as tpsOutputTokens,
+         coalesce(sum(case when duration_ms > 0 then duration_ms else 0 end), 0) as tpsDurationMs
        from model_usage
        where session_id = ? and query_source in (${sources.map(() => "?").join(", ")}) and status = 'completed'`,
     )
@@ -779,7 +775,7 @@ export async function querySessionPerformance(
     ttftSumMs: number;
     ttftCount: number;
     tpsOutputTokens: number;
-    generationMs: number;
+    tpsDurationMs: number;
   };
   const tool = db
     .prepare(
@@ -800,7 +796,7 @@ export async function querySessionPerformance(
     ttftSumMs: Number(model.ttftSumMs),
     ttftCount: Number(model.ttftCount),
     tpsOutputTokens: Number(model.tpsOutputTokens),
-    generationMs: Number(model.generationMs),
+    tpsDurationMs: Number(model.tpsDurationMs),
   };
 }
 

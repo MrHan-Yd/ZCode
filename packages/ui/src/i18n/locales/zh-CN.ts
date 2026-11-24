@@ -4595,11 +4595,18 @@ const zhCN: Record<string, string> = {
   "chat.sessionStats.title": "会话统计",
   "chat.sessionStats.triggerAriaLabel": "会话统计，输出速度 {speed}",
   "chat.sessionStats.speedValue": "{speed} tok/s",
+  "chat.sessionStats.estimatedSpeedValue": "≈ {speed} tok/s",
+  "desktop.about.title": "关于 ZCode",
+  "desktop.about.applicationName": "ZCode Desktop App",
+  "desktop.about.version": "版本 {version}",
+  "desktop.about.copyright": "版权所有 © {year} ZCode。",
+  "desktop.about.optimizedForAppleSilicon": "已针对 Apple Silicon 优化。",
+  "desktop.about.ok": "确定",
   "chat.sessionStats.modelDuration": "模型用时",
   "chat.sessionStats.toolDuration": "工具调用用时",
   "chat.sessionStats.averageTtft": "首 token 平均（TTFT）",
   "chat.sessionStats.averageSpeed": "平均输出速度（TPS）",
-  "chat.sessionStats.currentSpeed": "当前输出速度",
+  "chat.sessionStats.currentSpeed": "当前速度（估算）",
   "chat.sessionStats.emptyValue": "--",
   "chat.contextUsage.cacheHitRate": "平均缓存命中率",
   "chat.contextUsage.breakdown": "上下文来源",
@@ -4690,6 +4697,8 @@ const zhCN: Record<string, string> = {
   "chat.summaryPanel.openRunningSubagentSession": "打开子智能体会话",
   // 标题栏「会话状态」图标（与 Git 工具同排）：点击唤醒/收起状态面板。
   "chat.statusEntry.label": "会话状态",
+  // 编排 run 仍在派发子代理时，标题栏角标的可访问名称带运行数。
+  "chat.statusEntry.runningLabel": "会话状态：编排进行中，{count} 个运行中",
   "chat.composer.backgroundWorks.tooltipTerminal": "运行中的终端",
   "chat.composer.backgroundWorks.tooltipAgent": "打开运行中的智能体",
   // workflow 从 bash 拆出后 badge 有三类：
@@ -4697,9 +4706,10 @@ const zhCN: Record<string, string> = {
   "chat.composer.backgroundWorks.tooltipWorkflow": "打开运行中的工作流",
   // 唯一在跑的工作流直达详情页时，徽标如实说出落点。
   "chat.composer.backgroundWorks.tooltipWorkflowDetails": "打开工作流详情",
-  "chat.composer.backgroundWorks.tooltipMixed": "打开运行中的终端与智能体",
+  "chat.composer.backgroundWorks.tooltipMixed": "打开运行中的后台活动",
+  "chat.composer.backgroundWorks.tooltipOrchestration": "打开运行中的编排",
   "chat.composer.backgroundWorks.ariaLabel":
-    "打开运行中的后台任务：Bash {bashCount} 个，工作流 {workflowCount} 个，子智能体 {subagentCount} 个，共 {count} 个",
+    "打开运行中的后台任务：Bash {bashCount} 个，工作流 {workflowCount} 个，子智能体 {subagentCount} 个，编排步骤 {orchestrationCount} 个，共 {count} 个",
   "chat.summaryPanel.goalIterationValue": "第 {count} 次迭代",
   "chat.summaryPanel.todoGoalIterationGroup": "第 {count} 轮迭代",
   "chat.summaryPanel.todoSessionGroup": "整个会话",
@@ -6834,6 +6844,11 @@ const zhCN: Record<string, string> = {
   "chat.orchestration.trigger.tooltipOn": "编排已开启，点击关闭。",
   "chat.orchestration.trigger.tooltipOff": "由计划好的团队执行这项任务。",
   "chat.orchestration.trigger.team": "选择编排团队",
+  // 输入框上方常驻状态条：面板关闭时也要能看出编排仍在跑。
+  "chat.orchestration.activity.label": "编排进行中",
+  "chat.orchestration.activity.runningAgents": "{count} 个子代理运行中",
+  "chat.orchestration.activity.details": "详情",
+  "chat.orchestration.activity.ariaLabel": "打开编排计划：{progress}；{runningAgents}",
   "chat.orchestration.picker.title": "编排团队",
   "chat.orchestration.picker.description": "通用执行与检索默认可用；选择额外的专业角色。",
   "chat.orchestration.picker.selectAll": "全选",

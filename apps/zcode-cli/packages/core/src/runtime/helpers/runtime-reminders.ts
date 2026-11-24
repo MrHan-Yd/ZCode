@@ -72,6 +72,16 @@ const PLAN_MODE_SPARSE_REMINDER = [
   `Plan mode still active (see full instructions earlier in conversation). Read-only. Follow 4-phase workflow. End turns with ${ASK_USER_QUESTION_TOOL_NAME} (for clarifications) or ${EXIT_PLAN_MODE_TOOL_NAME} (for plan approval). Never ask about plan approval via text or AskUserQuestion.`,
 ];
 
+function buildSubagentPlanModeReminder(askUserQuestionAvailable: boolean): string {
+  return [
+    PLAN_MODE_FULL_REMINDER[0],
+    "Only take read-only actions, and answer the delegated query comprehensively.",
+    ...(askUserQuestionAvailable
+      ? [`If you need clarification, use the ${ASK_USER_QUESTION_TOOL_NAME} tool.`]
+      : []),
+  ].join("\n\n");
+}
+
 const PLAN_MODE_EXIT_REMINDER = [
   "## Exited Plan Mode",
   "",
@@ -183,6 +193,7 @@ export function buildRuntimeModeReminderBody(
   entries: readonly RuntimeMessageEntry[],
   mode: CollaborationMode,
   planEnabled = mode === "plan",
+  subagent?: { askUserQuestionAvailable: boolean },
 ): string | null {
   if (!planEnabled) return null;
 
@@ -194,6 +205,9 @@ export function buildRuntimeModeReminderBody(
   ) {
     return null;
   }
+
+  // 子 Plan 曾收到根规划流程而被要求递归派发/请求根审批；子会话只完成委派的只读查询。
+  if (subagent) return buildSubagentPlanModeReminder(subagent.askUserQuestionAvailable);
 
   const nextReminderCount = countRuntimeModeReminders(entries) + 1;
   const reminderLines =

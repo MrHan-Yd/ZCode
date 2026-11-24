@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../../../../..",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "target": "ES2024"
+  },
+  "include": ["test/upstream*.test.ts"],
+  "exclude": ["node_modules", "dist"]
+}

@@ -16,7 +16,17 @@
     "test/subagentColors.test.ts",
     "test/subagentColorUsage.test.ts",
     "test/orchestrationStatusPanelRender.test.ts",
-    "test/subagentHistoryDirectory.browser.test.ts"
+    "test/subagentHistoryDirectory.browser.test.ts",
+    "test/aboutDialogHost.test.ts",
+    "test/sessionPerformanceStats.test.ts",
+    "test/liveOutputTokens.test.ts",
+    "test/subagentSpeeds.test.ts",
+    "test/fixtures/aboutDialogFixture.tsx",
+    "test/sessionPerformanceStats.browser.test.ts",
+    "test/fixtures/sessionPerformanceStatsFixture.tsx",
+    "test/composerModelSelectionPort.test.ts",
+    "test/gitCommitMessageModel.browser.test.ts",
+    "test/fixtures/gitCommitMessageModelFixture.tsx"
   ],
   "references": [
     { "path": "../provider" },

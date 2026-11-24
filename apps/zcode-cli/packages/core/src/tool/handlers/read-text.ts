@@ -12,6 +12,9 @@ import {
 
 import { estimateTokens } from "../../context/utils.js";
 
+export const READ_FILE_UNCHANGED_STUB =
+  "Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.";
+
 const EMPTY_FILE_REMINDER = formatReadToolResultWarning(
   "Warning: the file exists but the contents are empty.",
 );

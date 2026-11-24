@@ -217,6 +217,7 @@ async function loadProjectMemoryIndexContent(
       path: indexPath,
       readAt: runtime.now(),
       revisionId: read.revision?.id,
+      seededFromContext: true,
       sizeBytes: read.sizeBytes,
     });
     return read.content;

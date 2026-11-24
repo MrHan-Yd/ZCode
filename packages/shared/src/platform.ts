@@ -13,6 +13,7 @@ import type {
   SaveCliMcpToUserDirectoryRequest,
 } from "./mcp.js";
 import type { OAuthStateRegistration } from "./oauth.js";
+import type { DesktopAboutDialogPayload } from "./desktop-about.js";
 import type { AppSettings, Locale } from "./protocol.js";
 import type { ArmsCustomEventPayload, RendererTelemetryEventPayload } from "./telemetry.js";
 import type {
@@ -638,6 +639,9 @@ export interface IPlatformService {
 
   /** 打开反馈入口，由平台自行解析最终地址 */
   openFeedback(): Promise<void>;
+
+  /** 订阅主窗口内的 About 展示请求；开关状态只由 renderer 拥有。 */
+  onOpenAboutDialog?(handler: (payload: DesktopAboutDialogPayload) => void): () => void;
 
   /** 订阅 main 进程打开内置反馈对话框事件（Desktop） */
   onOpenFeedbackDialog?(handler: () => void): () => void;

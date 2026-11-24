@@ -74,6 +74,7 @@ type SessionFacade = Pick<
   | "setMode"
   | "setOrchestration"
   | "getOrchestrationState"
+  | "getOrchestrationActivity"
   | "cancelOrchestrationRun"
   | "setModel"
   | "setThoughtLevel"
@@ -397,10 +398,12 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
       });
     },
     generateWorkspaceText: async (input, options) => {
-      // 辅助文本入口只规范化模型身份；具体的最低档位由 Core 的辅助请求调用点显式决定。
+      // 固定提交模型只保存身份，严格 Factory 会先拒绝缺档；Git 的最低辅助档位必须在创建前补齐。
       const selection =
-        normalizeModelSelection(deps.providerRegistry.getView(), input.selection) ??
-        input.selection;
+        input.querySource.trim() === "git_commit_message"
+          ? completeAuxiliaryRegistryModelSelection(deps.providerRegistry, input.selection)
+          : (normalizeModelSelection(deps.providerRegistry.getView(), input.selection) ??
+            input.selection);
       return await deps.runtime.generateWorkspaceText(
         { ...input, selection },
         {
@@ -462,10 +465,12 @@ export function createSessionFacade(deps: CreateSessionFacadeDeps): SessionFacad
       return await deps.runtime.setOrchestrationConfig(input, deps.traceContext);
     },
     getOrchestrationState: () => deps.runtime.getOrchestrationState(),
+    getOrchestrationActivity: () => deps.runtime.getOrchestrationActivity(),
     cancelOrchestrationRun: async (runId: string) => {
       return await deps.runtime.cancelOrchestrationRun(runId);
     },
-    setModel: async (modelId, options) => {      // 配置命令已提交完整 Selection；转成字符串会丢档位。先整体校验再一次
+    setModel: async (modelId, options) => {
+      // 配置命令已提交完整 Selection；转成字符串会丢档位。先整体校验再一次
       // 更新/保存，非法档位不能留下已换模型的半次修改。旧字符串入口保留只改身份语义。
       const registrySelection =
         typeof modelId === "string"

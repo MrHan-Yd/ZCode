@@ -41,6 +41,7 @@ import { ModelConfigSelect, type ModelSelectGroup } from "@/ModelConfigSelect.js
 import { Button } from "@/components/ui/button.js";
 import { ChatContextUsage } from "@/chat-input-toolbar/display.js";
 import { ComposerSessionStats } from "@/v4/composer/ComposerSessionStats.js";
+import type { LiveOutputTokenReading } from "@/v4/composer/liveOutputTokens.js";
 import {
   hasChatCodingPlanUsageRemaining,
   type ChatCodingPlanUsageRemainingConfig,
@@ -364,11 +365,11 @@ export interface V4ComposerToolbarProps {
    * 读当前流式输出的估算 token 数（会话统计入口的实时速度用）。
    * 用 ref 读数而不是传值：composer 每帧都在重渲染，传值会让整条工具条跟着逐 token 重建。
    */
-  readLiveOutputTokens?: () => number;
+  readLiveOutputTokens?: () => LiveOutputTokenReading;
 }
 
 /** 没有实时读数的宿主（分享页等）：恒定 0，入口只显示持久层的累计值。 */
-const NO_LIVE_OUTPUT_TOKENS = () => 0;
+const NO_LIVE_OUTPUT_TOKENS = (): LiveOutputTokenReading => ({ tokens: 0, scopeKey: null });
 
 /** 模型 / 思考深度 / context usage 簇（渲染在发送键左侧，与旧 UI 同位）。 */
 function V4ComposerModelControlsImpl({

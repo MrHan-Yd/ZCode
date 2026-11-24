@@ -85,6 +85,12 @@ import {
   shouldEnableE2ETestBridge,
 } from "@zcode/shared";
 import { createOAuthCallbackHandler } from "./oauthCallbackBridge.js";
+import { createAboutDialogBridge } from "./aboutDialogBridge.js";
+
+const aboutDialogBridge = createAboutDialogBridge();
+ipcRenderer.on(PlatformChannels.OpenAboutDialog, (_event, payload: unknown) => {
+  aboutDialogBridge.receive(payload);
+});
 
 if (shouldEnableE2ETestBridge(process.env)) {
   contextBridge.exposeInMainWorld("__zcodeFinalArmsCustomEventsE2E", {
@@ -511,6 +517,7 @@ contextBridge.exposeInMainWorld("zcode", {
     }
     return () => openWorkspacePathCallbacks.delete(callback);
   },
+  onOpenAboutDialog: aboutDialogBridge.subscribe,
   onOpenFeedbackDialog: (callback: () => void): (() => void) => {
     const handler = () => callback();
     ipcRenderer.on(PlatformChannels.OpenFeedbackDialog, handler);

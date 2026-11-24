@@ -1,5 +1,6 @@
 import type {
   DesktopCommandId,
+  DesktopAboutDialogPayload,
   DesktopZoomState,
   DesktopWindowChromeState,
   DesktopTitleBarTheme,
@@ -169,6 +170,8 @@ declare global {
       onOpenWorkspace?(handler: () => void): () => void;
       /** 注册 main 进程通过 deep link 直接打开本地工作区目录的回调，返回 disposer */
       onOpenWorkspacePath?(handler: (path: string) => void): () => void;
+      /** 注册主窗口内 About 展示请求，返回 disposer。 */
+      onOpenAboutDialog?(handler: (payload: DesktopAboutDialogPayload) => void): () => void;
       /** 注册窗口全屏状态变化回调，返回 disposer */
       onWindowFullscreenChanged(handler: (isFullscreen: boolean) => void): () => void;
       /** 读取窗口最大化状态与系统原生圆角能力 */

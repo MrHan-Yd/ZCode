@@ -250,6 +250,14 @@ export interface V4GatewayHost {
     parentSessionId?: string;
   } | null;
   /**
+   * sessions-index：会话当前是否有活动编排 run（run 数与步数摘要）。
+   * 编排 run 不进 conversation snapshot，sessions-index 是它进入列表/通知的唯一通道。
+   * 未实现（旧宿主 / 测试桩）或会话无活动 run → 缺席，UI 保持经典行为。
+   */
+  getSessionOrchestrationActivity?(
+    sessionId: string,
+  ): import("@zcode/shared/zcode-protocol-v4").SessionOrchestrationActivity | null;
+  /**
    * config 种子：会话 runtime 的当前真值（模型选型/思考深度/协作模式）。
    * 投影初值不能写死空值——runtime 的启动默认模型、项目持久化 mode 偏好、历史会话
    * resume 恢复的上次选型都只活在 runtime 里（ModelSelected 仅在 switchModelConfig 后
@@ -1141,12 +1149,15 @@ export class ConversationV4Gateway {
     createdAt: number;
     lastActivityAt: number;
     parentSessionId?: string;
+    orchestrationActivity?: import("@zcode/shared/zcode-protocol-v4").SessionOrchestrationActivity;
   } {
     const meta = this.host.getSessionIndexMeta?.(sessionId);
+    const orchestrationActivity = this.host.getSessionOrchestrationActivity?.(sessionId) ?? null;
     return {
       createdAt: meta?.createdAt ?? 0,
       lastActivityAt: meta?.lastActivityAt ?? this.now(),
       ...(meta?.parentSessionId ? { parentSessionId: meta.parentSessionId } : {}),
+      ...(orchestrationActivity ? { orchestrationActivity } : {}),
     };
   }
 

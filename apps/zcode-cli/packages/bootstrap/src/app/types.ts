@@ -23,6 +23,7 @@ import type {
 } from "@zcode/core";
 import type {
   OrchestrationConfigState,
+  SessionOrchestrationActivity,
   V4ConversationOrchestrationStateResult,
   WorkspaceHookReviewDecision,
   WorkspaceHookTrustRevokeTarget,
@@ -627,6 +628,8 @@ export interface ZCodeApp {
   }): Promise<OrchestrationConfigState>;
   /** 时间线读取面；只读、无副作用。 */
   getOrchestrationState(): V4ConversationOrchestrationStateResult;
+  /** sessions-index 用的轻量活动摘要；无活动 run 时返回 null。 */
+  getOrchestrationActivity(): SessionOrchestrationActivity | null;
   /** 取消单个 run；返回取消后的记录（不存在时 undefined）。 */
   cancelOrchestrationRun?(runId: string): Promise<unknown>;
   setModelIoFullRetentionEnabled?(enabled: boolean): void;

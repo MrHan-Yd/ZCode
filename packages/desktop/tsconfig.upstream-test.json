@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "lib": ["es2025", "dom", "dom.iterable"],
+    "types": ["node"]
+  },
+  "include": [
+    "test/upstream*.test.ts",
+    "test/aboutDialog*.test.ts",
+    "test/desktopFrameSampler.test.ts",
+    "../services/src/runtime-tools/node-forge.d.ts"
+  ]
+}

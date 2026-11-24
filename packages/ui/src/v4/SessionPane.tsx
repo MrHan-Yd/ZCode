@@ -141,6 +141,7 @@ import { ConversationQuotaBanner } from "@/v4/ConversationQuotaBanner.js";
 import { PendingCommandRecoveryBanner } from "@/v4/PendingCommandRecoveryBanner.js";
 import { WorkspaceHookPendingBanner } from "@/v4/WorkspaceHookPendingBanner.js";
 import { ConversationStatusPanel } from "@/v4/ConversationStatusPanel.js";
+import { OrchestrationActivityStrip } from "@/v4/OrchestrationActivityStrip.js";
 import { SessionSubscriptionErrorPanel } from "@/v4/SessionSubscriptionErrorPanel.js";
 import { ConversationTimeline } from "@/v4/ConversationTimeline.js";
 import { ConversationShareImportNotice } from "@/v4/ConversationShareImportNotice.js";
@@ -1253,6 +1254,7 @@ export function SessionPane({
     sessionConfig: snapshot?.sessionId === sessionId ? snapshot.config : null,
     agentStartupAllowed: draftAgentStartupAllowed,
     modelSelectionService,
+    registerModelSelection: focused && telemetryVisible && !readOnly && !selectionSideChat,
   });
   const modelSelectionView =
     modelSelectionRead.state.status === "ready" ? modelSelectionRead.state.view : null;
@@ -4198,10 +4200,18 @@ export function SessionPane({
   const runningBackgroundWorkCount =
     statusPanelModel.runningBashWorks.length +
     statusPanelModel.runningSubagentWorks.length +
-    statusPanelModel.runningWorkflowRuns.length;
+    statusPanelModel.runningWorkflowRuns.length +
+    // 编排 run 也是实时活动：只有编排在跑时，后台徽标仍要存在，点击才能落到状态面板。
+    statusPanelModel.activeOrchestrationRuns.length;
   const runningTerminalCount = statusPanelModel.runningBashWorks.length;
   const runningAgentCount = statusPanelModel.runningSubagentWorks.length;
   const runningWorkflowCount = statusPanelModel.runningWorkflowRuns.length;
+  // 编排：活动 run 的步数是后台徽标的计数，存在活动 run 本身就是运行态事实。
+  const runningOrchestrationStepCount = statusPanelModel.activeOrchestrationRuns.reduce(
+    (count, item) => count + item.runningCount,
+    0,
+  );
+  const orchestrationActive = statusPanelModel.activeOrchestrationRuns.length > 0;
   useEffect(() => {
     setTerminalSectionOpen(false);
     setAgentSectionOpen(false);
@@ -4241,6 +4251,7 @@ export function SessionPane({
     setTerminalSectionOpen(runningTerminalCount > 0);
     setAgentSectionOpen(runningAgentCount > 0);
     setWorkflowSectionOpen(runningWorkflowCount > 0);
+    setOrchestrationSectionOpen(statusPanelModel.activeOrchestrationRuns.length > 0);
     if (sessionId) openStatusPanelOverlay(sessionId);
   }, [
     handleOpenWorkflowRunFromPanel,
@@ -4250,9 +4261,15 @@ export function SessionPane({
     runningWorkflowCount,
     sessionId,
     soleRunningWorkflowRunTarget,
+    statusPanelModel.activeOrchestrationRuns.length,
   ]);
   // 面板是顶部右侧的按需浮层（标题栏图标唤醒），覆盖正文但不改列宽。
   const statusPanelLayout = "none" as const;
+  // 常驻状态条与面板分区共享同一个打开路径：先展开编排分区，再唤醒面板。
+  const handleOpenOrchestrationFromStrip = useCallback(() => {
+    setOrchestrationSectionOpen(true);
+    if (sessionId) openStatusPanelOverlay(sessionId);
+  }, [sessionId]);
   const controlLastError = snapshot?.control.lastError ?? null;
   const controlLastErrorKey = controlLastError
     ? createSessionErrorKey(snapshot?.sessionId ?? sessionId, controlLastError)
@@ -4746,6 +4763,8 @@ export function SessionPane({
       // backgroundWorks；Composer 若直接读目录会提前隐藏 Agent 入口。这里复用状态面板按
       // childSessionId 精确回退后的计数，让两个入口共享同一份运行态真值。
       runningSubagentCount={runningAgentCount}
+      runningOrchestrationStepCount={runningOrchestrationStepCount}
+      orchestrationActive={orchestrationActive}
       onRecoverCustomModelSelection={handleRecoverCustomModelSelection}
       onSendCompressionCommand={handleSendCompressionCommand}
       error={composerError}
@@ -4874,6 +4893,12 @@ export function SessionPane({
           remoteSessionId={remoteSessionId ?? undefined}
           provider={provider}
           snapshot={snapshot}
+        />
+      ) : null}
+      {!readOnly && !selectionSideChat ? (
+        <OrchestrationActivityStrip
+          runs={orchestrationStateView.runs}
+          onOpen={handleOpenOrchestrationFromStrip}
         />
       ) : null}
       {composerNode}

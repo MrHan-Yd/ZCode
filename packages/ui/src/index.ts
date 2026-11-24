@@ -10,6 +10,7 @@ export {
 export { Root } from "./Root.js";
 export { UpdateStatusWindowRoot } from "./UpdateStatusWindowRoot.js";
 export { ConfirmDialogHost } from "./ConfirmDialog.js";
+export { AboutDialogHost } from "./AboutDialogHost.js";
 export { Terminal } from "./Terminal.js";
 export { GitGraphPane } from "./git-graph/GitGraphPane.js";
 export { layoutGitGraph } from "./git-graph/layout.js";

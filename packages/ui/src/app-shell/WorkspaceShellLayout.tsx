@@ -76,6 +76,7 @@ import { toast } from "@/components/ui/toast.js";
 import { getGitDirtyFileCount } from "@/git-branch-switcher/display.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
+import { ComposerModelSelectionProvider } from "@/hooks/useComposerModelSelection.js";
 import { getPathLeaf, toFileUrl } from "@/lib/path.js";
 import { createFileCodeViewerLineAnchor } from "@/lib/codeViewerLineAnchor.js";
 import { shouldOpenAssistantHtmlInBrowser } from "@/lib/assistantPreviewCards.js";
@@ -1699,6 +1700,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                   elementRef={conversationPanelElementRef}
                   minSize="35%"
                 >
+                  <ComposerModelSelectionProvider>
                   <section
                     data-workspace-conversation-frame="true"
                     className={cn(
@@ -1926,6 +1928,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
                       )}
                     </div>
                   </section>
+                  </ComposerModelSelectionProvider>
                 </ResizablePanel>
                 {workspaceMainView !== "automations" && workspaceMainView !== "plugin-store" ? (
                   <AnimatedTerminalPanel

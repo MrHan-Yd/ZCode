@@ -70,18 +70,24 @@ function formatDate(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+let fileLoggingEnabled = true;
+/** 清数据 commit 前日志已同步落盘；此后仅 console，不能重新 mkdir 被删除的数据根。 */
+export function stopMainFileLoggingForClearAllData(): void {
+  fileLoggingEnabled = false;
+}
+
 function write(level: LogLevel, source: string, ...args: unknown[]) {
   const now = new Date();
   const ts = formatTimestamp(now);
   const pid = process.pid;
   const message = args.map((a) => (typeof a === "string" ? a : JSON.stringify(a))).join(" ");
   const line = `[${ts}] [${level}] [pid:${pid}] [${source}] ${message}\n`;
+  // 同时保留 console 输出，方便开发调试；清数据 commit 后也不丢诊断，但不再落盘。
+  safeConsoleWrite(level, `[${ts}] [pid:${pid}] [${source}]`, ...args);
+  if (!fileLoggingEnabled) return;
   const logDir = getLogDir();
   mkdirSync(logDir, { recursive: true });
   const filePath = join(logDir, `${formatDate(now)}.log`);
-
-  // 同时保留 console 输出，方便开发调试；console 也加时间戳和 PID，与文件格式对齐
-  safeConsoleWrite(level, `[${ts}] [pid:${pid}] [${source}]`, ...args);
 
   try {
     maybeThrowInjectedFsFault({ operation: "appendFile", path: filePath });

@@ -1,5 +1,5 @@
 import { memo, useMemo } from "react";
-import { ActivityIcon, BotIcon, SquareTerminalIcon, Workflow } from "lucide-react";
+import { ActivityIcon, BotIcon, NetworkIcon, SquareTerminalIcon, Workflow } from "lucide-react";
 import { TID_V4_COMPOSER_BACKGROUND_WORK_TRIGGER } from "@zcode/shared";
 import type { BackgroundWorkSummary } from "@zcode/shared/zcode-protocol-v4";
 import { Button } from "@/components/ui/button.js";
@@ -10,12 +10,15 @@ interface ComposerBackgroundWorkCounts {
   bashCount: number;
   workflowCount: number;
   subagentCount: number;
+  orchestrationCount: number;
   totalCount: number;
 }
 
 function getComposerBackgroundWorkCounts(
   backgroundWorks: readonly BackgroundWorkSummary[],
   runningSubagentCount = 0,
+  runningOrchestrationStepCount = 0,
+  orchestrationActive = false,
 ): ComposerBackgroundWorkCounts {
   let bashCount = 0;
   let workflowCount = 0;
@@ -30,17 +33,27 @@ function getComposerBackgroundWorkCounts(
     }
   }
   const subagentCount = Math.max(0, runningSubagentCount);
+  // 编排 run 由 runtime 的 scheduler 驱动，不在 backgroundWorks 里；只有活动 run 时也要
+  // 显示 badge。步数在 run 起步/收尾的短窗口可能为 0，仍按 1 计数，避免入口闪烁。
+  const orchestrationCount = orchestrationActive
+    ? Math.max(1, Math.max(0, runningOrchestrationStepCount))
+    : 0;
   return {
     bashCount,
     workflowCount,
     subagentCount,
-    totalCount: bashCount + workflowCount + subagentCount,
+    orchestrationCount,
+    totalCount: bashCount + workflowCount + subagentCount + orchestrationCount,
   };
 }
 
 interface ConversationBackgroundWorkTriggerProps {
   backgroundWorks: readonly BackgroundWorkSummary[];
   runningSubagentCount?: number;
+  /** 活动编排 run 中正在执行的步骤数；与运行态口径同一份投影。 */
+  runningOrchestrationStepCount?: number;
+  /** 是否存在活动编排 run；步数为 0 的短窗口也要保留入口。 */
+  orchestrationActive?: boolean;
   onOpen?: () => void;
   /**
    * onOpen 的落点：
@@ -53,22 +66,33 @@ interface ConversationBackgroundWorkTriggerProps {
 function ConversationBackgroundWorkTriggerImpl({
   backgroundWorks,
   runningSubagentCount = 0,
+  runningOrchestrationStepCount = 0,
+  orchestrationActive = false,
   onOpen,
   openTarget = "panel",
 }: ConversationBackgroundWorkTriggerProps) {
   const { intl } = useZCodeIntl();
   const counts = useMemo(
-    () => getComposerBackgroundWorkCounts(backgroundWorks, runningSubagentCount),
-    [backgroundWorks, runningSubagentCount],
+    () =>
+      getComposerBackgroundWorkCounts(
+        backgroundWorks,
+        runningSubagentCount,
+        runningOrchestrationStepCount,
+        orchestrationActive,
+      ),
+    [backgroundWorks, orchestrationActive, runningOrchestrationStepCount, runningSubagentCount],
   );
 
   if (!onOpen || counts.totalCount === 0) return null;
 
   // 恰好一类时用该类文案，否则混合：三类两两组合各写一句会堆出六条同义 tooltip，
   // 而 badge 的作用只是「有实时活动，点开看」，不承担精确枚举。
-  const activeKindCount = [counts.bashCount, counts.workflowCount, counts.subagentCount].filter(
-    (count) => count > 0,
-  ).length;
+  const activeKindCount = [
+    counts.bashCount,
+    counts.workflowCount,
+    counts.subagentCount,
+    counts.orchestrationCount,
+  ].filter((count) => count > 0).length;
   const tooltip = intl.formatMessage({
     id:
       openTarget === "workflow-run"
@@ -79,7 +103,9 @@ function ConversationBackgroundWorkTriggerImpl({
             ? "chat.composer.backgroundWorks.tooltipTerminal"
             : counts.workflowCount > 0
               ? "chat.composer.backgroundWorks.tooltipWorkflow"
-              : "chat.composer.backgroundWorks.tooltipAgent",
+              : counts.orchestrationCount > 0
+                ? "chat.composer.backgroundWorks.tooltipOrchestration"
+                : "chat.composer.backgroundWorks.tooltipAgent",
   });
   const ariaLabel = intl.formatMessage(
     { id: "chat.composer.backgroundWorks.ariaLabel" },
@@ -87,6 +113,7 @@ function ConversationBackgroundWorkTriggerImpl({
       bashCount: String(counts.bashCount),
       workflowCount: String(counts.workflowCount),
       subagentCount: String(counts.subagentCount),
+      orchestrationCount: String(counts.orchestrationCount),
       count: String(counts.totalCount),
     },
   );
@@ -101,6 +128,7 @@ function ConversationBackgroundWorkTriggerImpl({
         data-background-bash-count={counts.bashCount}
         data-background-workflow-count={counts.workflowCount}
         data-background-subagent-count={counts.subagentCount}
+        data-background-orchestration-count={counts.orchestrationCount}
         data-background-total-count={counts.totalCount}
         data-background-open-target={openTarget}
         aria-label={ariaLabel}
@@ -123,6 +151,12 @@ function ConversationBackgroundWorkTriggerImpl({
             <span className="inline-flex items-center gap-0.5">
               <Workflow className="size-3.5" />
               <span>{counts.workflowCount}</span>
+            </span>
+          ) : null}
+          {counts.orchestrationCount > 0 ? (
+            <span className="inline-flex items-center gap-0.5">
+              <NetworkIcon className="size-3.5" />
+              <span>{counts.orchestrationCount}</span>
             </span>
           ) : null}
           {counts.subagentCount > 0 ? (

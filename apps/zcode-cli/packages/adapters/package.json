@@ -98,7 +98,7 @@
   "scripts": {
     "build": "tsc",
     "clean": "node ../../scripts/clean-dist.mjs",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.upstream-test.json",
     "lint": "oxlint src",
     "lint:fix": "oxlint --write src"
   },

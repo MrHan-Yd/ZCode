@@ -135,6 +135,9 @@ export async function runRegularTurnLoop(
           state.turnRequestState.entries,
           this.getMode(),
           this.getPlanEnabled(),
+          this.config.taskType === "subagent_child"
+            ? { askUserQuestionAvailable: tools.some((tool) => tool.name === "AskUserQuestion") }
+            : undefined,
         );
     if (runtimeModeReminderBody) {
       commitTurnRequestEntries(this, state.turnRequestState, [

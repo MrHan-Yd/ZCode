@@ -347,3 +347,40 @@ test("完成通知只暴露摘要与引用，不把完整 child 输出灌回主�
   assert.match(notice, /artifact orchestration:\/\/a1/);
   assert.equal(notice.includes(long), false);
 });
+
+test("Sessions-index 活动摘要只统计活动 run，并在收口后离位", async () => {
+  await withOrchestrationDirectory(async (directory) => {
+    const child = new AutoSubagent(false);
+    const { service, context } = setup(directory, child, TEAM);
+
+    // 没有活动 run：摘要缺席，sessions-index 不为此产出第二份状态。
+    assert.equal(service.activitySummary(), null);
+
+    const created = await service.start({
+      plan: orchestrationPlan([
+        orchestrationStep({ stepId: "build", role: "general-purpose", writeScope: ["src"] }),
+        orchestrationStep({
+          stepId: "verify",
+          role: "tester",
+          dependsOn: ["build"],
+          writeScope: ["tests"],
+        }),
+      ]),
+      context,
+    });
+    await waitFor(() => child.started.length === 1, "child start");
+
+    const activity = service.activitySummary();
+    assert.ok(activity);
+    assert.equal(activity.activeRunCount, 1);
+    assert.equal(activity.totalStepCount, 2);
+    assert.equal(activity.runningStepCount, 1);
+    assert.equal(activity.completedStepCount, 0);
+    assert.equal(typeof activity.startedAt, "number");
+
+    await service.cancel(created.runId);
+    await service.whenIdle();
+    // 终态 run 只作为「最近一次结果」保留，不再计入活动摘要。
+    assert.equal(service.activitySummary(), null);
+  });
+});

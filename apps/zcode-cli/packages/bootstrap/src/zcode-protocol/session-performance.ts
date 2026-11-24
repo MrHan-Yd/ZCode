@@ -1,25 +1,16 @@
 import {
   averageTtftMs,
-  calculateOutputTps,
+  calculateRequestLogAverageTps,
   sessionPerformanceParamsSchema,
   type SessionPerformanceSnapshot,
 } from "@zcode/shared";
-import type { SessionId, UsageStorePort } from "@zcode/contracts";
+import type { SessionId, SessionPerformanceQueryResult, UsageStorePort } from "@zcode/contracts";
 import { requireSession, type ZCodeProtocolAgentServerContext } from "./server-types.js";
 
 /** 会话性能聚合的原始计量 → wire 快照。平均与速率只在这里换算，两个入口共用同一份口径。 */
 function toSessionPerformanceSnapshot(
   sessionId: string,
-  aggregate: {
-    modelMs: number;
-    toolMs: number;
-    ttftSumMs: number;
-    ttftCount: number;
-    tpsOutputTokens: number;
-    generationMs: number;
-    modelRequestCount: number;
-    toolCallCount: number;
-  },
+  aggregate: Omit<SessionPerformanceQueryResult, "sessionID">,
 ): SessionPerformanceSnapshot {
   return {
     sessionId,
@@ -27,7 +18,10 @@ function toSessionPerformanceSnapshot(
       modelMs: aggregate.modelMs,
       toolMs: aggregate.toolMs,
       averageTtftMs: averageTtftMs(aggregate.ttftSumMs, aggregate.ttftCount),
-      tokensPerSecond: calculateOutputTps(aggregate.tpsOutputTokens, aggregate.generationMs),
+      tokensPerSecond: calculateRequestLogAverageTps(
+        aggregate.tpsOutputTokens,
+        aggregate.tpsDurationMs,
+      ),
       modelRequestCount: aggregate.modelRequestCount,
       toolCallCount: aggregate.toolCallCount,
     },
@@ -42,7 +36,7 @@ function emptySessionPerformanceSnapshot(sessionId: string): SessionPerformanceS
     ttftSumMs: 0,
     ttftCount: 0,
     tpsOutputTokens: 0,
-    generationMs: 0,
+    tpsDurationMs: 0,
     modelRequestCount: 0,
     toolCallCount: 0,
   });
@@ -66,7 +60,8 @@ export function readSessionPerformanceAggregate(
 /**
  * 会话统计：只读聚合持久层已有的 usage 列。
  * 平均与速率在这里换算，聚合层只负责求和，避免"平均口径"出现第二份实现。
- * TPS 复用 `calculateOutputTps`：生成时长为 0 或缺失时返回 null，不能用请求总时长替代。
+ * 原首字后尾段口径会放大隐藏推理或缓冲请求的速度；改用 `calculateRequestLogAverageTps`
+ * 与请求日志统一按成功请求的总耗时换算，合格累计耗时为 0 时返回 null。
  *
  * 单会话入口只服务主会话（面板与工具条入口），口径固定为主链 `main_turn`；
  * 子智能体的子会话走批量入口（`session-performance-batch.ts`）。

@@ -67,6 +67,7 @@ import {
 import { useServices } from "@/hooks/useServices.js";
 import { useGitRepositoryRefresh } from "@/hooks/useGitRepositoryRefresh.js";
 import { useSettings } from "@/hooks/useSettingService.js";
+import type { ComposerModelSelectionReader } from "@/v4/composer/composerModelSelectionPort.js";
 import { useZCodeIntl, type IntlInstance } from "@/i18n/IntlProvider.js";
 import { getErrorMessage } from "@/lib/errorMessage.js";
 import { runUserAction } from "@/lib/userActionTelemetry.js";
@@ -91,6 +92,7 @@ interface GitActionMenuProps {
   commitMessageConversationContext?: GitCommitMessageConversationContext | null;
   /** 当前会话正在使用的模型；生成提交消息缺省继承它。 */
   commitMessageModelSelection?: ModelSelection | null;
+  readCommitMessageModelSelection?: ComposerModelSelectionReader;
   onRefreshGit: () => void;
   className?: string;
   triggerIconOnly?: boolean;
@@ -1138,6 +1140,7 @@ export function GitActionMenu({
   activeTaskChangeSummary = null,
   commitMessageConversationContext = null,
   commitMessageModelSelection = null,
+  readCommitMessageModelSelection,
   onRefreshGit,
   className,
   triggerIconOnly = false,
@@ -1338,18 +1341,23 @@ export function GitActionMenu({
     setPushDialogOpen(true);
   }, []);
 
+  const captureCommitDialogLifetime = useCallback(() => {
+    const generation = commitDialogLoadGenerationRef.current;
+    const scope = commitDialogScope;
+    return () =>
+      commitDialogMountedRef.current &&
+      commitDialogOpenRef.current &&
+      commitDialogLoadGenerationRef.current === generation &&
+      commitDialogScopeRef.current === scope;
+  }, [commitDialogScope]);
+
   const loadCommitDialogState = useCallback(
     async (options?: { resetMessage?: boolean }) => {
       if (!commitDialogMountedRef.current || !commitDialogOpenRef.current) {
         return;
       }
-      const generation = ++commitDialogLoadGenerationRef.current;
-      const scope = commitDialogScope;
-      const isCurrentLoad = () =>
-        commitDialogMountedRef.current &&
-        commitDialogOpenRef.current &&
-        commitDialogLoadGenerationRef.current === generation &&
-        commitDialogScopeRef.current === scope;
+      ++commitDialogLoadGenerationRef.current;
+      const isCurrentLoad = captureCommitDialogLifetime();
       setCommitDialogLoading(true);
       setCommitError(null);
       if (options?.resetMessage) {
@@ -1408,7 +1416,7 @@ export function GitActionMenu({
       activeTaskChangeSummary,
       clearCommitExcludedStagePaths,
       closeCommitDialog,
-      commitDialogScope,
+      captureCommitDialogLifetime,
       intl,
       refreshGitRepository,
       workspacePath,
@@ -1437,18 +1445,29 @@ export function GitActionMenu({
     selection: ModelSelection | null;
     source: "configured" | "session" | "host-default";
   } => {
-    const configured = settings?.gitCommitMessageModelSelection ?? null;
+    if (!settings) throw new Error("提交消息模型设置尚未读取完成。");
+    const configured = settings.gitCommitMessageModelSelection ?? null;
     if (configured) {
       return { selection: configured, source: "configured" };
+    }
+    if (readCommitMessageModelSelection) {
+      const selection = readCommitMessageModelSelection();
+      // 标题栏迁移曾丢失会话模型；有 Composer 上下文时不能以空值静默切到 Host 默认渠道。
+      if (!selection) throw new Error("当前会话尚未选择可用的提交消息模型。");
+      return { selection, source: "session" };
     }
     if (commitMessageModelSelection) {
       return { selection: commitMessageModelSelection, source: "session" };
     }
     return { selection: null, source: "host-default" };
-  }, [commitMessageModelSelection, settings]);
+  }, [commitMessageModelSelection, readCommitMessageModelSelection, settings]);
 
   const generateCommitMessage = useCallback(
-    async (state: GitCommitDialogState, excludedPaths: ReadonlySet<string>): Promise<string> => {
+    async (
+      state: GitCommitDialogState,
+      excludedPaths: ReadonlySet<string>,
+      isCurrent: () => boolean,
+    ): Promise<string> => {
       const selectedRows = getCommitDialogSelectedRows(state, excludedPaths);
       const { stagedPaths } = resolveCommitRequestMode(selectedRows);
       const currentSessionFilePaths = getCurrentSessionFilePaths(state.activeTaskChangeSummary);
@@ -1492,7 +1511,9 @@ export function GitActionMenu({
         model: result.model,
       });
       // 记住这份消息是按哪批勾选写的：勾选若在生成期间或之后变化，它会立刻被作废（spec 规则 9）。
-      setGeneratedCommitMessageSelectionKey(buildCommitMessageSelectionKey(excludedPaths));
+      if (isCurrent()) {
+        setGeneratedCommitMessageSelectionKey(buildCommitMessageSelectionKey(excludedPaths));
+      }
       return result.message;
     },
     [
@@ -1521,6 +1542,7 @@ export function GitActionMenu({
       return;
     }
 
+    const isCurrent = captureCommitDialogLifetime();
     setCommitError(null);
     setCommitMessageGenerationPending(true);
 
@@ -1528,9 +1550,11 @@ export function GitActionMenu({
       const nextCommitMessage = await generateCommitMessage(
         commitDialogState,
         commitExcludedStagePaths,
+        isCurrent,
       );
-      setCommitMessage(nextCommitMessage);
+      if (isCurrent()) setCommitMessage(nextCommitMessage);
     } catch (error: unknown) {
+      if (!isCurrent()) return;
       const message = getErrorMessage(error);
       logger.warn("[GitActionMenu] 生成提交消息失败", {
         workspacePath,
@@ -1543,9 +1567,10 @@ export function GitActionMenu({
         }),
       );
     } finally {
-      setCommitMessageGenerationPending(false);
+      if (isCurrent()) setCommitMessageGenerationPending(false);
     }
   }, [
+    captureCommitDialogLifetime,
     commitExcludedStagePaths,
     commitDialogState,
     generateCommitMessage,
@@ -1614,6 +1639,7 @@ export function GitActionMenu({
         generatedSelectionKey: generatedCommitMessageSelectionKey,
         currentSelectionKey: commitSelectionKey,
       });
+      const isCurrent = captureCommitDialogLifetime();
       let nextCommitMessage = messageStale ? "" : commitMessage.trim();
       if (!nextCommitMessage) {
         setCommitError(null);
@@ -1622,9 +1648,12 @@ export function GitActionMenu({
           nextCommitMessage = await generateCommitMessage(
             commitDialogState,
             commitExcludedStagePaths,
+            isCurrent,
           );
+          if (!isCurrent()) return;
           setCommitMessage(nextCommitMessage);
         } catch (error: unknown) {
+          if (!isCurrent()) return;
           const message = getErrorMessage(error);
           logger.warn("[GitActionMenu] 生成提交消息失败", {
             workspacePath,
@@ -1638,10 +1667,12 @@ export function GitActionMenu({
           );
           return;
         } finally {
-          setCommitMessageGenerationPending(false);
+          if (isCurrent()) setCommitMessageGenerationPending(false);
         }
       }
 
+      // 等待模型期间关闭重开或切换会话后，旧闭包不得继续进入 Git 写入链。
+      if (!isCurrent()) return;
       setCommitError(null);
       setMutationPending(true);
       let committed = false;
@@ -1717,6 +1748,7 @@ export function GitActionMenu({
       }
     },
     [
+      captureCommitDialogLifetime,
       closeCommitDialog,
       commitExcludedStagePaths,
       commitDialogState,

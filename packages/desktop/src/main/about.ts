@@ -1,16 +1,15 @@
-import type { BrowserWindow, MessageBoxReturnValue } from "electron";
+import type { BrowserWindow } from "electron";
 import { existsSync, readFileSync } from "node:fs";
 import { arch, hostname, platform, release, type, version as osVersion } from "node:os";
 import { join } from "node:path";
 import {
-  DEFAULT_LOCALE,
-  type Locale,
+  PlatformChannels,
+  desktopAboutDialogPayloadSchema,
   ZCODE_BUILD_TIME,
   ZCODE_COMMIT,
   ZCODE_ENV,
   ZCODE_VERSION,
 } from "@zcode/shared";
-import { createCustomAboutDialogHtml } from "./aboutWindow.js";
 
 interface DesktopBuildMetadata {
   appVersion?: string;
@@ -52,37 +51,6 @@ interface AboutSnapshotOptions {
   };
 }
 
-const ABOUT_APPLICATION_NAME = "ZCode Desktop App";
-// 自定义 About 内容本体是 256x280；原生窗口如果同尺寸会让内容贴满透明窗口边界。
-// 这里给 BrowserWindow 额外留出背景呼吸空间，避免正式 About 看起来比 demo 更局促。
-const ABOUT_WINDOW_WIDTH = 256;
-const ABOUT_WINDOW_HEIGHT = 312;
-const ABOUT_MESSAGES: Record<
-  Locale,
-  {
-    aboutTitle: string;
-    versionLabel: string;
-    okButtonLabel: string;
-    optimizedForAppleSilicon: string;
-    copyright: (year: number) => string;
-  }
-> = {
-  "zh-CN": {
-    aboutTitle: "关于 ZCode",
-    versionLabel: "版本",
-    okButtonLabel: "确定",
-    optimizedForAppleSilicon: "已针对 Apple Silicon 优化。",
-    copyright: (year) => `版权所有 © ${year} ZCode。`,
-  },
-  "en-US": {
-    aboutTitle: "About ZCode",
-    versionLabel: "version",
-    okButtonLabel: "OK",
-    optimizedForAppleSilicon: "Optimized for Apple Silicon.",
-    copyright: (year) => `Copyright © ${year} ZCode.`,
-  },
-};
-
 function normalizeValue(value: string | undefined | null): string {
   if (typeof value !== "string") {
     return "unknown";
@@ -95,10 +63,6 @@ function normalizeValue(value: string | undefined | null): string {
 function normalizePackageVersion(version: string | undefined): string {
   const normalized = normalizeValue(version);
   return normalized === "unknown" ? normalized : normalized.replace(/^[^\d]*/, "") || normalized;
-}
-
-function getAboutMessages(locale: Locale): (typeof ABOUT_MESSAGES)[Locale] {
-  return ABOUT_MESSAGES[locale] ?? ABOUT_MESSAGES[DEFAULT_LOCALE];
 }
 
 function readJsonFile<T>(filePath: string): T | null {
@@ -190,79 +154,25 @@ export function formatAboutDetail(snapshot: AboutSnapshot): string {
   ].join("\n");
 }
 
-function formatAboutCopyright(
-  year = new Date().getFullYear(),
-  locale: Locale = DEFAULT_LOCALE,
-): string {
-  return getAboutMessages(locale).copyright(year);
-}
-
-function formatAboutOptimizationLine(
-  snapshot: Pick<AboutSnapshot, "osPlatform" | "osArch">,
-  locale: Locale = DEFAULT_LOCALE,
-): string {
-  if (snapshot.osPlatform === "darwin" && snapshot.osArch === "arm64") {
-    return getAboutMessages(locale).optimizedForAppleSilicon;
+export async function showAboutDialog(targetWindow?: BrowserWindow): Promise<void> {
+  if (!targetWindow || targetWindow.isDestroyed() || targetWindow.webContents.isDestroyed()) {
+    return;
   }
-
-  return "";
-}
-
-function resolveAboutIconPath(isPackaged: boolean): string {
-  return isPackaged
-    ? join(process.resourcesPath, "icon.png")
-    : join(import.meta.dirname, "../../build/icon.png");
-}
-
-export async function showAboutDialog(
-  parentWindow?: BrowserWindow,
-  locale: Locale = DEFAULT_LOCALE,
-): Promise<MessageBoxReturnValue> {
-  const { app, BrowserWindow } = await import("electron");
-  const snapshot = createAboutSnapshot({
+  const { app } = await import("electron");
+  if (targetWindow.isDestroyed() || targetWindow.webContents.isDestroyed()) return;
+  const payload = desktopAboutDialogPayloadSchema.parse({
     appVersion: app.getVersion(),
-    buildMetadata: readBuildMetadata(),
+    optimizedForAppleSilicon: process.platform === "darwin" && process.arch === "arm64",
   });
-  const aboutMessages = getAboutMessages(locale);
-  // 之前只有 macOS 使用自绘 About，Windows/Linux 仍走原生 message box。
-  // 问题原因：各平台原生消息框的排版、图标和按钮样式差异很大，无法复用 macOS 参考样式。
-  // 这里统一使用自绘 modal，保证 About 的品牌展示和多语言文案在三端一致。
-  const iconPath = resolveAboutIconPath(app.isPackaged);
-  const aboutWindow = new BrowserWindow({
-    width: ABOUT_WINDOW_WIDTH,
-    height: ABOUT_WINDOW_HEIGHT,
-    parent: parentWindow && !parentWindow.isDestroyed() ? parentWindow : undefined,
-    modal: Boolean(parentWindow && !parentWindow.isDestroyed()),
-    frame: false,
-    transparent: true,
-    resizable: false,
-    minimizable: false,
-    maximizable: false,
-    fullscreenable: false,
-    show: false,
-    title: aboutMessages.aboutTitle,
-    icon: existsSync(iconPath) ? iconPath : undefined,
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
-  });
-  aboutWindow.setMenuBarVisibility(false);
-  aboutWindow.once("ready-to-show", () => {
-    aboutWindow.show();
-  });
-  void aboutWindow.loadURL(
-    `data:text/html;charset=utf-8,${encodeURIComponent(
-      createCustomAboutDialogHtml({
-        applicationName: ABOUT_APPLICATION_NAME,
-        appVersion: snapshot.appVersion,
-        copyright: formatAboutCopyright(undefined, locale),
-        optimizationLine: formatAboutOptimizationLine(snapshot, locale),
-        versionLabel: aboutMessages.versionLabel,
-        okButtonLabel: aboutMessages.okButtonLabel,
-      }),
-    )}`,
-  );
-  return { response: 0, checkboxChecked: false };
+  const send = () => {
+    if (!targetWindow.isDestroyed() && !targetWindow.webContents.isDestroyed()) {
+      // 透明 native modal 销毁会重新激活 Acrylic 父窗；同文档弹窗不再经过这条白闪边界。
+      targetWindow.webContents.send(PlatformChannels.OpenAboutDialog, payload);
+    }
+  };
+  if (targetWindow.webContents.isLoadingMainFrame()) {
+    targetWindow.webContents.once("dom-ready", send);
+  } else {
+    send();
+  }
 }

@@ -9,6 +9,7 @@ import { dirname, isAbsolute, join, resolve } from "node:path";
 import { Emitter } from "@zcode/rpc";
 import {
   parseZCodeProcessDiagnostic,
+  redactAgentDiagnosticSecrets,
   ZCODE_AGENT_LIFECYCLE_LOG_MARKER,
   ZCODE_PROCESS_DIAGNOSTIC_NAME_MAX_CHARS,
   ZCODE_PROCESS_DIAGNOSTIC_MESSAGE_MAX_CHARS,
@@ -246,19 +247,9 @@ const errorLog = (...args: unknown[]) => serviceLog.error(undefined, ...args);
 
 const AGENT_STDERR_TAIL_MAX_LINES = 20;
 const AGENT_STDERR_LINE_MAX_CHARS = 1_000;
-const AGENT_STDERR_SENSITIVE_ASSIGNMENT_PATTERN =
-  /(["']?(?:api[-_]?key|authorization|cookie|credential|password|secret|token)["']?\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;}]+)/gi;
-const AGENT_STDERR_AUTH_SCHEME_PATTERN = /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi;
-const AGENT_STDERR_API_KEY_PATTERN = /\b(sk-)[A-Za-z0-9_-]{16,}\b/gi;
-
 function redactAgentDiagnostic(value: string): string {
-  return (
-    value
-      .replace(AGENT_STDERR_SENSITIVE_ASSIGNMENT_PATTERN, "$1<redacted>")
-      .replace(AGENT_STDERR_AUTH_SCHEME_PATTERN, "$1 <redacted>")
-      // 裸 key 也必须在跨进程诊断和生产日志之前遮盖。
-      .replace(AGENT_STDERR_API_KEY_PATTERN, "$1<redacted>")
-  );
+  // 修复原因：官方 b95ebaff 统一 services/main 的凭据 owner，防止赋值替换先破坏 Bearer 锚点。
+  return redactAgentDiagnosticSecrets(value);
 }
 
 const debugLog = (...args: unknown[]) => {

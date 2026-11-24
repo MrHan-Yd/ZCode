@@ -61,7 +61,10 @@ test("收起态取运行最久的那个：与同一处显示的时长指向同�
 });
 
 test("全部缺 startedAt 时回落成第一个：时长是 1 秒兜底，读数仍指向同一行", () => {
-  const subagents = [{ childSessionId: "a" }, { childSessionId: "b" }];
+  const subagents: Array<{ childSessionId: string; startedAt?: number }> = [
+    { childSessionId: "a" },
+    { childSessionId: "b" },
+  ];
 
   assert.equal(resolveLongestRunningSubagent(subagents, 10_000)?.childSessionId, "a");
   assert.equal(resolveLongestRunningSubagent([], 10_000), null);

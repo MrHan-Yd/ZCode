@@ -5,6 +5,7 @@ import {
 } from "../tool/read-file-state-metadata.js";
 import { createReadFileStateKey, normalizeReadFileStateMtimeMs } from "../tool/read-file-state.js";
 import type { ReadFileStateMap } from "../tool/types.js";
+import { READ_FILE_UNCHANGED_STUB } from "../tool/handlers/read-text.js";
 import { activeSessionMessages } from "./session-history-hydrator.js";
 
 export interface ReadFileStateHydrationResult {
@@ -24,13 +25,17 @@ export async function hydrateReadFileStateFromSession(input: {
   branchCutAfterMessageId?: MessageId;
   messages: MessageWithParts[];
   readFileState: ReadFileStateMap;
+  retainContextSeeds?: boolean;
   rewindCreatedMessageId?: MessageId;
   rewindKeptMessageIds?: readonly MessageId[];
   rewindTargetMessageId?: MessageId;
   workingDirectory: string;
   workspaceRoot: string;
 }): Promise<ReadFileStateHydrationResult> {
-  input.readFileState.clear();
+  // rewind 不重读上下文，整表清空会让已提供的 MEMORY.md 被误判未读；仅保留未被工具覆盖的种子。
+  for (const [key, entry] of input.readFileState) {
+    if (!(input.retainContextSeeds && entry.seededFromContext)) input.readFileState.delete(key);
+  }
   const activeMessages = activeSessionMessages(input.messages, {
     branchCutAfterMessageId: input.branchCutAfterMessageId,
     includeCompactPreservedSegment: false,
@@ -52,6 +57,8 @@ export async function hydrateReadFileStateFromSession(input: {
       if (!isCompletedToolPart(part)) continue;
 
       if (part.tool === "Read") {
+        // 缓存命中未提供新正文，恢复其副本会抹掉上下文种子并伪造读时间，连续 rewind 再次误报未读。
+        if (part.state.output === READ_FILE_UNCHANGED_STUB) continue;
         const restored = restoreReadToolState(input, part, result);
         if (restored) result.restoredCount++;
         continue;

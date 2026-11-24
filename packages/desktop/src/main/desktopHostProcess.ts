@@ -119,12 +119,13 @@ interface SpawnHostProcessOptions {
   attachInitialServicePort?: boolean;
 }
 
-const exitedHostProcesses = new WeakSet<ElectronUtilityProcess>();
-const disposingHostProcesses = new Set<ElectronUtilityProcess>();
-
-export function listDisposingHostProcesses(): ElectronUtilityProcess[] {
-  return Array.from(disposingHostProcesses);
-}
+import {
+  disposeHostProcess,
+  disposeHostProcessAndWait,
+  listDisposingHostProcesses,
+  recordUtilityProcessExit,
+} from "./desktopHostShutdown.js";
+export { disposeHostProcess, disposeHostProcessAndWait, listDisposingHostProcesses };
 
 export function loadWindow(
   win: BrowserWindow,
@@ -595,7 +596,6 @@ export function spawnHostProcess(
       return;
     }
 
-
     if (result.data.type === HostResponseTypes.BotRemoteWorkspaceReconnectRequest) {
       const request = result.data;
       const handler = dependencies.handleBotRemoteWorkspaceReconnectRequest;
@@ -779,7 +779,7 @@ export function spawnHostProcess(
   registerHostProcess(label, child);
 
   child.on("exit", (code) => {
-    exitedHostProcesses.add(child);
+    recordUtilityProcessExit(child, code);
     // Host exit 是 fail-hidden 权威边界；不能依赖即将退出的 Host 再补发 inactive。
     dependencies.onCuaOperationStateSourceExited?.(child);
     hostLogRelay.flushRawLogs();
@@ -798,106 +798,4 @@ export function spawnHostProcess(
   });
 
   return child;
-}
-
-export function disposeHostProcess(
-  child: ElectronUtilityProcess,
-  label: string,
-  disposingHostProcessTimers: WeakMap<ElectronUtilityProcess, ReturnType<typeof setTimeout>>,
-  logger: {
-    info: (...args: unknown[]) => void;
-    warn: (...args: unknown[]) => void;
-  },
-  forceKillDelayMs = 300,
-) {
-  if (disposingHostProcessTimers.has(child)) {
-    return;
-  }
-  disposingHostProcesses.add(child);
-
-  logger.info(
-    `[disposeHostProcess] disposing host process (${label}), pid=${child.pid ?? "unknown"}`,
-  );
-
-  try {
-    child.postMessage({ type: HostMessageTypes.Dispose });
-  } catch (error) {
-    logger.warn(`[disposeHostProcess] failed to post dispose to (${label}):`, error);
-  }
-
-  // host 收到 Dispose 后需要等待 agent 进程树的 SIGTERM/SIGKILL 兜底完成。
-  // 如果 main 仍按 150/300ms 强杀 host，host 会先退出，zcode-cli/app-server 子进程就可能被 init 接管成孤儿。
-  const effectiveForceKillDelayMs = Math.max(forceKillDelayMs, 3_500);
-  const killTimer = setTimeout(() => {
-    disposingHostProcessTimers.delete(child);
-    try {
-      child.kill();
-    } catch (error) {
-      logger.warn(`[disposeHostProcess] failed to kill host process (${label}):`, error);
-    }
-  }, effectiveForceKillDelayMs);
-
-  disposingHostProcessTimers.set(child, killTimer);
-  child.once("exit", () => {
-    exitedHostProcesses.add(child);
-    disposingHostProcesses.delete(child);
-    clearTimeout(killTimer);
-    disposingHostProcessTimers.delete(child);
-  });
-}
-export function disposeHostProcessAndWait(
-  child: ElectronUtilityProcess,
-  label: string,
-  disposingHostProcessTimers: WeakMap<ElectronUtilityProcess, ReturnType<typeof setTimeout>>,
-  logger: {
-    info: (...args: unknown[]) => void;
-    warn: (...args: unknown[]) => void;
-  },
-  options: {
-    forceKillDelayMs?: number;
-    waitTimeoutMs?: number;
-  } = {},
-): Promise<void> {
-  // Electron UtilityProcess 不是 Node ChildProcess，没有 exitCode 字段。
-  // 右键 Dock 退出会走 before-quit -> disposeHostProcessAndWait；旧判断把运行中的 host
-  // 的 undefined exitCode 当成“已退出”。这里改为记录 exit 事件，避免第一次退出漏发 Dispose。
-  if (exitedHostProcesses.has(child)) {
-    return Promise.resolve();
-  }
-
-  const waitTimeoutMs = Math.max(options.waitTimeoutMs ?? 0, 0);
-
-  return new Promise((resolve) => {
-    let settled = false;
-    let waitTimeout: ReturnType<typeof setTimeout> | null = null;
-
-    const settle = () => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      if (waitTimeout) {
-        clearTimeout(waitTimeout);
-        waitTimeout = null;
-      }
-      resolve();
-    };
-
-    child.once("exit", () => {
-      exitedHostProcesses.add(child);
-      settle();
-    });
-
-    if (waitTimeoutMs > 0) {
-      waitTimeout = setTimeout(() => {
-        logger.warn(
-          `[disposeHostProcessAndWait] host process exit wait timed out (${label}), pid=${child.pid ?? "unknown"}`,
-        );
-        settle();
-      }, waitTimeoutMs);
-      waitTimeout.unref?.();
-    }
-
-    disposeHostProcess(child, label, disposingHostProcessTimers, logger, options.forceKillDelayMs);
-  });
 }

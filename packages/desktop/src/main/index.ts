@@ -50,7 +50,7 @@ import { join, resolve } from "node:path";
 import { homedir, hostname } from "node:os";
 import {
   createCredentialService,
-  createSettingService,
+  createSettingServiceWithMigrations,
   createTelemetryCore,
   createTelemetryMarketingParamsLoader,
   createTelemetryUserIdLoader,
@@ -65,6 +65,7 @@ import {
 } from "@zcode/services/node";
 import {
   desktopMenuMessageIds,
+  DesktopCommandIds,
   type Locale,
   type AppSettings,
   PlatformChannels,
@@ -82,7 +83,8 @@ import {
   type TelemetryEventPayload,
   HostMessageTypes,
 } from "@zcode/shared";
-import { logger } from "./logger.js";
+import { logger, stopMainFileLoggingForClearAllData } from "./logger.js";
+import { waitForClearDataPreparation, shouldBlockQuitForClearData } from "./desktopClearData.js";
 import { markMainLaunchAppReady } from "./desktopLaunchMarks.js";
 import { createCuaPipFocusRouter, resolveCuaPipWindowKey } from "./cuaPipFocusRouter.js";
 import { createDesktopTelemetryFetch } from "./desktopTelemetryFetch.js";
@@ -201,6 +203,7 @@ import {
 import { resolveCanonicalWslTarget } from "./desktopWslTargetResolver.js";
 import {
   listRegisteredHostAgentProcessIds,
+  isMainApplicationWindowWebContents,
   setBrowserUseGuestWebContentsIdsProvider,
 } from "./resourceManagerWindow.js";
 import { createDesktopHelpConfigReader } from "./desktopHelpConfig.js";
@@ -620,6 +623,11 @@ const forceQuitRef = { current: false };
 const explicitQuitRef = { current: false };
 let appQuitPreparationInFlight: Promise<void> | null = null;
 let hasPreparedAppQuit = false;
+// 清数据是独立的终态 admission：失败保留窗口/草稿，只允许用户显式重启恢复，不能复活旧 writer。
+let clearDataAdmissionClosed = false;
+let clearDataOperationFailed = false;
+let clearDataRecoveryRequested = false;
+let clearDataPreparation: Promise<void> | undefined;
 const windowWorkspaceMap = new Map<number, Set<string>>();
 const windowTaskRealtimeHostIdMap = new Map<number, string>();
 const windowUnreadCountMap = new Map<number, number>();
@@ -674,7 +682,8 @@ const UPDATE_STATUS_WINDOW_COMPACT_HEIGHT = 205;
 const UPDATE_STATUS_WINDOW_PROGRESS_HEIGHT = 224;
 const UPDATE_STATUS_WINDOW_READY_HEIGHT = UPDATE_STATUS_WINDOW_PROGRESS_HEIGHT - 54;
 const UPDATE_STATUS_WINDOW_TRAFFIC_LIGHT_POSITION = { x: 10, y: 10 } as const;
-const mainSettingService = createSettingService();
+const mainSettingsLifecycle = createSettingServiceWithMigrations();
+const mainSettingService = mainSettingsLifecycle.service;
 const appLaunchGate = createAppLaunchGate();
 const appLaunchCoordinator = createAppLaunchCoordinator(appLaunchGate);
 const appTelemetryCredentialService = createCredentialService();
@@ -889,7 +898,10 @@ function focusForceUpdateGateWindow() {
 }
 
 const primaryWindowCoordinator = createPrimaryWindowCoordinator({
-  listWindows: getApplicationWindowsExcludingCuaIndicator,
+  listWindows: () =>
+    getApplicationWindowsExcludingCuaIndicator().filter((win) =>
+      isMainApplicationWindowWebContents(win.webContents.id),
+    ),
   resolveStartupWindowBootstrap: () => {
     if (startupOpenWorkspaceRequest) {
       const request = startupOpenWorkspaceRequest;
@@ -915,6 +927,7 @@ const primaryWindowCoordinator = createPrimaryWindowCoordinator({
     createWindowInstance(startupBootstrap);
   },
   canCreateWindow: (reason) => {
+    if (clearDataAdmissionClosed) return false;
     if (!forceUpdateMainWindowCreationBlocked) {
       return true;
     }
@@ -1352,12 +1365,51 @@ function confirmAppQuit(originWindow?: BrowserWindow | null) {
   return result === 0;
 }
 
+function prepareClearAllData(): Promise<void> {
+  if (clearDataPreparation) return clearDataPreparation;
+  if (appQuitPreparationInFlight || hasPreparedAppQuit) {
+    return Promise.reject(new Error("应用已经在退出，不能同时清理数据"));
+  }
+  clearDataAdmissionClosed = true;
+  // clear 不依赖普通退出的 fail-open 返回值：并行等待原 owner 的真实退出与 Main 底层写入。
+  const hosts = [...new Set([...windowHostProcessMap.values(), ...listDisposingHostProcesses()])];
+  const scheduler = cronScheduler;
+  const strictOwners = hosts.map((child, index) =>
+    disposeHostProcessAndWait(
+      child,
+      `clear-all-data-${index}`,
+      disposingHostProcessTimers,
+      logger,
+      {
+        forceKillDelayMs: activeAppShutdownPolicy.forceKillDelayMs,
+        waitTimeoutMs: activeAppShutdownPolicy.waitTimeoutMs,
+        requireCleanExit: true,
+      },
+    ),
+  );
+  if (scheduler) strictOwners.push(scheduler.dispose({ requireCleanExit: true }));
+  const settingsDrain = mainSettingsLifecycle.quiesceForClearAllData();
+  const quitPreparation = prepareAppQuit("desktop-command-clear-all-data");
+  clearDataPreparation = waitForClearDataPreparation(
+    Promise.all([...strictOwners, settingsDrain, quitPreparation]).then(() => undefined),
+    activeAppShutdownPolicy.waitTimeoutMs,
+  );
+  return clearDataPreparation;
+}
+
 async function executeDesktopCommandForApp(
   command: Parameters<typeof executeDesktopCommand>[0]["command"],
   senderWindow?: BrowserWindow | null,
 ) {
+  if (
+    clearDataAdmissionClosed &&
+    !(command === DesktopCommandIds.RelaunchApp && clearDataOperationFailed)
+  ) {
+    throw new Error("应用清理准备已开始；操作结束后可重启应用恢复");
+  }
   return executeDesktopCommand({
     fetchHelpConfig: readHelpConfig,
+    ensurePrimaryWindow: primaryWindowCoordinator.ensurePrimaryWindow,
     command,
     senderWindow,
     logger,
@@ -1370,10 +1422,16 @@ async function executeDesktopCommandForApp(
     onZCodeEndpointChanged: handleZCodeEndpointChanged,
     zcodeEndpointEnvBaseOrigin: resolveZCodeEndpointEnvBaseOrigin(hostProcessLocalEnv),
     onRelaunchApp: async () => {
+      clearDataRecoveryRequested = clearDataAdmissionClosed && clearDataOperationFailed;
       await prepareAppQuit("desktop-command-relaunch");
       app.relaunch();
       app.quit();
     },
+    beforeClearAllData: prepareClearAllData,
+    onClearAllDataFailed: () => {
+      clearDataOperationFailed = true;
+    },
+    stopFileLogging: stopMainFileLoggingForClearAllData,
     credentialsDir: getCredentialsDir(),
     currentApplicationLocale,
   });
@@ -1676,6 +1734,7 @@ function openUpdateStatusWindow() {
 }
 
 function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
+  if (clearDataAdmissionClosed) return;
   const runtimeProcessEnvPreparation = takeRuntimeProcessEnvPreparation();
   const win = createWindow({
     iconPath,
@@ -1702,6 +1761,7 @@ function createWindowInstance(startupBootstrap: StartupWindowBootstrap = {}) {
     windowHostProcessMap,
     onHostProcessReady: (windowKey) => cuaPipFocusRouter.refreshWindow(windowKey),
     awaitFirstHostSpawnDecision,
+    canSpawnHost: () => !clearDataAdmissionClosed,
     spawnHostProcess: (win, label, initMessage) =>
       spawnHostProcess(
         win,
@@ -1988,6 +2048,7 @@ app.whenReady().then(async () => {
   });
   onLocalDatabaseStartupReady(() => {
     try {
+      if (clearDataAdmissionClosed) return;
       cronScheduler = spawnCronScheduler({
         hostProcessLocalEnv,
         logger,
@@ -2351,6 +2412,8 @@ app.on("browser-window-created", (_, win) => {
   });
 });
 app.on("window-all-closed", () => {
+  // clear commit 会关闭窗口；必须等清理成功才退出，不能由最后窗口事件抢先 app.quit。
+  if (clearDataAdmissionClosed) return;
   if (process.platform === "darwin") {
     // macOS: keep app running when all windows are closed
     return;
@@ -2359,6 +2422,11 @@ app.on("window-all-closed", () => {
   app.quit();
 });
 app.on("before-quit", (event) => {
+  // 清理准备/删除仍在飞时普通退出不能抢先收尾；仅失败后用户显式重启可绕过此屏障。
+  if (shouldBlockQuitForClearData(clearDataAdmissionClosed, clearDataRecoveryRequested)) {
+    event.preventDefault();
+    return;
+  }
   // Windows 最后窗口关闭会在 close 阶段提前确认并标记 forceQuit；
   // macOS 的 Cmd+Q / 菜单退出不会走该窗口关闭确认，必须在 before-quit 保留应用级确认兜底。
   if (!forceQuitRef.current && shouldConfirmAppQuit() && !confirmAppQuit()) {

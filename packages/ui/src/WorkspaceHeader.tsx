@@ -215,6 +215,7 @@ export function WorkspaceHeader({
         <WorkspaceHeaderActionSection
           variant={variant}
           activeTaskId={activeTaskId}
+          commitMessageSessionId={activeTaskId}
           activeSessionId={activeSessionId}
           user={user}
           readOnlyReason={readOnlyReason}

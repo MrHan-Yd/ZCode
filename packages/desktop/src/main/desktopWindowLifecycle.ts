@@ -65,6 +65,8 @@ export function createWindow(options: {
    * 避免冷启动快照 { enabled:false } 被烤进首 Host env 后无法被异步成功结果覆盖。
    */
   awaitFirstHostSpawnDecision?: () => Promise<void>;
+  /** 清数据关闭 Main admission 后，迟到 dom-ready/env 不能重新创建 Host writer。 */
+  canSpawnHost?: () => boolean;
   /** Local Host map insertion completed; presentation facts can now be replayed safely. */
   onHostProcessReady?: (windowKey: number) => void;
   resolveBrowserViewOwner?: Parameters<typeof createBrowserWindow>[0]["resolveBrowserViewOwner"];
@@ -186,7 +188,11 @@ export function createWindow(options: {
     }
 
     const spawnLocalHost = (runtimeProcessEnvPatch: Record<string, string>) => {
-      if (currentDomReadyGeneration !== domReadyGeneration || win.isDestroyed()) {
+      if (
+        currentDomReadyGeneration !== domReadyGeneration ||
+        win.isDestroyed() ||
+        options.canSpawnHost?.() === false
+      ) {
         return;
       }
       const primaryWarmupTarget = options.agentWarmupTargets?.[0];

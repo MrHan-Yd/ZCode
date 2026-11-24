@@ -103,11 +103,8 @@ export function OrchestrationTrigger({
             <span className="inline whitespace-nowrap group-data-[composer-compact=true]/orchestration:hidden">
               {label}
             </span>
-            {enabled && activeRunCount > 0 ? (
-              <span className="rounded-full bg-brand/25 px-1.5 text-ui-xs text-brand tabular-nums">
-                {activeRunCount}
-              </span>
-            ) : null}
+            {/* 活动 run 数不再画在这里：它是运行态而非配置态，统一由输入框后台徽标与
+                常驻编排状态条表达，避免「编排 1」被读成团队人数。 */}
           </Button>
         </ControlHintTooltip>
         <span

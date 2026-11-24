@@ -6,6 +6,7 @@ import { GitBranchSwitcher } from "@/GitBranchSwitcher.js";
 import { GitPullAction } from "@/GitPullAction.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { GitToolsModel } from "@/v4/gitToolsModel.js";
+import type { ComposerModelSelectionReader } from "@/v4/composer/composerModelSelectionPort.js";
 
 interface GitToolsPanelProps {
   workspacePath: string;
@@ -14,6 +15,7 @@ interface GitToolsPanelProps {
   gitWorktreeReviewSourceId?: GitChangeSourceId | null;
   activeTaskChangeSummary?: ZCodeTaskChangeSummary | null;
   commitMessageModelSelection?: ModelSelection | null;
+  readCommitMessageModelSelection?: ComposerModelSelectionReader;
   onRefreshGit: () => void;
   onOpenGitReview?: (sourceId?: GitChangeSourceId) => void;
 }
@@ -39,6 +41,7 @@ export function GitToolsPanel({
   gitWorktreeReviewSourceId,
   activeTaskChangeSummary,
   commitMessageModelSelection = null,
+  readCommitMessageModelSelection,
   onRefreshGit,
   onOpenGitReview,
 }: GitToolsPanelProps) {
@@ -113,6 +116,7 @@ export function GitToolsPanel({
           gitSummary={gitTools.summary}
           activeTaskChangeSummary={activeTaskChangeSummary ?? null}
           commitMessageModelSelection={commitMessageModelSelection}
+          readCommitMessageModelSelection={readCommitMessageModelSelection}
           onRefreshGit={onRefreshGit}
           triggerLayout="status-row"
           className="w-full"

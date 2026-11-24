@@ -4,6 +4,7 @@ import {
   TID_WORKSPACE_HELP_MENU_TRIGGER,
 } from "@zcode/shared";
 import { ActivityIcon, BookOpenIcon, CircleHelpIcon, InfoIcon, RefreshCwIcon } from "lucide-react";
+import { useRef } from "react";
 import { Badge } from "@/components/ui/badge.js";
 import { Button } from "@/components/ui/button.js";
 import {
@@ -33,6 +34,8 @@ export function WorkspaceHelpMenuButton({
 }) {
   const { intl } = useZCodeIntl();
   const platform = usePlatform();
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const pendingAboutRef = useRef(false);
   const updateMenu = useDesktopUpdateMenu(isDesktop);
   const helpMenuLabel = intl.formatMessage({ id: "workspaceHeader.help.menu" });
   const helpMenuActions = createHelpMenuActionHandlers({
@@ -44,7 +47,7 @@ export function WorkspaceHelpMenuButton({
   };
 
   const handleShowAbout = () => {
-    void platform.executeDesktopCommand(DesktopCommandIds.ShowAbout);
+    pendingAboutRef.current = true;
   };
 
   return (
@@ -52,6 +55,7 @@ export function WorkspaceHelpMenuButton({
       <ControlHintTooltip title={helpMenuLabel} side="bottom">
         <DropdownMenuTrigger asChild>
           <Button
+            ref={triggerRef}
             type="button"
             variant="ghost"
             size="icon-md"
@@ -71,6 +75,14 @@ export function WorkspaceHelpMenuButton({
       <DropdownMenuContent
         align="end"
         className="min-w-0 w-max [&_[data-slot=dropdown-menu-item]]:pr-6"
+        onCloseAutoFocus={(event) => {
+          if (!pendingAboutRef.current) return;
+          pendingAboutRef.current = false;
+          // 菜单先释放焦点再打开同文档 Dialog，避免菜单退出时抢走 About 的焦点。
+          event.preventDefault();
+          triggerRef.current?.focus({ preventScroll: true });
+          void platform.executeDesktopCommand(DesktopCommandIds.ShowAbout);
+        }}
       >
         <DropdownMenuItem onSelect={helpMenuActions.openProductDocs}>
           <BookOpenIcon className="size-4" />

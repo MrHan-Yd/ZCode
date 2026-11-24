@@ -4,6 +4,7 @@ import { createRoot } from "react-dom/client";
 import { useEffect } from "react";
 import {
   AppErrorBoundary,
+  AboutDialogHost,
   Root,
   GlobalDatabaseStartupLoading,
   UpdateStatusWindowRoot,
@@ -170,6 +171,7 @@ function renderDatabaseStartup(): void {
         resolveSystemLocale={desktopPlatform.getSystemLocale}
       >
         <StartupReadyNotifier />
+        <AboutDialogHost key="desktop-about" platform={desktopPlatform} />
         <GlobalDatabaseStartupLoading
           state={databaseStartupAdmission.state}
           onRetry={() => {
@@ -331,6 +333,7 @@ function initializeBusinessRoot(port: MessagePort): void {
         resolveSystemLocale={desktopPlatform.getSystemLocale}
       >
         <StartupReadyNotifier />
+        <AboutDialogHost key="desktop-about" platform={desktopPlatform} />
         <Root
           services={services}
           platform={desktopPlatform}

@@ -30,6 +30,7 @@ import { getProjection } from "./config.js";
 import { getSessionId } from "./config.js";
 import {
   cancelOrchestrationRun,
+  getOrchestrationActivity,
   getOrchestrationState,
   setOrchestrationConfig,
 } from "./orchestration.js";
@@ -209,6 +210,7 @@ export function installAgentRuntimeMethods(ctor: AgentRuntimeConstructor): void 
   proto.setExecutionState = setExecutionState;
   proto.setOrchestrationConfig = setOrchestrationConfig;
   proto.getOrchestrationState = getOrchestrationState;
+  proto.getOrchestrationActivity = getOrchestrationActivity;
   proto.cancelOrchestrationRun = cancelOrchestrationRun;
   proto.grantPermissionFullAccess = grantPermissionFullAccess;
   proto.initializeSessionShellEnvironmentIfNeeded = initializeSessionShellEnvironmentIfNeeded;

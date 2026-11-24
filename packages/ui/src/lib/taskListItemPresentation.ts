@@ -15,6 +15,12 @@ export function deriveTaskLeadingIndicator(
     return "error";
   }
 
+  // 编排 run 仍在跑时优先显示运行态：整项工作没结束，不能让未读蓝点或完成态盖住它。
+  // 经典会话仍保持 unread 优先于 running 的既有次序（见下方分支）。
+  if ((activity?.orchestrationActivity?.activeRunCount ?? 0) > 0) {
+    return "loading";
+  }
+
   // unread 是 tasks-index membership 字段，蓝点必须直接读取当前
   // query-cache row；不再回退旧 Zustand map，避免两个未读权威互相打架。
   if (typeof task.unreadAt === "number") {

@@ -24,6 +24,17 @@ function currentTurnIdOf(snapshot: ConversationSnapshot): string | null {
   return snapshot.rows.window.at(-1)?.turnId ?? null;
 }
 
+/** 会话、轮与窗口边界变化后的累计值不可比；只读首末行确定作用域，不扫描正文。 */
+export function resolveTurnOutputTokenScopeKey(
+  snapshot: ConversationSnapshot | null,
+): string | null {
+  if (!snapshot) return null;
+  const currentTurnId = currentTurnIdOf(snapshot);
+  const firstRowId = snapshot.rows.window[0]?.rowId;
+  if (!snapshot.sessionId || !currentTurnId || firstRowId === undefined) return null;
+  return JSON.stringify([snapshot.sessionId, currentTurnId, firstRowId]);
+}
+
 /**
  * 当前轮已产出的估算 token 数。
  *
@@ -53,25 +64,21 @@ export function countTurnOutputTokens(snapshot: ConversationSnapshot | null): nu
 /**
  * 带按行缓存的整轮估算器：整轮累计意味着每秒要读的正文比单个流式行多得多，但一轮里
  * 绝大多数行已经写完、文本长度不再变化。缓存按 rowId 记住上次的 (长度, 宽字符数)，
- * 长度不变直接复用，一秒只重算仍在增长的 1~2 行；换轮清空。
+ * 长度不变直接复用，一秒只重算仍在增长的 1~2 行；会话、轮或窗口边界变化时清空。
  */
 export function createTurnOutputTokenEstimator(): (
   snapshot: ConversationSnapshot | null,
 ) => number {
-  let turnId: string | null = null;
+  let scopeKey: string | null = null;
   const measuredRows = new Map<number, { length: number; wideChars: number }>();
   return (snapshot) => {
-    if (!snapshot) {
-      turnId = null;
+    const currentScopeKey = resolveTurnOutputTokenScopeKey(snapshot);
+    if (currentScopeKey !== scopeKey) {
+      scopeKey = currentScopeKey;
       measuredRows.clear();
-      return 0;
     }
+    if (!snapshot || currentScopeKey === null) return 0;
     const currentTurnId = currentTurnIdOf(snapshot);
-    if (currentTurnId !== turnId) {
-      turnId = currentTurnId;
-      measuredRows.clear();
-    }
-    if (currentTurnId === null) return 0;
     let charCount = 0;
     let wideCharCount = 0;
     for (const row of snapshot.rows.window) {

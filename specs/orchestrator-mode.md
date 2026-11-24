@@ -451,6 +451,25 @@ Phase 5 设计（实现前先固定所有权与接线）：
   - **测试**：CLI 投影测试覆盖 `TurnStarted{orchestrationEnabled}` → row 标记与冷恢复 metadata 回填；UI 纯样式测试锁定两种状态只差边框色（`data-v4-user-input-orchestration` 由 `ConversationRowView` 在编排轮输出）。
   - **验证记录**：`orchestrationUserInputMarker.test.ts` 7/7（含排队后续输入继承与经典轮反例）、`userInputBubbleStyle.test.ts` 3/3；core 编排回归 127/127、bootstrap 回归 59/59；根 `pnpm typecheck` 通过，`pnpm lint` 0 errors / 69 warnings，`pnpm architecture:check --changed` 0 violations。
 
+- [x] 5.9 编排活动参与运行态与完成判定（2026-11-23，取代 5.7 中“折叠态状态 chip”的描述）。
+  - **问题**：主代理轮收口即把会话 phase 写成 `completedSuccess`，但编排 run 仍在后台派发子代理。侧栏运行指示与 Windows 完成通知都只读 phase，于是出现「面板写着 1 个运行中、通知却说任务完成」；run 结束唤醒收尾轮后又弹第二次完成。
+  - **唯一事实**：会话是否存在活动编排 run 由 CLI `OrchestrationService.activitySummary()` 投影（不克隆 run 记录），经 sessions-index 以可选字段 `orchestrationActivity`（`activeRunCount / runningStepCount / completedStepCount / totalStepCount / startedAt`）下发。旧 CLI 缺省该字段时 UI 保持原行为；字段只在有活动 run 时出现。
+  - **phase 语义不变**：`completedSuccess` 仍只表示主代理轮已收口，不代表整项工作结束；不为了编排去改 phase / activeWorks，避免连带改变 Stop、排队与输入路由语义。
+  - **运行态口径**：存在活动编排 run 的会话在 UI 上视为运行中——侧栏领先指示器转圈、运行层排序、标题栏「会话状态」角标、输入框后台徽标与常驻状态条都读同一份事实。活动 run 数不再作为数字画在编排开关上，避免被读成团队规模。
+  - **完成判定**：`completed` 系统通知只在「进入终态的 phase 边沿 + 无活动编排 run」时发出；run 结束时唤醒的收尾轮再收口才弹一次。`failed` 不受影响，仍立即发出。不使用超时窗口兜底。
+  - **常驻可见性**：会话底部输入框上方常驻单行编排状态条（进度、运行中子代理数、耗时、详情入口），面板关闭也可读；点击打开状态面板并展开「编排计划」分区。数据只读既有 `orchestrationState` 投影，不新增 RPC、不复制 run 状态。
+  - **事件顺序**：
+
+    ```text
+    主代理轮收口 → phase=completedSuccess + orchestrationActivity.activeRunCount>0
+      → sessions-index delta → 通知判定 settled=false → 不弹完成
+    步骤起落 → 子代理事件 → sessions-index 重新派生 activity
+    编排 run 终态 → activeRunCount 离位 → 唤醒收尾轮 → phase running → 再收口
+      → completed 边沿 + 无活动 run → 弹一次完成
+    ```
+
+  - **验收**：编排 run 活动期间侧栏显示运行中且不弹完成通知；run 收尾轮结束后只弹一次完成；旧 CLI（无 `orchestrationActivity`）与经典会话行为零变化；标题栏角标、常驻状态条、后台徽标与面板进度一致。
+
 - 验收：默认关闭无视觉变化；首次开启弹精简团队；运行中能看到顺序与并行；手机可用；切会话隔离。
 - 测试：纯模型测试（选择/预设/上限/空池）、draft 持久化、config picker 互斥、i18n 对齐；外部 E2E harness 场景（仓库内无 E2E 框架）。
 - 2026-11-19 预设简化（当前规则）：

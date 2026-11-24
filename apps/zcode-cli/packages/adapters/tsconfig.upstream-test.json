@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../../../../..",
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "target": "ES2024",
+    "paths": {
+      "@zcode/contracts": ["../contracts/src/index.ts"]
+    }
+  },
+  "include": ["test/upstream*.test.ts", "test/sessionPerformance.test.ts"],
+  "exclude": ["node_modules", "dist"]
+}

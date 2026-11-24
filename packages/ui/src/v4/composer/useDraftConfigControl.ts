@@ -25,6 +25,7 @@ import { submissionModeSchema } from "@zcode/shared/zcode-protocol-v4";
 import { prepareWorkspaceWithZCodeSessionService } from "@/hooks/useWorkspacePrepare.js";
 import { useZCodeSessionService } from "@/hooks/useZCodeSessionService.js";
 import { useSettings } from "@/hooks/useSettingService.js";
+import { useRegisterComposerModelSelection } from "@/hooks/useComposerModelSelection.js";
 import { parseModelPickerValue } from "@/lib/zcodeSessionProjection.js";
 import { initializeNewTaskDraft } from "@/v4/composer/newTaskDraft.js";
 import {
@@ -117,6 +118,7 @@ export function useDraftConfigControl(params: {
   /** provider registry 已通过 renderer readiness 门禁后才允许拉起 Agent。 */
   agentStartupAllowed?: boolean;
   modelSelectionService: IModelSelectionService | null;
+  registerModelSelection?: boolean;
 }): DraftConfigControl {
   const {
     workspacePath,
@@ -126,6 +128,7 @@ export function useDraftConfigControl(params: {
     sessionConfig,
     agentStartupAllowed = true,
     modelSelectionService,
+    registerModelSelection = false,
   } = params;
   const workspaceKey = workspaceIdentity?.trim() || workspacePath;
   const displayProvider = provider ?? ZCODE_AGENT_PROVIDER;
@@ -203,6 +206,11 @@ export function useDraftConfigControl(params: {
   );
   const draftConfigRef = useRef(draftConfig);
   draftConfigRef.current = draftConfig;
+  useRegisterComposerModelSelection(
+    { workspacePath, workspaceIdentity, sessionId },
+    () => draftConfigRef.current.modelSelection ?? null,
+    registerModelSelection,
+  );
   const lastPersistedDraftRef = useRef<V4ComposerDraft | null>(null);
   useEffect(() => {
     if (

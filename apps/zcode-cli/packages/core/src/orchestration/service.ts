@@ -36,6 +36,15 @@ import {
 
 const TERMINAL_RUN_STATUSES = new Set(["completed", "failed", "cancelled", "interrupted"]);
 
+/** `activitySummary()` 的产出；与 shared 的 `SessionOrchestrationActivity` 结构一致。 */
+export interface OrchestrationActivitySummary {
+  activeRunCount: number;
+  runningStepCount: number;
+  completedStepCount: number;
+  totalStepCount: number;
+  startedAt: number;
+}
+
 function isLiveAttempt(attempt: OrchestrationAttemptRecord): boolean {
   return attempt.status === "claimed" || attempt.status === "running";
 }
@@ -163,6 +172,41 @@ export class OrchestrationService implements OrchestrationToolPort {
       if (record) active.push(structuredClone(record));
     }
     return active;
+  }
+
+  /**
+   * sessions-index 用的轻量活动摘要。
+   *
+   * 不能复用 `listRuns()`：它会对最多 8 条记录做 structuredClone，而 sessions-index
+   * 在每次会话事件 fan-out 时都要读一次活动事实——流式事件下这会把克隆成本放大到每条事件。
+   * 这里只读内存记录里的步数状态，不复制记录本身。
+   */
+  activitySummary(): OrchestrationActivitySummary | null {
+    let activeRunCount = 0;
+    let runningStepCount = 0;
+    let completedStepCount = 0;
+    let totalStepCount = 0;
+    let startedAt = Number.POSITIVE_INFINITY;
+    for (const runId of this.executions.keys()) {
+      const record = this.records.get(runId);
+      if (!record) continue;
+      activeRunCount += 1;
+      startedAt = Math.min(startedAt, record.state.startedAt);
+      for (const step of record.state.plan.steps) {
+        const state = record.state.steps[step.stepId];
+        totalStepCount += 1;
+        if (state?.status === "running") runningStepCount += 1;
+        else if (state?.status === "completed") completedStepCount += 1;
+      }
+    }
+    if (activeRunCount === 0) return null;
+    return {
+      activeRunCount,
+      runningStepCount,
+      completedStepCount,
+      totalStepCount,
+      startedAt,
+    };
   }
 
   /**

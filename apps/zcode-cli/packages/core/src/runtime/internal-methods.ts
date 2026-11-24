@@ -37,6 +37,7 @@ import type {
 import type { BackgroundResultOriginMeta, ContextUsageBreakdownItem } from "@zcode/contracts";
 import type {
   OrchestrationConfigState,
+  SessionOrchestrationActivity,
   V4ConversationOrchestrationStateResult,
 } from "@zcode/shared/zcode-protocol-v4";
 import type { OrchestrationRunRecord } from "../orchestration/contract.js";
@@ -89,6 +90,7 @@ export interface AgentRuntimeCoreMethods {
     traceContext?: TraceContext,
   ): Promise<OrchestrationConfigState>;
   getOrchestrationState(): V4ConversationOrchestrationStateResult;
+  getOrchestrationActivity(): SessionOrchestrationActivity | null;
   cancelOrchestrationRun(runId: string): Promise<OrchestrationRunRecord | undefined>;
   getSessionModelSelection(): ModelSelection | undefined;
   setSessionModelSelection(selection: ModelSelection | undefined): void;

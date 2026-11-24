@@ -214,6 +214,8 @@ export interface ReadFileStateEntry {
   isPartialView: boolean;
   readAt: Date;
   sourceTool?: PersistedReadFileStateTool;
+  /** 上下文实际提供给模型的读取；工具快照覆盖后不沿用此标记。 */
+  seededFromContext?: boolean;
   revisionId?: string;
   mtimeMs?: number;
   sizeBytes?: number;

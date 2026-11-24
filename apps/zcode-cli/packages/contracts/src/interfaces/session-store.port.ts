@@ -1075,7 +1075,7 @@ export interface TaskUsageQueryResult {
 
 /**
  * 会话性能聚合的原始计量。这里只做求和，平均与速率由协议层用共享口径换算，
- * 避免"平均"和"生成时长"两套除法散落在适配器里。
+ * 累计 TPS 与请求日志统一用成功请求的完整输出 / 总耗时，不在适配器另算首字后的速度。
  */
 export type SessionPerformanceQuerySource = "main_turn" | "subagent";
 
@@ -1102,9 +1102,13 @@ export interface SessionPerformanceQueryResult {
   /** TTFT 求和与样本数；样本数为 0 时平均值不可用。 */
   ttftSumMs: number;
   ttftCount: number;
-  /** TPS 分子分母取同一批请求：两者都缺任一计量的请求不参与。 */
+  /**
+   * TPS 分子：该会话自身 completed 且 duration_ms > 0 请求的 provider output_tokens 之和。
+   * 与分母取同一批请求；TTFT 不影响选样，input、cache 和单列 reasoning 不额外加入输出。
+   */
   tpsOutputTokens: number;
-  generationMs: number;
+  /** TPS 分母：同一批请求的完整 duration_ms 之和（含 TTFT），不扣除首 token 等待。 */
+  tpsDurationMs: number;
 }
 
 export interface ModelRequestLogsQueryInput extends ModelRequestLogsRequest {

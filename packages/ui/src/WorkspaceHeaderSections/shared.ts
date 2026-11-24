@@ -60,6 +60,7 @@ export interface WorkspaceHeaderTitleSectionProps {
 export interface WorkspaceHeaderActionSectionProps {
   variant?: WorkspaceHeaderVariant;
   activeTaskId?: string | null;
+  commitMessageSessionId?: string | null;
   /** 当前 pane 的会话 id；存在时标题栏渲染「会话状态」图标（点击唤醒状态面板）。 */
   activeSessionId?: string | null;
   user?: UserInfo | null;

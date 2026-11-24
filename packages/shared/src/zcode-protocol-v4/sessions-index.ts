@@ -1,6 +1,7 @@
 // sessions-index topic：列表活性数据源；conflated 最新态，永不溢出。
 import { z } from "zod";
 import { timestampSchema } from "./core.js";
+import { sessionOrchestrationActivitySchema } from "./sessions-index-orchestration-activity.js";
 import { sessionWorkflowActivitySchema } from "./sessions-index-workflow-activity.js";
 import {
   goalStateSchema,
@@ -42,6 +43,9 @@ export const sessionSummarySchema = z.object({
   // 侧栏工作流运行行：有界的 run 摘要，
   // 只装画迷你轨道要的字段；会话没有任何 run 时缺席。optional 兼容旧 frame / 旧 CLI。
   workflowActivity: sessionWorkflowActivitySchema.optional(),
+  // 编排活动：主代理轮收口后编排 run 仍在跑时，phase 已是终态但会话并未真正结束。
+  // 只在有活动 run 时出现；optional 兼容旧 frame / 旧 CLI（缺省 = 无可观察的编排活动）。
+  orchestrationActivity: sessionOrchestrationActivitySchema.optional(),
   pendingInteraction: sessionPendingInteractionSummarySchema.optional(),
   // 侧栏只需要 kind/count，不下发问题、命令或答案等敏感 payload。
   // optional 兼容旧 sessions-index frame / stored summary。

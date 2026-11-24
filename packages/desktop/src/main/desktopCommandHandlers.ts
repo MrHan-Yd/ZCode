@@ -21,10 +21,14 @@ import {
   resolveZCodeEndpointOrigin,
 } from "@zcode/shared";
 import { readZCodeStdioTapDevState, setZCodeStdioTapDevEnabled } from "@zcode/services/node";
-import { showAboutDialog } from "./about.js";
+import { executeDesktopAboutCommand } from "./desktopAboutCommand.js";
 import { checkForUpdateMenuClick } from "./autoUpdater.js";
 import { exportLogs } from "./exportLogs.js";
-import { openResourceManager } from "./resourceManagerWindow.js";
+import {
+  isMainApplicationWindowWebContents,
+  openResourceManager,
+} from "./resourceManagerWindow.js";
+import { createClearDataOperation } from "./desktopClearData.js";
 import { resolveCuaOsSupport } from "./cuaOsSupport.js";
 import { syncWindowControlsOverlayForZoomLevel } from "./desktopWindowButtonPosition.js";
 import {
@@ -78,55 +82,49 @@ function showMessageBoxWithOptionalParent(
     ? dialog.showMessageBox(parentWindow, options)
     : dialog.showMessageBox(options);
 }
-async function clearAllDataAndRelaunch(options: {
+let clearAllDataOperation: ReturnType<typeof createClearDataOperation> | undefined;
+function clearAllDataAndRelaunch(options: {
   credentialsDir: string;
-  logger: {
-    info: (...args: unknown[]) => void;
-    error: (...args: unknown[]) => void;
-  };
+  beforeClearAllData: () => Promise<void>;
+  onClearAllDataFailed: () => void;
+  stopFileLogging: () => void;
 }) {
-  const { response } = await dialog.showMessageBox({
-    type: "warning",
-    buttons: ["Cancel", "Clear All"],
-    defaultId: 0,
-    cancelId: 0,
-    title: "Clear All Data",
-    message: "确定要清除所有数据吗？",
-    detail:
-      "将删除 ~/.zcode/v2（配置、凭据、日志）和浏览器缓存（localStorage）。操作不可恢复，清除后应用将自动重启。",
+  clearAllDataOperation ??= createClearDataOperation({
+    confirm: async () => {
+      const { response } = await dialog.showMessageBox({
+        type: "warning",
+        buttons: ["Cancel", "Clear All"],
+        defaultId: 0,
+        cancelId: 0,
+        title: "Clear All Data",
+        message: "确定要清除所有数据吗？",
+        detail:
+          "将删除当前数据目录的 .zcode/v2（配置、凭据、日志）和浏览器缓存。操作不可恢复，清除后应用将自动重启。",
+      });
+      return response === 1;
+    },
+    beforeClearAllData: options.beforeClearAllData,
+    onFailure: options.onClearAllDataFailed,
+    listWindows: () => BrowserWindow.getAllWindows(),
+    clearAdditionalStorage: () =>
+      session.fromPartition(CODING_PLAN_WEBVIEW_PARTITION).clearStorageData(),
+    removeDirectory: async (path) => {
+      const { rm } = await import("node:fs/promises");
+      await rm(path, { recursive: true, force: true });
+    },
+    stopFileLogging: options.stopFileLogging,
+    reportFailure: async (error) => {
+      await dialog.showMessageBox({
+        type: "error",
+        title: "Clear All Data",
+        message: "清理未完成，请重启应用恢复。",
+        detail: `准备失败时未清理数据；已停止的服务不会自动恢复。${error instanceof Error ? error.message : String(error)}`,
+      });
+    },
+    relaunch: () => app.relaunch(),
+    exit: () => app.exit(0),
   });
-  if (response !== 1) {
-    return;
-  }
-
-  const { rm } = await import("node:fs/promises");
-  try {
-    await rm(options.credentialsDir, { recursive: true, force: true });
-    options.logger.info("[clear-all-data] deleted ~/.zcode/v2");
-  } catch (error) {
-    options.logger.error("[clear-all-data] failed to delete ~/.zcode/v2:", error);
-  }
-
-  for (const win of BrowserWindow.getAllWindows()) {
-    try {
-      await win.webContents.executeJavaScript("localStorage.clear()");
-    } catch {
-      // 窗口可能已经销毁，忽略
-    }
-  }
-
-  try {
-    const session = BrowserWindow.getAllWindows()[0]?.webContents.session;
-    if (session) {
-      await session.clearStorageData();
-      options.logger.info("[clear-all-data] cleared session storage data");
-    }
-  } catch (error) {
-    options.logger.error("[clear-all-data] failed to clear session data:", error);
-  }
-
-  app.relaunch();
-  app.exit(0);
+  return clearAllDataOperation(options.credentialsDir);
 }
 
 export async function clearCodingPlanWebviewStorage(options: {
@@ -487,6 +485,10 @@ export async function executeDesktopCommand(options: {
   onDesktopZoomChanged?: (zoomLevel: number) => Promise<void> | void;
   onZCodeEndpointChanged: () => Promise<void> | void;
   onRelaunchApp: () => Promise<void>;
+  ensurePrimaryWindow?: (reason: string) => Promise<void>;
+  beforeClearAllData: () => Promise<void>;
+  onClearAllDataFailed: () => void;
+  stopFileLogging: () => void;
   settingService: {
     get(): Promise<Pick<AppSettings, "zcodeEndpointOrigin" | "desktopZoomLevel">>;
     update(
@@ -577,7 +579,13 @@ export async function executeDesktopCommand(options: {
       }
       return;
     case DesktopCommandIds.ShowAbout:
-      await showAboutDialog(targetWindow ?? undefined, options.currentApplicationLocale);
+      await executeDesktopAboutCommand({
+        senderWindow: options.senderWindow,
+        listWindows: () => BrowserWindow.getAllWindows(),
+        getFocusedWindow: () => BrowserWindow.getFocusedWindow(),
+        isMainApplicationWindow: isMainApplicationWindowWebContents,
+        ensurePrimaryWindow: options.ensurePrimaryWindow,
+      });
       return;
     case DesktopCommandIds.OpenChangelog:
       await openChangelog(
@@ -673,10 +681,11 @@ export async function executeDesktopCommand(options: {
       });
       return;
     case DesktopCommandIds.ClearAllData:
-      await clearCodingPlanWebviewStorage({ logger: options.logger });
       await clearAllDataAndRelaunch({
         credentialsDir: options.credentialsDir,
-        logger: options.logger,
+        beforeClearAllData: options.beforeClearAllData,
+        onClearAllDataFailed: options.onClearAllDataFailed,
+        stopFileLogging: options.stopFileLogging,
       });
       return;
     case DesktopCommandIds.ClearCodingPlanWebviewStorage:

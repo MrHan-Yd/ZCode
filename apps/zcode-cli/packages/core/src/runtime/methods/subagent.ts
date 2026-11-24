@@ -1,10 +1,9 @@
 /* eslint-disable max-lines -- subagent runtime wiring 集中衔接 child runtime、tool pool、权限、MCP 与 activity watchdog，拆分需单独迁移。 */
 import { RESPOND_TO_COORDINATOR_TOOL_NAME } from "@zcode/contracts";
 import type { SubagentRunOptions, WorkspaceId } from "@zcode/contracts";
+import { resolveExecutionState } from "@zcode/shared";
 import {
   defaultScheduler,
-  PermissionService,
-  defaultPermissionConfig,
   buildExploreAllowedTools,
   buildExploreAgentPrompt,
   createExploreSubagentPort,
@@ -184,8 +183,11 @@ export function createDefaultSubagentPort(
       const childMode = resolveSubagentPermissionMode(
         orchestrationReadOnly || this.getPlanEnabled() ? "plan" : this.config.mode,
         orchestrationReadOnly ? "plan" : request.permissionMode,
-        builtInExplore,
       );
+      const childExecutionState = resolveExecutionState({
+        mode: childMode === "plan" ? this.config.mode : childMode,
+        planEnabled: childMode === "plan",
+      });
       const childCuaPolicy = createOfficialCuaPolicy(
         officialCuaServerNames,
         childMcpAccess.parentSnapshot?.tools ?? childMcpAccess.snapshot?.tools ?? [],
@@ -253,9 +255,8 @@ export function createDefaultSubagentPort(
       const childRuntime = new AgentRuntime(
         request.sessionId,
         {
-          // 旧 plan 枚举不包含基础权限；拆分后继承完整状态，避免被构造器回退成 build。
-          mode: childMode === "plan" ? this.config.mode : childMode,
-          planEnabled: childMode === "plan",
+          // 新建与恢复共用完整执行状态，不能在恢复时退回子会话历史中的 yolo。
+          ...childExecutionState,
           // 模型选择的影响不只在最终 request.model：MCS、内建搜索与 token/media 预算会在
           // child runtime 内按 default model 预先塑形。同步 child 因此必须把整套执行
           // 配置都指向父 turn 快照；runner 禁止它转后台，provider registry 则由父 turn
@@ -334,10 +335,8 @@ export function createDefaultSubagentPort(
             parentToolCallId,
             enqueue: (input) => this.enqueueSubagentMessage(input),
           }),
-          // Explore 使用独立只读权限配置；general-purpose 和自定义 agent 继承父权限服务。
-          permissionService: builtInExplore
-            ? new PermissionService(defaultPermissionConfig)
-            : this.permissionService,
+          // Explore 曾新建默认权限服务，丢失父配置与会话授权；工具面独立限制但权限服务统一继承。
+          permissionService: this.permissionService,
           toolScheduler: deps.toolScheduler ?? defaultScheduler,
           executionPort: deps.executionPort,
           fileSystemPort: deps.fileSystemPort,
@@ -392,6 +391,7 @@ export function createDefaultSubagentPort(
       const resumesExistingChild = request.resumeFromStore === true;
       if (resumesExistingChild) {
         await childRuntime.resumeFromStore({
+          executionStateOverride: childExecutionState,
           traceContext: request.traceContext,
         });
       } else {
@@ -495,15 +495,16 @@ function createSubagentOverrideModelFactory(
 function resolveSubagentPermissionMode(
   parentMode: AgentRuntimeInternal["config"]["mode"],
   permissionMode: ExploreSubagentRuntimeRequest["permissionMode"],
-  builtInExplore: boolean,
 ): AgentRuntimeInternal["config"]["mode"] {
+  // 父 Plan 是所有子代理的只读上限；Explore 的 yolo 默认和 profile auto 都不能清掉它。
+  if (parentMode === "plan") return "plan";
   switch (permissionMode) {
     case "auto":
       return "auto";
     case "plan":
       return "plan";
     case undefined:
-      return builtInExplore ? "yolo" : parentMode;
+      return parentMode;
     default:
       return parentMode;
   }

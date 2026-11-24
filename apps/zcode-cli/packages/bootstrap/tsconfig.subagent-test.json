@@ -5,8 +5,16 @@
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,
-    "target": "ES2024"
+    "target": "ES2024",
+    "paths": {
+      "@zcode/contracts": ["../contracts/src/index.ts"]
+    }
   },
-  "include": ["test/subagent*.test.ts"],
+  "include": [
+    "test/subagent*.test.ts",
+    "test/sessionPerformance.test.ts",
+    "test/sessionPerformanceBatch.test.ts",
+    "test/gitCommitMessageGeneration.test.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }

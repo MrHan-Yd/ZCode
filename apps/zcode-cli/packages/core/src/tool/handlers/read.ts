@@ -37,7 +37,11 @@ import { createReadFileStateMetadata } from "../read-file-state-metadata.js";
 import { inferImageMimeFromPath, readImageFile } from "./read-image.js";
 import { inferVideoMimeFromPath } from "../../runtime/helpers/attachment-video.js";
 import { readVideoFile } from "./read-video.js";
-import { formatReadTextOutput, readTextFileForModel } from "./read-text.js";
+import {
+  formatReadTextOutput,
+  readTextFileForModel,
+  READ_FILE_UNCHANGED_STUB,
+} from "./read-text.js";
 import {
   formatReadPdfOutput,
   formatReadPdfPagesOutput,
@@ -52,8 +56,6 @@ import {
 
 export { addReadLineNumbers } from "./read-text.js";
 
-const FILE_UNCHANGED_STUB =
-  "Wasted call — file unchanged since your last Read. Refer to that earlier tool_result instead.";
 const READ_PROVIDER_DESCRIPTION = [
   "Reads a file from the local filesystem.",
   "",
@@ -83,7 +85,7 @@ function formatReadOutput(output: ReadOutput): ModelMessageContent {
     case "text":
       return formatReadTextOutput(output);
     case "file_unchanged":
-      return FILE_UNCHANGED_STUB;
+      return READ_FILE_UNCHANGED_STUB;
     case "image":
       return formatReadImageOutput(output);
     case "video":

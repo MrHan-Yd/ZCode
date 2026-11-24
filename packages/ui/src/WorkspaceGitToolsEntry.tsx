@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button.js";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
+import type { ComposerModelSelectionReader } from "@/v4/composer/composerModelSelectionPort.js";
 import { GitToolsPanel } from "@/v4/GitToolsPanel.js";
 import {
   resolveGitToolsBadge,
@@ -22,6 +23,7 @@ interface WorkspaceGitToolsEntryProps {
   gitWorktreeReviewSourceId?: GitChangeSourceId | null;
   activeTaskChangeSummary?: ZCodeTaskChangeSummary | null;
   commitMessageModelSelection?: ModelSelection | null;
+  readCommitMessageModelSelection?: ComposerModelSelectionReader;
   onRefreshGit: () => void;
   onOpenGitReview?: (sourceId?: GitChangeSourceId) => void;
 }
@@ -58,6 +60,7 @@ export function WorkspaceGitToolsEntry({
   gitWorktreeReviewSourceId,
   activeTaskChangeSummary,
   commitMessageModelSelection = null,
+  readCommitMessageModelSelection,
   onRefreshGit,
   onOpenGitReview,
 }: WorkspaceGitToolsEntryProps) {
@@ -129,6 +132,7 @@ export function WorkspaceGitToolsEntry({
           gitWorktreeReviewSourceId={gitWorktreeReviewSourceId}
           activeTaskChangeSummary={activeTaskChangeSummary}
           commitMessageModelSelection={commitMessageModelSelection}
+          readCommitMessageModelSelection={readCommitMessageModelSelection}
           onRefreshGit={onRefreshGit}
           onOpenGitReview={onOpenGitReview}
         />

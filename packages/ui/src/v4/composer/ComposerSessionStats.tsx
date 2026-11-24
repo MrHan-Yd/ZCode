@@ -12,6 +12,7 @@ import {
   formatPreciseDuration,
 } from "@/v4/conversationWorkDuration.js";
 import { useLiveOutputSpeed } from "@/v4/composer/useLiveOutputSpeed.js";
+import type { LiveOutputTokenReading } from "@/v4/composer/liveOutputTokens.js";
 import {
   canRenderSessionStatsEntry,
   formatSessionSpeedValue,
@@ -39,8 +40,13 @@ function useSettleGrace(running: boolean): boolean {
   return grace;
 }
 
-function formatSpeedValue(speed: number, intl: IntlInstance): string {
-  return formatSessionSpeedValue(speed, intl);
+function formatSpeedValue(speed: number, intl: IntlInstance, estimated = false): string {
+  return estimated
+    ? intl.formatMessage(
+        { id: "chat.sessionStats.estimatedSpeedValue" },
+        { speed: Math.round(speed) },
+      )
+    : formatSessionSpeedValue(speed, intl);
 }
 
 function formatDurationValue(
@@ -110,7 +116,9 @@ function SessionStatsPanel({
         />
         <SessionStatRow
           label={intl.formatMessage({ id: "chat.sessionStats.currentSpeed" })}
-          value={speeds.current === null ? emptyValue : formatSpeedValue(speeds.current, intl)}
+          value={
+            speeds.current === null ? emptyValue : formatSpeedValue(speeds.current, intl, true)
+          }
         />
       </div>
     </div>
@@ -135,7 +143,7 @@ export function ComposerSessionStats({
   sessionId: string | null;
   phase: SessionPhase | null;
   /** 读当前流式输出的估算 token 数；调用方用 ref 提供，避免工具条随每个 token 批次重建。 */
-  readOutputTokens: () => number;
+  readOutputTokens: () => LiveOutputTokenReading;
 }) {
   const { intl, locale } = useZCodeIntl();
   const [open, setOpen] = useState(false);
@@ -155,7 +163,10 @@ export function ComposerSessionStats({
   const speeds = resolveSessionStatsSpeeds(summary, liveSpeed);
   if (!canRenderSessionStatsEntry({ sessionId, summary, speeds })) return null;
 
-  const speedLabel = speeds.trigger === null ? null : formatSpeedValue(speeds.trigger, intl);
+  const speedLabel =
+    speeds.trigger === null
+      ? null
+      : formatSpeedValue(speeds.trigger, intl, speeds.current !== null);
 
   return (
     <HoverCard closeDelay={0} openDelay={0} open={open} onOpenChange={setOpen}>
@@ -179,6 +190,10 @@ export function ComposerSessionStats({
             ) {
               setOpen(true);
             }
+          }}
+          onTouchStartCapture={(event) => {
+            // pointerdown 已打开手机面板；阻止 Radix 在被动 touchstart listener 中调用 preventDefault。
+            event.stopPropagation();
           }}
           type="button"
         >

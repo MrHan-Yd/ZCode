@@ -137,6 +137,7 @@ import { usePrimaryFollowupModifier } from "@/v4/composer/usePrimaryFollowupModi
 import {
   createLiveOutputTokenReader,
   type LiveOutputTokenReader,
+  type LiveOutputTokenReading,
 } from "@/v4/composer/liveOutputTokens.js";
 import { consumeV4ComposerDraftWorkspaceTransferRequest } from "@/v4/composer/composerDraftWorkspaceTransfer.js";
 import { useComposerAttachments } from "@/v4/composer/useComposerAttachments.js";
@@ -444,6 +445,10 @@ interface ConversationComposerProps {
    */
   backgroundWorkOpenTarget?: "panel" | "workflow-run";
   runningSubagentCount?: number;
+  /** 活动编排 run 中正在执行的步骤数；与状态条共用同一份只读投影。 */
+  runningOrchestrationStepCount?: number;
+  /** 是否存在活动编排 run；步数为 0 的短窗口也保留后台徽标入口。 */
+  orchestrationActive?: boolean;
   /** prepare/configOptions 失败时，custom provider 选择走 workspace recovery 链。 */
   onRecoverCustomModelSelection?: (
     value: string,
@@ -530,6 +535,8 @@ function ConversationComposerImpl({
   onOpenRunningBackgroundWorks,
   backgroundWorkOpenTarget = "panel",
   runningSubagentCount = 0,
+  runningOrchestrationStepCount = 0,
+  orchestrationActive = false,
   onRecoverCustomModelSelection,
   onSendCompressionCommand,
   error,
@@ -2038,7 +2045,11 @@ function ConversationComposerImpl({
   const liveOutputTokenReaderRef = useRef<LiveOutputTokenReader | null>(null);
   liveOutputTokenReaderRef.current ??= createLiveOutputTokenReader();
   liveOutputTokenReaderRef.current.setSnapshot(snapshot, composerPhase === "running");
-  const readLiveOutputTokens = useCallback(() => liveOutputTokenReaderRef.current?.read() ?? 0, []);
+  const readLiveOutputTokens = useCallback(
+    (): LiveOutputTokenReading =>
+      liveOutputTokenReaderRef.current?.read() ?? { tokens: 0, scopeKey: null },
+    [],
+  );
   const handleSelectModelTrace = useCallback(
     (nextProvider: string, nextModel: string, sourceModel: ModelSelectionSource | null) =>
       runUserAction({
@@ -2215,6 +2226,8 @@ function ConversationComposerImpl({
         <ConversationBackgroundWorkTrigger
           backgroundWorks={snapshot?.backgroundWorks ?? []}
           runningSubagentCount={runningSubagentCount}
+          runningOrchestrationStepCount={runningOrchestrationStepCount}
+          orchestrationActive={orchestrationActive}
           onOpen={onOpenRunningBackgroundWorks}
           openTarget={backgroundWorkOpenTarget}
         />
@@ -2228,6 +2241,8 @@ function ConversationComposerImpl({
       handleConfigPickerOpenChange,
       backgroundWorkOpenTarget,
       onOpenRunningBackgroundWorks,
+      orchestrationActive,
+      runningOrchestrationStepCount,
       onSwitchMode,
       orchestrationControls,
       provider,

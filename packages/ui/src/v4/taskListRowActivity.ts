@@ -1,6 +1,7 @@
 import type { ZCodeTaskMeta } from "@zcode/shared";
 import type {
   PendingInteractionSummary,
+  SessionOrchestrationActivity,
   SessionSummary,
   SessionWorkflowActivity,
 } from "@zcode/shared/zcode-protocol-v4";
@@ -16,6 +17,8 @@ export interface TaskListRowActivity {
   pendingInteractions?: PendingInteractionSummary;
   /** 侧栏工作流运行行的数据；无 run 时缺席。 */
   workflowActivity?: SessionWorkflowActivity;
+  /** 活动编排 run 摘要；主代理轮收口后仍算运行中。缺席 = 无活动 run。 */
+  orchestrationActivity?: SessionOrchestrationActivity;
 }
 
 export type TaskListMetaWithActivity = ZCodeTaskMeta & {
@@ -39,8 +42,12 @@ export function getTaskListRowActivity(task: ZCodeTaskMeta): TaskListRowActivity
 
 /** 只采信 sessions-index 的实时 phase；tasks-index 残留 status=running 不能置顶历史任务。 */
 function isTaskListRowRunning(task: ZCodeTaskMeta): boolean {
-  const phase = getTaskListRowActivity(task)?.phase;
-  return phase === "prewarming" || phase === "running";
+  const activity = getTaskListRowActivity(task);
+  const phase = activity?.phase;
+  if (phase === "prewarming" || phase === "running") return true;
+  // 编排 run 在后台派发子代理时父会话 phase 已是 completedSuccess，但会话并未真正结束。
+  // 运行态口径与通知一致：有活动编排 run 就仍然算运行中。
+  return (activity?.orchestrationActivity?.activeRunCount ?? 0) > 0;
 }
 
 /**

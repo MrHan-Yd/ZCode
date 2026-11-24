@@ -7,6 +7,7 @@ import {
 import {
   appendOutputSpeedSample,
   resolveLiveOutputSpeed,
+  type OutputSpeedSample,
 } from "../src/v4/composer/liveOutputSpeed.js";
 import {
   canRenderSessionStatsEntry,
@@ -27,6 +28,14 @@ function snapshotWithRows(rows: unknown[]): StatsSnapshot {
   return {
     rows: { window: rows, totalCount: rows.length, firstRowId: 0 },
   } as StatsSnapshot;
+}
+
+function outputSample(
+  at: number,
+  tokens: number,
+  scopeKey: string | null = JSON.stringify(["session-1", "turn-1", 1]),
+): OutputSpeedSample {
+  return { at, tokens, scopeKey };
 }
 
 test("流式 token 估算按 CJK 双倍权重折算，与 CLI 侧 estimateTokens 同口径", () => {
@@ -84,66 +93,81 @@ test("只有工具调用、没有正文的轮也能读出工具入参的产出",
 
 test("观测窗口不足或读数没涨时不给实时速度", () => {
   assert.equal(resolveLiveOutputSpeed([]), null);
-  assert.equal(resolveLiveOutputSpeed([{ at: 0, tokens: 100 }]), null);
+  assert.equal(resolveLiveOutputSpeed([outputSample(0, 100)]), null);
   // 窗口短于最小跨度：首帧算出来的速度会高得离谱，宁可不出数值。
-  assert.equal(
-    resolveLiveOutputSpeed([
-      { at: 1_000, tokens: 10 },
-      { at: 1_200, tokens: 40 },
-    ]),
-    null,
-  );
+  assert.equal(resolveLiveOutputSpeed([outputSample(1_000, 10), outputSample(1_200, 40)]), null);
   // 读数没有增长（工具执行/等待首 token，没有新输出）：不给当前速度，面板显示 --。
-  assert.equal(
-    resolveLiveOutputSpeed([
-      { at: 0, tokens: 100 },
-      { at: 2_000, tokens: 100 },
-    ]),
-    null,
-  );
+  assert.equal(resolveLiveOutputSpeed([outputSample(0, 100), outputSample(2_000, 100)]), null);
 });
 
 test("实时速度取窗口两端读数差除以跨度", () => {
   assert.equal(
     resolveLiveOutputSpeed([
-      { at: 0, tokens: 10 },
-      { at: 1_000, tokens: 110 },
-      { at: 2_000, tokens: 210 },
+      outputSample(0, 10),
+      outputSample(1_000, 110),
+      outputSample(2_000, 210),
     ]),
     100,
   );
   // 中文权重会让同一段时长内的估算 token 数翻倍，速度读数同步变高。
-  assert.equal(
-    resolveLiveOutputSpeed([
-      { at: 0, tokens: 0 },
-      { at: 4_000, tokens: 800 },
-    ]),
-    200,
-  );
+  assert.equal(resolveLiveOutputSpeed([outputSample(0, 0), outputSample(4_000, 800)]), 200);
 });
 
 test("采样窗：读数没涨保留现有窗口，读数为 0 或回落时重开", () => {
-  const first = appendOutputSpeedSample([], { at: 1_000, tokens: 100 });
-  assert.deepEqual(first, [{ at: 1_000, tokens: 100 }]);
+  const first = appendOutputSpeedSample([], outputSample(1_000, 100));
+  assert.deepEqual(first, [outputSample(1_000, 100)]);
   // 同一 tick 只留一个样本。
-  assert.deepEqual(appendOutputSpeedSample(first, { at: 1_000, tokens: 120 }), [
-    { at: 1_000, tokens: 120 },
+  assert.deepEqual(appendOutputSpeedSample(first, outputSample(1_000, 120)), [
+    outputSample(1_000, 120),
   ]);
   // 读数不涨只是暂停输出：窗口继续滚动，速度由 resolveLiveOutputSpeed 判空。
-  assert.deepEqual(appendOutputSpeedSample(first, { at: 2_000, tokens: 100 }), [
-    { at: 1_000, tokens: 100 },
-    { at: 2_000, tokens: 100 },
+  assert.deepEqual(appendOutputSpeedSample(first, outputSample(2_000, 100)), [
+    outputSample(1_000, 100),
+    outputSample(2_000, 100),
   ]);
   // 超出 3 秒窗口的旧样本被挤掉。
-  assert.deepEqual(appendOutputSpeedSample(first, { at: 4_100, tokens: 200 }), [
-    { at: 4_100, tokens: 200 },
+  assert.deepEqual(appendOutputSpeedSample(first, outputSample(4_100, 200)), [
+    outputSample(4_100, 200),
   ]);
   // 读数为 0（这一轮还没吐字/刚结束）：清空，入口回落到平均。
-  assert.deepEqual(appendOutputSpeedSample(first, { at: 2_000, tokens: 0 }), []);
+  assert.deepEqual(appendOutputSpeedSample(first, outputSample(2_000, 0)), []);
   // 读数回落（换轮或重连后基线归零）：旧样本不可比，整窗丢弃重开。
-  assert.deepEqual(appendOutputSpeedSample(first, { at: 2_000, tokens: 40 }), [
-    { at: 2_000, tokens: 40 },
+  assert.deepEqual(appendOutputSpeedSample(first, outputSample(2_000, 40)), [
+    outputSample(2_000, 40),
   ]);
+});
+
+test("同一作用域 100→200 token 的一秒增量正常读作 100 tok/s", () => {
+  const first = appendOutputSpeedSample([], outputSample(1_000, 100));
+  const second = appendOutputSpeedSample(first, outputSample(2_000, 200));
+  assert.equal(resolveLiveOutputSpeed(second), 100);
+});
+
+for (const [boundary, scopeKey] of [
+  ["换轮", JSON.stringify(["session-1", "turn-2", 1])],
+  ["切会话", JSON.stringify(["session-2", "turn-1", 1])],
+  ["补历史", JSON.stringify(["session-1", "turn-1", 0])],
+  ["裁切", JSON.stringify(["session-1", "turn-1", 2])],
+] as const) {
+  test(`${boundary}后首读数大于或等于旧读数，只建立新基线而不跨作用域相减`, () => {
+    const first = appendOutputSpeedSample([], outputSample(1_000, 100));
+    for (const tokens of [900, 100]) {
+      const baseline = outputSample(2_000, tokens, scopeKey);
+      const samples = appendOutputSpeedSample(first, baseline);
+      assert.deepEqual(samples, [baseline]);
+      assert.equal(resolveLiveOutputSpeed(samples), null);
+      const grown = appendOutputSpeedSample(samples, outputSample(3_000, tokens + 100, scopeKey));
+      assert.equal(resolveLiveOutputSpeed(grown), 100);
+    }
+  });
+}
+
+test("没有流式快照或作用域未知时清空样本，即使读数非零", () => {
+  const first = appendOutputSpeedSample([], outputSample(1_000, 100));
+  assert.deepEqual(appendOutputSpeedSample(first, outputSample(2_000, 0, null)), []);
+  assert.deepEqual(appendOutputSpeedSample(first, outputSample(2_000, 900, null)), []);
+  const empty: readonly OutputSpeedSample[] = [];
+  assert.equal(appendOutputSpeedSample(empty, outputSample(2_000, 900, null)), empty);
 });
 
 test("面板把平均速度与当前速度分成两个口径，入口取当前值优先", () => {
@@ -183,7 +207,7 @@ test("入口只在有会话且拿得到事实时渲染", () => {
   assert.equal(
     canRenderSessionStatsEntry({
       sessionId: "s1",
-      summary: { modelRequestCount: 0, toolCallCount: 0, tokensPerSecond: null },
+      summary: { modelRequestCount: 0, toolCallCount: 0 },
       speeds: resolveSessionStatsSpeeds({ tokensPerSecond: null }, null),
     }),
     false,
@@ -192,7 +216,7 @@ test("入口只在有会话且拿得到事实时渲染", () => {
   assert.equal(
     canRenderSessionStatsEntry({
       sessionId: null,
-      summary: { modelRequestCount: 3, toolCallCount: 0, tokensPerSecond: 120 },
+      summary: { modelRequestCount: 3, toolCallCount: 0 },
       speeds: resolveSessionStatsSpeeds({ tokensPerSecond: 120 }, null),
     }),
     false,
@@ -201,7 +225,7 @@ test("入口只在有会话且拿得到事实时渲染", () => {
   assert.equal(
     canRenderSessionStatsEntry({
       sessionId: "s1",
-      summary: { modelRequestCount: 0, toolCallCount: 4, tokensPerSecond: null },
+      summary: { modelRequestCount: 0, toolCallCount: 4 },
       speeds: resolveSessionStatsSpeeds({ tokensPerSecond: null }, null),
     }),
     true,
@@ -210,7 +234,7 @@ test("入口只在有会话且拿得到事实时渲染", () => {
   assert.equal(
     canRenderSessionStatsEntry({
       sessionId: "s1",
-      summary: { modelRequestCount: 2, toolCallCount: 0, tokensPerSecond: 138 },
+      summary: { modelRequestCount: 2, toolCallCount: 0 },
       speeds: resolveSessionStatsSpeeds({ tokensPerSecond: 138 }, 158),
     }),
     true,
@@ -224,7 +248,7 @@ test("0 tok/s 是合法读数，不当成缺计量", () => {
   assert.equal(
     canRenderSessionStatsEntry({
       sessionId: "s1",
-      summary: { modelRequestCount: 2, toolCallCount: 0, tokensPerSecond: 0 },
+      summary: { modelRequestCount: 2, toolCallCount: 0 },
       speeds,
     }),
     true,
@@ -238,6 +262,9 @@ test("平均与当前两个速度文案在两种 locale 下都在，旧口径键
     // 旧键留着会让人以为还存在第三个口径。
     assert.equal("chat.sessionStats.outputSpeed" in locale, false);
     // 入口按钮空闲时显示累计平均，aria-label 不能只说自己代表「当前」。
-    assert.equal(locale["chat.sessionStats.triggerAriaLabel"].includes("当前"), false);
+    const ariaLabel = locale["chat.sessionStats.triggerAriaLabel"];
+    assert.ok(ariaLabel);
+    assert.equal(ariaLabel.includes("当前"), false);
+    assert.ok(locale["chat.sessionStats.estimatedSpeedValue"]?.startsWith("≈"));
   }
 });

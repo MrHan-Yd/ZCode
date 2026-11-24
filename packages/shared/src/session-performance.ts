@@ -24,9 +24,11 @@ const count = z.number().int().nonnegative();
 
 /**
  * 会话性能累计。全部字段都是**该会话自己**的模型请求与工具调用的累计值：
- * `modelMs` 含首 token 等待，`tokensPerSecond` 的生成时长只算首输出到请求结束，
- * 两者分母不同，不能互相换算。缺计量的请求不能进 TPS 的分子或分母，因此 TPS 为
- * null 时只表示"算不出来"。
+ * `modelMs` 含首 token 等待；`tokensPerSecond` 与请求日志统一为成功 completed 请求的
+ * Σ provider output_tokens / Σ duration_ms（换算为秒），仅 duration_ms > 0 的请求同时
+ * 进入分子分母。首内容可能晚于隐藏推理或缓冲输出，不能扣除 TTFT；TTFT 缺失、为零
+ * 或不小于总耗时均不影响 TPS 选样，input、cache 和单列 reasoning 不额外加入输出。
+ * TTFT 平均独立计算；无合格 TPS 耗时时返回 null，只表示"算不出来"。
  *
  * 「自己的模型请求」按会话种类取不同的 `query_source`：主会话是 `main_turn`，
  * 子智能体的子会话是 `subagent`（子代理请求记在子会话 id 上）。裁决在 CLI 侧，
