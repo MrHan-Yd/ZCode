@@ -8,6 +8,8 @@ import { formatCommitTime, getRefIcon, getShortHash } from "./GitGraphDisplay.js
 import { type GitGraphCommit, type GitGraphLayoutPath, layoutGitGraph } from "./layout.js";
 
 interface GitGraphPaneProps {
+  showHeader?: boolean;
+  filtered?: boolean;
   commits: readonly GitGraphCommit[];
   hasMore?: boolean;
   loadingMore?: boolean;
@@ -58,6 +60,8 @@ function isPathRelated(path: GitGraphLayoutPath, hash: string | null): boolean {
 }
 
 export function GitGraphPane({
+  showHeader = true,
+  filtered = false,
   commits,
   hasMore = false,
   loadingMore = false,
@@ -92,42 +96,48 @@ export function GitGraphPane({
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-background text-foreground">
-      <div className="border-b border-border bg-surface/40 px-3 py-2">
-        <div className="flex min-w-0 items-center justify-between gap-3">
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <GitGraph className="size-3.5 text-foreground" />
-              <h2 className="truncate text-ui-base font-medium">
-                {intl.formatMessage({ id: "gitGraph.title" })}
-              </h2>
+      {showHeader ? (
+        <div className="border-b border-border bg-surface/40 px-3 py-2">
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2">
+                <GitGraph className="size-3.5 text-foreground" />
+                <h2 className="truncate text-ui-base font-medium">
+                  {intl.formatMessage({ id: "gitGraph.title" })}
+                </h2>
+              </div>
             </div>
+            {onRefresh ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                disabled={refreshing}
+                aria-label={intl.formatMessage({ id: "gitGraph.refresh" })}
+                title={intl.formatMessage({ id: "gitGraph.refresh" })}
+                className="mr-8 text-foreground-subtle hover:text-foreground"
+                onClick={onRefresh}
+              >
+                <RefreshCwIcon className={cn("size-3.5", refreshing && "animate-spin")} />
+              </Button>
+            ) : null}
           </div>
-          {onRefresh ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-sm"
-              disabled={refreshing}
-              aria-label={intl.formatMessage({ id: "gitGraph.refresh" })}
-              title={intl.formatMessage({ id: "gitGraph.refresh" })}
-              className="mr-8 text-foreground-subtle hover:text-foreground"
-              onClick={onRefresh}
-            >
-              <RefreshCwIcon className={cn("size-3.5", refreshing && "animate-spin")} />
-            </Button>
-          ) : null}
         </div>
-      </div>
+      ) : null}
 
       {commits.length === 0 ? (
         <div className="flex min-h-0 flex-1 items-center justify-center p-6">
           <div className="max-w-sm text-center">
             <GitGraph className="mx-auto size-8 text-foreground-subtlest" />
             <p className="mt-3 text-ui-base font-medium text-foreground">
-              {intl.formatMessage({ id: "gitGraph.empty.title" })}
+              {intl.formatMessage({
+                id: filtered ? "gitGraph.empty.filteredTitle" : "gitGraph.empty.title",
+              })}
             </p>
             <p className="mt-1 text-ui-base text-foreground-subtle">
-              {intl.formatMessage({ id: "gitGraph.empty.description" })}
+              {intl.formatMessage({
+                id: filtered ? "gitGraph.empty.filteredDescription" : "gitGraph.empty.description",
+              })}
             </p>
           </div>
         </div>

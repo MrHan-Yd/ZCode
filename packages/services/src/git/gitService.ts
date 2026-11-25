@@ -6,6 +6,10 @@ import {
   filterCommitMessageFilesForStagedOnly,
 } from "./commitMessageFileScope.js";
 import type { IGitService } from "./git.js";
+import {
+  validateGitGraphQuery,
+  validateGitGraphOptionsRequest,
+} from "./repo/gitCommitGraphLimits.js";
 import type { GitCommitMessageGenerator } from "./gitCommitMessageGenerator.js";
 import {
   createGitCliRepo,
@@ -181,15 +185,26 @@ export function createGitService(options?: {
     },
 
     async getCommitGraph(params) {
+      const request = validateGitGraphQuery(params);
       const snapshot = await repo.getCommitGraph(
-        params.workspacePath,
-        params.maxCount,
-        params.skip,
+        request.workspacePath,
+        request.maxCount,
+        request.skip,
+        {
+          workspaceIdentity: request.workspaceIdentity,
+          filters: request.filters,
+          cursor: request.cursor,
+        },
       );
       return {
         commits: snapshot.commits,
         hasMore: snapshot.hasMore,
+        ...(snapshot.cursor ? { cursor: snapshot.cursor } : {}),
       };
+    },
+
+    async getCommitGraphFilterOptions(params) {
+      return await repo.getCommitGraphFilterOptions(validateGitGraphOptionsRequest(params));
     },
 
     async switchBranch(params) {

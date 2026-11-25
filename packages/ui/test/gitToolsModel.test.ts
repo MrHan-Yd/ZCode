@@ -35,16 +35,18 @@ test("Office 模式不产出 Git 工具模型（入口与浮层同时消失）",
   assert.equal(build({ isOfficeMode: true }), null);
 });
 
-test("非 Git 仓库 / Git 不可用 / 游离 HEAD 且干净：模型为 null", () => {
+test("非 Git 仓库或 Git 不可用：模型为 null", () => {
   assert.equal(build({ gitSummary: repo({ isRepository: false }) }), null);
   assert.equal(build({ gitSummary: repo({ isGitAvailable: false }) }), null);
-  assert.equal(
-    build({
-      gitSummary: repo({ headRefType: "detached", branchName: null, trackingBranchName: null }),
-    }),
-    null,
-  );
   assert.equal(resolveGitToolsBadge(null), null);
+});
+
+test("游离 HEAD 且干净：保留图谱入口但不伪造徽标", () => {
+  const model = build({
+    gitSummary: repo({ headRefType: "detached", branchName: null, trackingBranchName: null }),
+  });
+  assert.ok(model);
+  assert.equal(resolveGitToolsBadge(model), null);
 });
 
 test("干净、有上游、ahead/behind 均为 0：可见且徽标为「已同步」且无计数", () => {

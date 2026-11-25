@@ -32,6 +32,13 @@ const groups = [
     ],
   },
   {
+    project: "packages/services/tsconfig.test.json",
+    files: [
+      { path: "packages/services/test/gitCommitGraphFilters.test.ts", suite: "git" },
+      { path: "packages/services/test/gitCommitGraphSafety.test.ts", suite: "git" },
+    ],
+  },
+  {
     project: "packages/ui/tsconfig.json",
     files: [
       { path: "packages/ui/test/aboutDialogHost.test.ts", suite: "about" },
@@ -43,6 +50,10 @@ const groups = [
       { path: "packages/ui/test/composerModelSelectionPort.test.ts", suite: "git" },
       { path: "packages/ui/test/gitCommitMessageModel.browser.test.ts", suite: "git" },
       { path: "packages/ui/test/gitToolsPanelAlignment.browser.test.ts", suite: "git" },
+      { path: "packages/ui/test/gitToolsEntryVisibility.test.ts", suite: "git" },
+      { path: "packages/ui/test/gitToolsModel.test.ts", suite: "git" },
+      { path: "packages/ui/test/gitGraphFilters.test.ts", suite: "git" },
+      { path: "packages/ui/test/gitGraphFilters.browser.test.ts", suite: "git" },
       { path: "packages/ui/test/statusPanelOverlayStore.test.ts", suite: "status" },
       { path: "packages/ui/test/statusPanelSendAutoOpen.test.ts", suite: "status" },
       { path: "packages/ui/test/statusPanelSendAutoOpen.browser.test.ts", suite: "status" },

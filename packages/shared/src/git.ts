@@ -1,5 +1,6 @@
 import type { ModelSelection } from "./model-selection.js";
 import type { Locale } from "./protocol.js";
+import type { GitCommitGraphFilters } from "./git-graph-filters.js";
 
 export type GitHeadRefType = "branch" | "detached";
 
@@ -111,17 +112,22 @@ export interface GitCommitGraphCommit {
   refs: GitCommitGraphRef[];
   subject: string;
   authorName: string | null;
+  authorEmail?: string | null;
   authoredAtMs: number | null;
 }
 
 export interface GitCommitGraphRequest extends GitRepositoryRequest {
+  workspaceIdentity?: string;
   maxCount?: number;
   skip?: number;
+  filters?: GitCommitGraphFilters;
+  cursor?: string;
 }
 
 export interface GitCommitGraphResult {
   commits: GitCommitGraphCommit[];
   hasMore: boolean;
+  cursor?: string;
 }
 
 export interface GitRefreshRequest extends GitRepositoryRequest {

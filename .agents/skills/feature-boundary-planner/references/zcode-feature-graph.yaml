@@ -453,7 +453,55 @@ nodes:
         symbol: recordModelUsageFact
       - file: apps/zcode-cli/packages/adapters/src/storage/session-store/repositories/model-request-logs.ts
         symbol: queryModelRequestLogs
+  - id: capability.git-graph-filters
+    kind: capability
+    label: Git graph entry and history filters
+    aliases: [Git graph, commit graph, Git 图谱, 提交图, 文本或哈希, 分支筛选, 用户筛选]
+    codeSeeds:
+      - file: packages/ui/src/git-graph/GitGraphDialog.tsx
+        symbol: GitGraphDialog
+      - file: packages/shared/src/git-graph-filters.ts
+        symbol: gitCommitGraphFiltersSchema
+    invariants:
+      - "Filters occupy one horizontally scrollable row; no reset button or date-range input."
+      - "Filters run before pagination over user-visible history; regex and case toggles apply to message/hash only."
+  - id: surface.git-graph-entry
+    kind: ui-surface
+    label: Independent Git graph action in Git tools
+    codeSeeds:
+      - file: packages/ui/src/WorkspaceGitToolsEntry.tsx
+        symbol: WorkspaceGitToolsEntry
+      - file: packages/ui/src/v4/GitToolsPanel.tsx
+        symbol: GitToolsPanel
+    invariants:
+      - "The graph dialog lives outside PopoverContent; opening it closes the Git popover without unmounting the graph."
+  - id: state.git-graph-query
+    kind: state-owner
+    label: Workspace-scoped graph filters and paginated results
+    codeSeeds:
+      - file: packages/ui/src/hooks/useGitGraphQuery.ts
+        symbol: useGitGraphQuery
+  - id: service.git-graph-query
+    kind: service
+    label: Target workspace Git graph history query
+    codeSeeds:
+      - file: packages/services/src/git/git.ts
+        symbol: IGitService
+      - file: packages/services/src/git/repo/gitCommitGraphQuery.ts
+        symbol: queryGitCommitGraph
 edges:
+  - from: capability.git-graph-filters
+    to: surface.git-graph-entry
+    type: renders-in
+    rank: must-inspect
+  - from: surface.git-graph-entry
+    to: state.git-graph-query
+    type: reads-through
+    rank: must-inspect
+  - from: state.git-graph-query
+    to: service.git-graph-query
+    type: queries
+    rank: must-inspect
   - from: capability.model-request-logs
     to: surface.settings-request-logs
     type: renders-in

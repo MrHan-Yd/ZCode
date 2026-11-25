@@ -2,6 +2,9 @@ import type {
   GitBranchMutationResult,
   GitChangeKind,
   GitCommitGraphCommit,
+  GitCommitGraphRequest,
+  GitCommitGraphFilterOptions,
+  GitCommitGraphFilterOptionsRequest,
   GitDiffQuery,
   GitDiffResult,
   GitIdentity,
@@ -67,6 +70,7 @@ export interface GitCommitGraphSnapshot {
   resolution: GitResolvedRepository;
   commits: GitCommitGraphCommit[];
   hasMore: boolean;
+  cursor?: string;
 }
 
 export interface GitCliRepo {
@@ -78,7 +82,11 @@ export interface GitCliRepo {
     workspacePath: string,
     maxCount?: number,
     skip?: number,
+    options?: Pick<GitCommitGraphRequest, "workspaceIdentity" | "filters" | "cursor">,
   ): Promise<GitCommitGraphSnapshot>;
+  getCommitGraphFilterOptions(
+    params: GitCommitGraphFilterOptionsRequest,
+  ): Promise<GitCommitGraphFilterOptions>;
   getIgnoredPaths(workspacePath: string, paths: string[]): Promise<string[]>;
   listLocalBranches(workspacePath: string): Promise<GitLocalBranchListResult>;
   switchBranch(workspacePath: string, targetBranchName: string): Promise<GitBranchMutationResult>;

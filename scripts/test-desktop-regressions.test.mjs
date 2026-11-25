@@ -37,6 +37,22 @@ test("默认清单保留 headless 回归但不自动启动 About 真实桌面采
   assert.equal(new Set(selected).size, selected.length);
 });
 
+test("Git suite 包含图谱服务、单行筛选与浏览器回归，不运行原生 About", () => {
+  const selected = files(["--suite=git"]);
+  for (const path of [
+    "packages/services/test/gitCommitGraphFilters.test.ts",
+    "packages/services/test/gitCommitGraphSafety.test.ts",
+    "packages/ui/test/gitGraphFilters.test.ts",
+    "packages/ui/test/gitGraphFilters.browser.test.ts",
+  ])
+    assert.ok(selected.includes(path));
+  assert.equal(
+    selected.some((path) => path.includes("aboutDialog")),
+    false,
+  );
+  assert.equal(new Set(selected).size, selected.length);
+});
+
 test("Context 功能只选择上下文回归，多个 suite 并集不重复执行", () => {
   assert.deepEqual(files(["--suite", "context"]), [
     "packages/ui/test/contextUsageSubagents.browser.test.ts",

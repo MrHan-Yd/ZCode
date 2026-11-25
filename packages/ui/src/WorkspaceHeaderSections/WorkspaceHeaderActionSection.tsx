@@ -72,9 +72,7 @@ export function WorkspaceHeaderActionSection({
           useWindowsCaptionSpacing={useWindowsCaptionSpacing}
         />
       ) : null}
-      {/* Git 入口紧邻帮助按钮：Git 有事可做（gitTools 非 null）时始终出现，点击展开浮层。
-          `gitTools` 为 null 已覆盖 Office / 非仓库 / 无事可做。
-          手机远控窄头部也保留这一个图标：Git 工具不再有 chip 作为窄屏入口。 */}
+      {/* 有效仓库为图谱保留 Git 入口；Office / 非仓库不渲染，手机复用同一浮层。 */}
       {gitTools && onGitToolsPanelOpenChange && onRefreshGit ? (
         <WorkspaceGitToolsEntry
           key={JSON.stringify([

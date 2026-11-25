@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, type KeyboardEvent } from "react";
 import type { GitRepositorySummary } from "@zcode/shared";
 import { Button } from "@/components/ui/button.js";
 import {
@@ -15,7 +15,6 @@ import {
   GitBranchCreateDialog,
   GitBranchSwitchAssistDialog,
 } from "@/git-branch-switcher/GitBranchDialogs.js";
-import { GitGraphDialog } from "@/git-graph/GitGraphDialog.js";
 import { useGitBranchSwitcher } from "@/hooks/useGitBranchSwitcher.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import {
@@ -26,7 +25,7 @@ import {
   isCoarseTouchDevice,
   shouldRestoreChatInputFocusAfterPickerClose,
 } from "@/lib/pickerFocus.js";
-import { ChevronDownIcon, GitBranchIcon, GitGraph, LoaderIcon, PlusIcon } from "lucide-react";
+import { ChevronDownIcon, GitBranchIcon, LoaderIcon, PlusIcon } from "lucide-react";
 
 interface GitBranchSwitcherProps {
   workspacePath: string;
@@ -60,7 +59,6 @@ export function GitBranchSwitcher({
   const { intl, locale } = useZCodeIntl();
   const numberFormatter = new Intl.NumberFormat(locale);
   const commandListRef = useRef<HTMLDivElement | null>(null);
-  const [gitGraphDialogOpen, setGitGraphDialogOpen] = useState(false);
   const {
     open,
     setOpen,
@@ -315,19 +313,6 @@ export function GitBranchSwitcher({
                     id: "git.branchSwitcher.createAction",
                   })}
                 </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="lg"
-                  className="w-full justify-start px-2 text-foreground hover:bg-menu-hover hover:text-foreground"
-                  onClick={() => {
-                    setOpen(false);
-                    setGitGraphDialogOpen(true);
-                  }}
-                >
-                  <GitGraph className="size-4 text-foreground-subtle" />
-                  {intl.formatMessage({ id: "gitGraph.menuAction" })}
-                </Button>
               </div>
             ) : null}
           </PopoverContent>
@@ -352,12 +337,6 @@ export function GitBranchSwitcher({
         onSubmit={() => {
           void createBranchAndSwitch();
         }}
-      />
-
-      <GitGraphDialog
-        open={gitGraphDialogOpen}
-        workspacePath={workspacePath}
-        onOpenChange={setGitGraphDialogOpen}
       />
 
       <GitBranchSwitchAssistDialog

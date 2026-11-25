@@ -1,4 +1,4 @@
-import { FileDiffIcon } from "lucide-react";
+import { FileDiffIcon, GitGraphIcon } from "lucide-react";
 import type { GitChangeSourceId, ModelSelection, ZCodeTaskChangeSummary } from "@zcode/shared";
 import { cn } from "@/components/lib/utils.js";
 import { GitActionMenu } from "@/GitActionMenu.js";
@@ -18,12 +18,13 @@ interface GitToolsPanelProps {
   readCommitMessageModelSelection?: ComposerModelSelectionReader;
   onRefreshGit: () => void;
   onOpenGitReview?: (sourceId?: GitChangeSourceId) => void;
+  onOpenGitGraph?: () => void;
 }
 
 /**
  * 标题栏 Git 浮层的内容。
  *
- * 这是全 UI 唯一的 Git 行渲染点：更改 → 分支切换 → 提交或推送 → 拉取。
+ * 这是全 UI 唯一的 Git 行渲染点：更改 → 分支切换 → Git 图谱 → 提交或推送 → 拉取。
  * 大数字只在浮层内出现，且用紧凑格式（5.8k / 1.2m）；精确值留在 title 与 aria-label。
  */
 function formatDiffCount(value: number): string {
@@ -44,6 +45,7 @@ export function GitToolsPanel({
   readCommitMessageModelSelection,
   onRefreshGit,
   onOpenGitReview,
+  onOpenGitGraph,
 }: GitToolsPanelProps) {
   const { intl } = useZCodeIntl();
   const hasChanges = gitTools.added + gitTools.removed > 0;
@@ -110,6 +112,17 @@ export function GitToolsPanel({
           popoverSide="left"
           showFooterActions
         />
+        {onOpenGitGraph ? (
+          <button
+            type="button"
+            data-testid="git-graph-entry"
+            onClick={onOpenGitGraph}
+            className="flex h-8 w-full min-w-0 items-center gap-2 rounded-lg px-2 text-left text-ui-base text-foreground hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-input-border-focused"
+          >
+            <GitGraphIcon className="size-4 shrink-0" />
+            {intl.formatMessage({ id: "gitGraph.menuAction" })}
+          </button>
+        ) : null}
         <GitActionMenu
           workspacePath={workspacePath}
           workspaceIdentity={workspaceIdentity}

@@ -3,6 +3,8 @@ import type {
   GitBranchComparison,
   GitCommitGraphRequest,
   GitCommitGraphResult,
+  GitCommitGraphFilterOptions,
+  GitCommitGraphFilterOptionsRequest,
   GitCreateBranchRequest,
   GitChangesRequest,
   GitCommitRequest,
@@ -36,6 +38,9 @@ export interface IGitService {
   getWorkspaceRepositoryInfo(params: GitRepositoryRequest): Promise<GitWorkspaceRepositoryInfo>;
   getLocalBranches(params: GitRepositoryRequest): Promise<GitLocalBranchListResult>;
   getCommitGraph(params: GitCommitGraphRequest): Promise<GitCommitGraphResult>;
+  getCommitGraphFilterOptions(
+    params: GitCommitGraphFilterOptionsRequest,
+  ): Promise<GitCommitGraphFilterOptions>;
   switchBranch(params: GitSwitchBranchRequest): Promise<GitBranchMutationResult>;
   createBranchAndSwitch(params: GitCreateBranchRequest): Promise<GitBranchMutationResult>;
   getChanges(params: GitChangesRequest): Promise<GitFileChange[]>;

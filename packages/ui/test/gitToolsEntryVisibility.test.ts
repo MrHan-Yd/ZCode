@@ -46,7 +46,7 @@ test("只有行级增减：显示", () => {
   assert.equal(visibility({ added: 0, removed: 2 }), true);
 });
 
-test("干净、无上游、无未推送提交、无落后：三处都为空才不显示", () => {
+test("干净、无上游、无未推送提交、无落后：为图谱保留有效仓库入口", () => {
   assert.equal(
     visibility({
       dirtyFileCount: 0,
@@ -56,7 +56,7 @@ test("干净、无上游、无未推送提交、无落后：三处都为空才�
       behind: 0,
       canPull: false,
     }),
-    false,
+    true,
   );
 });
 

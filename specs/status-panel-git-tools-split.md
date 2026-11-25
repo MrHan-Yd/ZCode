@@ -21,7 +21,7 @@ Git 工具（更改 / 分支切换 / 提交 / 推送 / 拉取）是 workspace �
 ### 1. Git 工具入口：标题栏图标 + 徽标 + 浮层
 
 1. `WorkspaceHeaderActionSection` 在 `WorkspaceHelpMenuButton` 左侧渲染 `WorkspaceGitToolsEntry`：ghost 图标按钮（`GitBranch`，`size="icon-md"`，图标 `size-4`，`[app-region:no-drag]`），复用既有 `TID_GIT_TOOLS_ENTRY` 锚点。
-2. 渲染条件只看 `gitTools !== null`（已包含非 Office、非仓库、Git 不可用、确实无事可做）。不再依赖「面板是否展开」，不再有 `mini` 兜底态；手机远控窄头部同样渲染这一个图标，不新增第二套入口。
+2. 渲染条件只看 `gitTools !== null`（已包含非 Office、非仓库、Git 不可用）；有效仓库为独立图谱保留入口，干净 detached HEAD 也可打开。不再依赖「面板是否展开」，不再有 `mini` 兜底态；手机远控窄头部同样渲染这一个图标，不新增第二套入口。
 3. 图标右上角渲染计数徽标（`resolveGitToolsBadge`，见接口）。徽标只显示计数，不显示 `+N -M`：
    - `changes`：`dirtyFileCount`；
    - `pushable`：`ahead`；
@@ -33,8 +33,9 @@ Git 工具（更改 / 分支切换 / 提交 / 推送 / 拉取）是 workspace �
    1. 标题行「Git 工具」（复用 `chat.statusPanel.environment`）；
    2. **更改**：`dirtyFileCount > 0 || added + removed > 0` 时渲染；点击调用 `onOpenGitReview`；
    3. **分支切换**：`GitBranchSwitcher`；
-   4. **提交或推送**：`GitActionMenu`；
-   5. **拉取**：`GitPullAction`，仅 `canPull` 为真时渲染。
+   4. **Git 图谱**：独立行，先收起浮层再打开外部持有的图谱弹窗（详见 `specs/git-graph-filters.md`），不再藏在分支下拉；
+   5. **提交或推送**：`GitActionMenu`；
+   6. **拉取**：`GitPullAction`，仅 `canPull` 为真时渲染。
 6. 「更改」行的大数字只在浮层内出现：`< 1000` 显示精确值；`≥ 1000` 用 `Intl.NumberFormat` compact（`+5.8k / -1.7k`）；完整值放进 tooltip 与 `aria-label`。颜色沿用 `--color-diff-added` / `--color-diff-removed`。
 7. 浮层规格：`w-80`、最大宽度取 `calc(100vw - 2rem)` 与透明锚点宽度（`--radix-popover-trigger-width`）的较小值、`max-h-[min(60dvh,26rem)]`、`rounded-xl`、`popover` 背景、`popover-border` 边框、`shadow-md`、`p-2`。窄窗口和手机 Web 保留左右至少 `1rem` 的视口安全边距（`collisionPadding={16}`），打开后调整窗口宽度或显示/隐藏侧栏控件时仍跟随标题栏右边缘，不新增位置缓存或 resize 同步状态。`Escape`、点击外部、再次点击图标都关闭浮层；关闭后焦点回到图标。
 8. 浮层不新增第二个 Git 渲染点、不写打开意图 store；展开状态唯一所有者是 shell 的 `summaryPanelVariantOverride`（`"panel"` = 打开，其余 = 关闭）。

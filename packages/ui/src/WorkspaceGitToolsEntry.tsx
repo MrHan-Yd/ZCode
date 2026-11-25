@@ -1,7 +1,9 @@
 import { TID_GIT_TOOLS_ENTRY, TID_GIT_TOOLS_PANEL } from "@zcode/shared";
 import type { GitChangeSourceId, ModelSelection, ZCodeTaskChangeSummary } from "@zcode/shared";
 import { GitBranchIcon } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
+import { GitGraphDialog } from "@/git-graph/GitGraphDialog.js";
+import { useServices } from "@/hooks/useServices.js";
 import { Button } from "@/components/ui/button.js";
 import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
@@ -65,6 +67,14 @@ export function WorkspaceGitToolsEntry({
   onOpenGitReview,
 }: WorkspaceGitToolsEntryProps) {
   const { intl } = useZCodeIntl();
+  const { gitService } = useServices();
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const [graphTarget, setGraphTarget] = useState<{
+    scope: string;
+    service: typeof gitService;
+  } | null>(null);
+  const graphScope = JSON.stringify([workspaceIdentity?.trim() || workspacePath, workspacePath]);
+  const graphOpen = graphTarget?.scope === graphScope && graphTarget.service === gitService;
   const previousOpenRef = useRef(false);
   useEffect(() => {
     const opened = open && !previousOpenRef.current;
@@ -74,6 +84,9 @@ export function WorkspaceGitToolsEntry({
       onRefreshGit();
     }
   }, [onRefreshGit, open]);
+  useEffect(() => {
+    if (graphTarget && !graphOpen) setGraphTarget(null);
+  }, [graphOpen, graphTarget]);
   const title = intl.formatMessage({ id: "chat.statusPanel.environment" });
   const badge = resolveGitToolsBadge(gitTools);
   const badgeKindLabel = badge ? intl.formatMessage({ id: badgeKindMessageId(badge) }) : title;
@@ -89,55 +102,74 @@ export function WorkspaceGitToolsEntry({
     : title;
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <ControlHintTooltip title={title} side="bottom">
-        <PopoverTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-md"
-            data-testid={TID_GIT_TOOLS_ENTRY}
-            aria-label={ariaLabel}
-            aria-expanded={open}
-            data-git-badge-kind={badge?.kind}
-            data-git-badge-count={badgeCount ?? undefined}
-            className="[app-region:no-drag] relative"
-          >
-            <GitBranchIcon className="size-4" />
-            {badgeCount ? (
-              <span
-                aria-hidden
-                className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--color-accent)] px-1 text-[9px] font-medium leading-none text-[var(--color-foreground)] tabular-nums"
-              >
-                {badgeCount}
-              </span>
-            ) : null}
-          </Button>
-        </PopoverTrigger>
-      </ControlHintTooltip>
-      {/* 按钮后的窗控数量会改变固定偏移的落点；以标题栏内缩 1rem 的边缘锚定，和会话状态面板一致。
+    <>
+      <Popover open={open} onOpenChange={onOpenChange}>
+        <ControlHintTooltip title={title} side="bottom">
+          <PopoverTrigger asChild>
+            <Button
+              ref={triggerRef}
+              type="button"
+              variant="ghost"
+              size="icon-md"
+              data-testid={TID_GIT_TOOLS_ENTRY}
+              aria-label={ariaLabel}
+              aria-expanded={open}
+              data-git-badge-kind={badge?.kind}
+              data-git-badge-count={badgeCount ?? undefined}
+              className="[app-region:no-drag] relative"
+            >
+              <GitBranchIcon className="size-4" />
+              {badgeCount ? (
+                <span
+                  aria-hidden
+                  className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-[var(--color-accent)] px-1 text-[9px] font-medium leading-none text-[var(--color-foreground)] tabular-nums"
+                >
+                  {badgeCount}
+                </span>
+              ) : null}
+            </Button>
+          </PopoverTrigger>
+        </ControlHintTooltip>
+        {/* 按钮后的窗控数量会改变固定偏移的落点；以标题栏内缩 1rem 的边缘锚定，和会话状态面板一致。
           自定义锚点放在 Trigger 后，防止初挂时默认按钮锚点最后注册，留下已卸载节点的零尺寸引用。 */}
-      <PopoverAnchor aria-hidden className="pointer-events-none absolute inset-x-4 top-2 h-7" />
-      <PopoverContent
-        data-testid={TID_GIT_TOOLS_PANEL}
-        align="end"
-        side="bottom"
-        sideOffset={6}
-        collisionPadding={16}
-        className="max-h-[min(60dvh,26rem)] w-80 max-w-[min(calc(100vw-2rem),var(--radix-popover-trigger-width))] overflow-y-auto p-0"
-      >
-        <GitToolsPanel
-          workspacePath={workspacePath}
-          workspaceIdentity={workspaceIdentity}
-          gitTools={gitTools}
-          gitWorktreeReviewSourceId={gitWorktreeReviewSourceId}
-          activeTaskChangeSummary={activeTaskChangeSummary}
-          commitMessageModelSelection={commitMessageModelSelection}
-          readCommitMessageModelSelection={readCommitMessageModelSelection}
-          onRefreshGit={onRefreshGit}
-          onOpenGitReview={onOpenGitReview}
-        />
-      </PopoverContent>
-    </Popover>
+        <PopoverAnchor aria-hidden className="pointer-events-none absolute inset-x-4 top-2 h-7" />
+        <PopoverContent
+          data-testid={TID_GIT_TOOLS_PANEL}
+          align="end"
+          side="bottom"
+          sideOffset={6}
+          collisionPadding={16}
+          onCloseAutoFocus={(event) => {
+            if (graphOpen) event.preventDefault();
+          }}
+          className="max-h-[min(60dvh,26rem)] w-80 max-w-[min(calc(100vw-2rem),var(--radix-popover-trigger-width))] overflow-y-auto p-0"
+        >
+          <GitToolsPanel
+            workspacePath={workspacePath}
+            workspaceIdentity={workspaceIdentity}
+            gitTools={gitTools}
+            gitWorktreeReviewSourceId={gitWorktreeReviewSourceId}
+            activeTaskChangeSummary={activeTaskChangeSummary}
+            commitMessageModelSelection={commitMessageModelSelection}
+            readCommitMessageModelSelection={readCommitMessageModelSelection}
+            onRefreshGit={onRefreshGit}
+            onOpenGitReview={onOpenGitReview}
+            onOpenGitGraph={() => {
+              onOpenChange(false);
+              setGraphTarget({ scope: graphScope, service: gitService });
+            }}
+          />
+        </PopoverContent>
+      </Popover>
+      <GitGraphDialog
+        open={graphOpen}
+        workspacePath={workspacePath}
+        workspaceIdentity={workspaceIdentity}
+        returnFocusRef={triggerRef}
+        onOpenChange={(nextOpen) => {
+          setGraphTarget(nextOpen ? { scope: graphScope, service: gitService } : null);
+        }}
+      />
+    </>
   );
 }
