@@ -26,6 +26,10 @@ const groups = [
       "packages/ui/test/sessionPerformanceStats.browser.test.ts",
       "packages/ui/test/composerModelSelectionPort.test.ts",
       "packages/ui/test/gitCommitMessageModel.browser.test.ts",
+      "packages/ui/test/gitToolsPanelAlignment.browser.test.ts",
+      "packages/ui/test/statusPanelOverlayStore.test.ts",
+      "packages/ui/test/statusPanelSendAutoOpen.test.ts",
+      "packages/ui/test/statusPanelSendAutoOpen.browser.test.ts",
     ],
   },
   {

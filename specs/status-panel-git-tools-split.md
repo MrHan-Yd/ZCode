@@ -28,7 +28,7 @@ Git 工具（更改 / 分支切换 / 提交 / 推送 / 拉取）是 workspace �
    - `behind`：`behind`；
    - `synced`：无徽标。
      计数上限显示 `99+`；徽标不使用 success / destructive 语义色，统一 `--color-accent`。
-4. 点击图标切换 Git 浮层（`Popover`，`align="end"`、`side="bottom"`），按钮同步 `aria-expanded`。浮层根节点挂 `TID_GIT_TOOLS_PANEL`。打开时通过 `useGitRepository` 的工作区刷新能力立即读取最新基线，关闭不刷新；与提交弹窗消费同一刷新结果，具体规则见 `specs/git-refresh-consistency.md`。
+4. 点击图标切换 Git 浮层（`Popover`，`align="end"`、`side="bottom"`），按钮同步 `aria-expanded`。浮层使用 `WorkspaceHeader` 内 `inset-x-4` 的透明 `PopoverAnchor`：右边缘距当前会话框右边缘 `1rem`，与会话状态面板的 `right-4` 相同，不再相对 Git 按钮施加固定横向偏移。锚点不参与布局、不接收指针和键盘焦点；浮层仍在标题栏图标下方展开，关闭后焦点仍回到 Git 按钮。浮层根节点挂 `TID_GIT_TOOLS_PANEL`。打开时通过 `useGitRepository` 的工作区刷新能力立即读取最新基线，关闭不刷新；与提交弹窗消费同一刷新结果，具体规则见 `specs/git-refresh-consistency.md`。
 5. 浮层内容顺序固定，且是全 UI 唯一的 Git 行渲染点：
    1. 标题行「Git 工具」（复用 `chat.statusPanel.environment`）；
    2. **更改**：`dirtyFileCount > 0 || added + removed > 0` 时渲染；点击调用 `onOpenGitReview`；
@@ -36,7 +36,7 @@ Git 工具（更改 / 分支切换 / 提交 / 推送 / 拉取）是 workspace �
    4. **提交或推送**：`GitActionMenu`；
    5. **拉取**：`GitPullAction`，仅 `canPull` 为真时渲染。
 6. 「更改」行的大数字只在浮层内出现：`< 1000` 显示精确值；`≥ 1000` 用 `Intl.NumberFormat` compact（`+5.8k / -1.7k`）；完整值放进 tooltip 与 `aria-label`。颜色沿用 `--color-diff-added` / `--color-diff-removed`。
-7. 浮层规格：`w-80`、`max-w-[calc(100vw-1rem)]`、`max-h-[min(60dvh,26rem)]`、`rounded-xl`、`popover` 背景、`popover-border` 边框、`shadow-md`、`p-2`。`Escape`、点击外部、再次点击图标都关闭浮层；关闭后焦点回到图标。
+7. 浮层规格：`w-80`、最大宽度取 `calc(100vw - 2rem)` 与透明锚点宽度（`--radix-popover-trigger-width`）的较小值、`max-h-[min(60dvh,26rem)]`、`rounded-xl`、`popover` 背景、`popover-border` 边框、`shadow-md`、`p-2`。窄窗口和手机 Web 保留左右至少 `1rem` 的视口安全边距（`collisionPadding={16}`），打开后调整窗口宽度或显示/隐藏侧栏控件时仍跟随标题栏右边缘，不新增位置缓存或 resize 同步状态。`Escape`、点击外部、再次点击图标都关闭浮层；关闭后焦点回到图标。
 8. 浮层不新增第二个 Git 渲染点、不写打开意图 store；展开状态唯一所有者是 shell 的 `summaryPanelVariantOverride`（`"panel"` = 打开，其余 = 关闭）。
 
 ### 2. 会话状态入口：标题栏图标 + 会话区顶部面板
@@ -47,6 +47,7 @@ Git 工具（更改 / 分支切换 / 提交 / 推送 / 拉取）是 workspace �
 4. 开关意图的唯一所有者是 `statusPanelOverlayStore`（`v4/statusPanelOverlayStore.ts`）：只保存一条 `{ sessionId, open }`，不复制业务事实。切到别的 session 时上一条自动失效；composer 的后台任务徽标也通过 `openStatusPanelOverlay(sessionId)` 打开同一面板。
 5. 面板不重复后台任务计数：实时运行计数仍归 composer 的 `ConversationBackgroundWorkTrigger` 徽标。
 6. 面板不再渲染 Git：Git 行全部在标题栏浮层（规则 1），状态面板里不出现 Git 分区、chip 或「Git 工具」标题。
+7. 成功发送消息后，当前 pane 有未完成内容时可通过同一开关自动打开一次；稍后出现内容时补弹，显式关闭或打开 Git 后不反复顶开。触发、未完成判定、scope 与验收详见 `specs/status-panel-send-auto-open.md`。
 
 ### 3. 状态面板：顶部右侧的按需浮层
 
@@ -226,7 +227,7 @@ packages/shared/src/test-ids.ts
 2. **徽标优先级**：有未提交改动（含二进制/0 行改动）→ 徽标显示文件数；干净且 `ahead > 0` → 显示 `ahead`；干净且 `behind > 0` → 显示 `behind`；干净且可拉取 → 无徽标。计数 ≥ 100 显示 `99+`。
 3. **Git 浮层**：点击图标 → `TID_GIT_TOOLS_PANEL` 出现，行顺序为「更改 → 分支切换 → `TID_GIT_ACTION_TRIGGER` → `TID_GIT_PULL_TRIGGER`（有上游时）」；`Escape` / 点击外部 / 再点图标均关闭，焦点回到图标。
 4. **大数字缩写**：`added = 5756`、`removed = 1659` → 浮层「更改」行显示 `+5.8k / -1.7k`，tooltip 与 `aria-label` 保留精确值；`<1000` 时显示精确值。
-5. **图标常驻、按需唤醒**：有 active session → 标题栏出现 `TID_CHAT_STATUS_ENTRY`；未点击时面板不渲染；点击后会话区顶部右侧出现 `TID_CHAT_STATUS_SECTIONS_PANEL`（`data-state="expanded"`），`aria-expanded="true"`；再点图标或点面板关闭按钮 → 面板消失。
+5. **图标常驻、按需唤醒**：有 active session → 标题栏出现 `TID_CHAT_STATUS_ENTRY`；未点击且没有成功发送触发的有效自动打开意图时面板不渲染；点击后会话区顶部右侧出现 `TID_CHAT_STATUS_SECTIONS_PANEL`（`data-state="expanded"`），`aria-expanded="true"`；再点图标或点面板关闭按钮 → 面板消失。自动打开的验收见 `specs/status-panel-send-auto-open.md`。
 6. **与编排模式无关**：没有编排 run 时，只要会话有计划 / 终端 / 智能体等内容，图标点击后同样能看到“进程 / 智能体”分区。
 7. **空态**：点击图标但会话没有任何状态内容 → 面板显示「当前没有进行中的计划、终端或智能体」，不出现点击无响应。
 8. **顶部锚点**：面板锚在会话区顶部右侧（`absolute right-4 top-0`），覆盖正文、不改变内容列宽，与输入框无关。
@@ -236,6 +237,7 @@ packages/shared/src/test-ids.ts
 12. **拆分窗格**：标题栏图标只唤醒当前 active session 的面板；开关状态按 sessionId 匹配，切到别的会话后旧面板不残留。
 13. **子智能体规则不变**：running/waiting/blocked 排序、分区头计数、TPS 缺席省略等行为与 `specs/status-panel-subagent-identity.md` 一致；只有会话确实起过子智能体（运行中或已结束目录可开）时「智能体」分区才出现。
 14. **中英文**：Git 浮层标题、状态图标 tooltip、面板分区名与空态随 locale 变化；`aria-label` 同步。
+15. **右边距一致**：在同一会话框内依次打开 Git 浮层和会话状态面板，二者右边缘相同，距框右边缘 `16px`（默认根字号）；覆盖 Windows 完整窗控、macOS/Linux/Web 顶栏、侧栏开/关、530px 窄窗口、390px 与 320px 手机 Web。打开 Git 浮层后改变窗口宽度，定位跟随新右边缘；Git 浮层不产生横向溢出，也不挤动正文。此场景复用真实 `WorkspaceHeader`、`ConversationStatusPanel` 与产品 CSS，正式浏览器回归为 `packages/ui/test/gitToolsPanelAlignment.browser.test.ts`，纳入 UI 测试类型检查与 `pnpm test:desktop-regressions`。
 
 ## E2E 锚点
 

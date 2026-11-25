@@ -177,6 +177,8 @@ import {
   resolveSoleRunningWorkflowRunTarget,
 } from "@/v4/conversationStatusPanelModel.js";
 import type { ConversationStatusPanelWorkflowRunTarget } from "@/v4/conversationStatusPanelModel.js";
+import type { StatusPanelAutoOpenSections } from "@/v4/statusPanelSendAutoOpen.js";
+import { useStatusPanelSendAutoOpen } from "@/hooks/useStatusPanelSendAutoOpen.js";
 import {
   closeStatusPanelOverlay,
   openStatusPanelOverlay,
@@ -1037,11 +1039,21 @@ export function SessionPane({
   const handleCloseStatusPanel = useCallback(() => {
     if (sessionId) closeStatusPanelOverlay(sessionId);
   }, [sessionId]);
+  const [goalSectionOpen, setGoalSectionOpen] = useState(true);
+  const [planSectionOpen, setPlanSectionOpen] = useState(true);
   const [terminalSectionOpen, setTerminalSectionOpen] = useState(false);
   const [agentSectionOpen, setAgentSectionOpen] = useState(false);
   const [workflowSectionOpen, setWorkflowSectionOpen] = useState(false);
   // 编排计划默认展开：它是运行中唯一能看到完整 DAG（含未启动步骤）的地方。
   const [orchestrationSectionOpen, setOrchestrationSectionOpen] = useState(true);
+  // 会话切换先重置折叠，再由本次 accepted 的自动打开展开，避免后置重置覆盖首发活动。
+  useEffect(() => {
+    setGoalSectionOpen(true);
+    setPlanSectionOpen(true);
+    setTerminalSectionOpen(false);
+    setAgentSectionOpen(false);
+    setWorkflowSectionOpen(false);
+  }, [sessionId]);
   const [dropTargetController, setDropTargetController] =
     useState<ConversationDropTargetController | null>(null);
   const handleDropTargetControllerChange = useCallback(
@@ -1379,6 +1391,54 @@ export function SessionPane({
   };
   const orchestrationRuntimeConfigRef = useRef(orchestrationStateView.config);
   orchestrationRuntimeConfigRef.current = orchestrationStateView.config;
+  const subagents = snapshot?.subagents ?? EMPTY_SUBAGENT_PROJECTION;
+  const statusPanelModel = useMemo(
+    () =>
+      buildConversationStatusPanelModel({
+        workspacePath,
+        goal: selectionSideChat ? null : (snapshot?.goal ?? null),
+        sessionPlans: state.sessionPlans,
+        plan: snapshot?.plan ?? null,
+        backgroundWorks: snapshot?.backgroundWorks ?? [],
+        runningSubagents: subagents.running,
+        workflowRuns: snapshot?.workflowRuns?.runs ?? [],
+        orchestrationRuns: orchestrationStateView.runs,
+      }),
+    [
+      orchestrationStateView.runs,
+      snapshot?.backgroundWorks,
+      snapshot?.goal,
+      snapshot?.plan,
+      snapshot?.workflowRuns,
+      state.sessionPlans,
+      selectionSideChat,
+      subagents.running,
+      workspacePath,
+    ],
+  );
+  const expandUnfinishedStatusSections = useCallback((sections: StatusPanelAutoOpenSections) => {
+    if (sections.goal) setGoalSectionOpen(true);
+    if (sections.plan) setPlanSectionOpen(true);
+    if (sections.terminal) setTerminalSectionOpen(true);
+    if (sections.workflow) setWorkflowSectionOpen(true);
+    if (sections.orchestration) setOrchestrationSectionOpen(true);
+    if (sections.agent) setAgentSectionOpen(true);
+  }, []);
+  const {
+    beginSend: beginStatusPanelSend,
+    bindDraftTarget: bindStatusPanelDraftTarget,
+    acceptSend: acceptStatusPanelSend,
+    cancelSend: cancelStatusPanelSend,
+  } = useStatusPanelSendAutoOpen({
+    workspacePath,
+    workspaceIdentity,
+    remoteSessionId,
+    sessionId,
+    snapshotSessionId: snapshot?.sessionId ?? null,
+    enabled: !readOnly && focused && telemetryVisible,
+    model: statusPanelModel,
+    onExpandSections: expandUnfinishedStatusSections,
+  });
   // 发送时用 ref 读取活动 run，避免把整份 run 投影塞进 send 回调依赖导致重建。
   const orchestrationActiveRunCountRef = useRef(0);
   orchestrationActiveRunCountRef.current = orchestrationStateView.runs.filter(
@@ -2585,6 +2645,7 @@ export function SessionPane({
       expectedHeldQueueItemIds?: readonly string[],
       submission?: ComposerSubmissionConfig,
       onAccepted?: (messageId: string) => void,
+      statusPanelTicket?: ReturnType<typeof beginStatusPanelSend>,
     ): Promise<boolean | "confirmationRequired"> => {
       let type: CommandType | null = null;
       let payload: Record<string, unknown> = {};
@@ -2635,6 +2696,8 @@ export function SessionPane({
         targetSessionId,
         withBaseRevision ? baseRevision : undefined,
       );
+      if (statusPanelTicket)
+        acceptStatusPanelSend(statusPanelTicket, type, payload, targetSessionId, ack);
       if (ack.status === "accepted") onAccepted?.(ack.commandId);
       if (ack.reasonCode === "guard.heldQueueConfirmationStale") {
         return "confirmationRequired";
@@ -2656,7 +2719,7 @@ export function SessionPane({
       }
       return true;
     },
-    [dispatchCommand, intl, settleCurrentQueueInputs],
+    [acceptStatusPanelSend, dispatchCommand, intl, settleCurrentQueueInputs],
   );
 
   const dispatchSendTextAfterConfig = useCallback(
@@ -2664,10 +2727,12 @@ export function SessionPane({
       text: string,
       options: ConversationComposerSendOptions | undefined,
       createSourceAtSend: SessionCreateSource,
+      statusPanelTicket: ReturnType<typeof beginStatusPanelSend>,
     ) => {
       let onAcceptedSelection: (() => void) | undefined;
       const dispatchSubmissionCommand = async (...args: Parameters<typeof dispatchCommand>) => {
         const ack = await dispatchCommand(...args);
+        acceptStatusPanelSend(statusPanelTicket, args[0], args[1], args[2], ack);
         // 在原 accepted 边界写回推荐选择，早于新 Session 的草稿转移；失败不改用户意图。
         if (ack.status === "accepted" && submissionConfigFromCommand(args[0], args[1]))
           onAcceptedSelection?.();
@@ -2784,6 +2849,8 @@ export function SessionPane({
           heldQueueDisposition,
           expectedHeldQueueItemIds,
           submission,
+          undefined,
+          statusPanelTicket,
         );
         if (consumed === "confirmationRequired") return consumed;
         if (consumed) {
@@ -2824,6 +2891,7 @@ export function SessionPane({
               expectedHeldQueueItemIds,
               submission,
               (messageId) => reportDraftCreated(prewarm.sessionId, createSourceAtSend, messageId),
+              statusPanelTicket,
             );
             if (consumed === "confirmationRequired") return consumed;
             if (consumed) {
@@ -2871,6 +2939,8 @@ export function SessionPane({
           throw new Error("createSession 缺少 sessionId");
         }
         const newSessionId = createResult.sessionId;
+        // 空创建先绑定 pane，消息 ACK 才能触发自动打开；本次 ticket 只继承明确的新目标。
+        bindStatusPanelDraftTarget(statusPanelTicket, newSessionId);
         handleDraftSessionCreated(newSessionId, groupedDraftTaskAtSend, createSourceAtSend);
         await dispatchSlashCommand(
           draftSlashCommand,
@@ -2880,6 +2950,7 @@ export function SessionPane({
           expectedHeldQueueItemIds,
           submission,
           (messageId) => reportDraftCreated(newSessionId, createSourceAtSend, messageId),
+          statusPanelTicket,
         );
         return;
       }
@@ -3060,6 +3131,8 @@ export function SessionPane({
       }
     },
     [
+      acceptStatusPanelSend,
+      bindStatusPanelDraftTarget,
       dispatchCommand,
       syncOrchestrationBeforeSend,
       recommendStartPlan,
@@ -3087,6 +3160,7 @@ export function SessionPane({
 
   const dispatchSendText = useCallback(
     (text: string, options?: ConversationComposerSendOptions) => {
+      const statusPanelTicket = beginStatusPanelSend();
       const createSource = useZCodeSessionStore
         .getState()
         .getWorkspaceState(workspacePath, workspaceIdentity).draftCreateSource;
@@ -3099,7 +3173,12 @@ export function SessionPane({
       // 依赖“配置命令先到、sendText 后到”的跨命令时序。
       return configCommandBarrier.enqueue(async () => {
         try {
-          return await dispatchSendTextAfterConfig(text, submissionOptions, createSource);
+          return await dispatchSendTextAfterConfig(
+            text,
+            submissionOptions,
+            createSource,
+            statusPanelTicket,
+          );
         } catch (error) {
           if (sessionId === null && isProviderNotReadyError(error)) {
             // UI 预检查与 Host getClient 之间 registry 仍可能失效。竞态命中时收敛成
@@ -3112,6 +3191,7 @@ export function SessionPane({
       });
     },
     [
+      beginStatusPanelSend,
       configCommandBarrier,
       createSubmissionFromComposer,
       dispatchSendTextAfterConfig,
@@ -4153,7 +4233,6 @@ export function SessionPane({
   const initialDraftConfigForDiagnostics = isDraft ? resolveInitialDraftConfig() : undefined;
   // CLI V4 projection 是 running/count/manifest 的唯一权威；renderer 不再在 spawn
   // 事件后另发查询拼接第二份状态，避免并发 child 的 in-flight refresh 丢更新。
-  const subagents = snapshot?.subagents ?? EMPTY_SUBAGENT_PROJECTION;
   useEffect(() => {
     if (!sessionId || subagents.revision === 0 || !onSyncSubagentSessionTabs) return;
     onSyncSubagentSessionTabs({
@@ -4173,30 +4252,6 @@ export function SessionPane({
     setSelectionSideChatBlocked(sessionId, Boolean(blockingInteractionId));
     return () => setSelectionSideChatBlocked(sessionId, false);
   }, [blockingInteractionId, selectionSideChat, sessionId]);
-  const statusPanelModel = useMemo(
-    () =>
-      buildConversationStatusPanelModel({
-        workspacePath,
-        goal: selectionSideChat ? null : (snapshot?.goal ?? null),
-        sessionPlans: state.sessionPlans,
-        plan: snapshot?.plan ?? null,
-        backgroundWorks: snapshot?.backgroundWorks ?? [],
-        runningSubagents: subagents.running,
-        workflowRuns: snapshot?.workflowRuns?.runs ?? [],
-        orchestrationRuns: orchestrationStateView.runs,
-      }),
-    [
-      orchestrationStateView.runs,
-      snapshot?.backgroundWorks,
-      snapshot?.goal,
-      snapshot?.plan,
-      snapshot?.workflowRuns,
-      state.sessionPlans,
-      selectionSideChat,
-      subagents.running,
-      workspacePath,
-    ],
-  );
   const runningBackgroundWorkCount =
     statusPanelModel.runningBashWorks.length +
     statusPanelModel.runningSubagentWorks.length +
@@ -4212,11 +4267,6 @@ export function SessionPane({
     0,
   );
   const orchestrationActive = statusPanelModel.activeOrchestrationRuns.length > 0;
-  useEffect(() => {
-    setTerminalSectionOpen(false);
-    setAgentSectionOpen(false);
-    setWorkflowSectionOpen(false);
-  }, [sessionId]);
   useEffect(() => {
     if (runningTerminalCount === 0) {
       setTerminalSectionOpen(false);
@@ -4241,6 +4291,8 @@ export function SessionPane({
   );
   const handleOpenRunningBackgroundWorks = useCallback(() => {
     if (runningBackgroundWorkCount === 0) return;
+    // 显式徽标入口（含单工作流详情直达）优先于等待中的自动意图，不改现有面板开关。
+    cancelStatusPanelSend();
     if (soleRunningWorkflowRunTarget) {
       // 与面板行同一个 handler：不存在第二条打开路径。
       handleOpenWorkflowRunFromPanel(soleRunningWorkflowRunTarget);
@@ -4254,6 +4306,7 @@ export function SessionPane({
     setOrchestrationSectionOpen(statusPanelModel.activeOrchestrationRuns.length > 0);
     if (sessionId) openStatusPanelOverlay(sessionId);
   }, [
+    cancelStatusPanelSend,
     handleOpenWorkflowRunFromPanel,
     runningAgentCount,
     runningBackgroundWorkCount,
@@ -4990,6 +5043,10 @@ export function SessionPane({
             parentSessionId={sessionId ?? undefined}
             open={statusPanelOpen}
             onClose={handleCloseStatusPanel}
+            goalSectionOpen={goalSectionOpen}
+            onGoalSectionOpenChange={setGoalSectionOpen}
+            planSectionOpen={planSectionOpen}
+            onPlanSectionOpenChange={setPlanSectionOpen}
             terminalSectionOpen={terminalSectionOpen}
             onTerminalSectionOpenChange={setTerminalSectionOpen}
             agentSectionOpen={agentSectionOpen}

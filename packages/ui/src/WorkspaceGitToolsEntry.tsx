@@ -3,7 +3,7 @@ import type { GitChangeSourceId, ModelSelection, ZCodeTaskChangeSummary } from "
 import { GitBranchIcon } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button.js";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover.js";
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from "@/components/ui/popover.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import type { ComposerModelSelectionReader } from "@/v4/composer/composerModelSelectionPort.js";
@@ -115,15 +115,16 @@ export function WorkspaceGitToolsEntry({
           </Button>
         </PopoverTrigger>
       </ControlHintTooltip>
+      {/* 按钮后的窗控数量会改变固定偏移的落点；以标题栏内缩 1rem 的边缘锚定，和会话状态面板一致。
+          自定义锚点放在 Trigger 后，防止初挂时默认按钮锚点最后注册，留下已卸载节点的零尺寸引用。 */}
+      <PopoverAnchor aria-hidden className="pointer-events-none absolute inset-x-4 top-2 h-7" />
       <PopoverContent
         data-testid={TID_GIT_TOOLS_PANEL}
         align="end"
         side="bottom"
         sideOffset={6}
-        // 浮层不要贴着会话正文向外伸；整体右移，落到标题栏图标簇下方。
-        // align="end" 时 floating-ui 会对 alignmentAxis 取反，负值才是向右。
-        alignOffset={-64}
-        className="max-h-[min(60dvh,26rem)] w-80 max-w-[calc(100vw-1rem)] overflow-y-auto p-0"
+        collisionPadding={16}
+        className="max-h-[min(60dvh,26rem)] w-80 max-w-[min(calc(100vw-2rem),var(--radix-popover-trigger-width))] overflow-y-auto p-0"
       >
         <GitToolsPanel
           workspacePath={workspacePath}

@@ -26,7 +26,18 @@
     "test/fixtures/sessionPerformanceStatsFixture.tsx",
     "test/composerModelSelectionPort.test.ts",
     "test/gitCommitMessageModel.browser.test.ts",
-    "test/fixtures/gitCommitMessageModelFixture.tsx"
+    "test/fixtures/gitCommitMessageModelFixture.tsx",
+    "test/gitToolsPanelAlignment.browser.test.ts",
+    "test/fixtures/gitToolsPanelAlignmentFixture.tsx",
+    "test/statusPanelOverlayStore.test.ts",
+    "test/statusPanelSendAutoOpen.test.ts",
+    "test/statusPanelSendAutoOpen.browser.test.ts",
+    "test/fixtures/statusPanelSendAutoOpenFixture.tsx",
+    "test/fixtures/statusPanelSendAutoOpenData.ts",
+    "test/fixtures/statusPanelSendAutoOpenTransport.ts",
+    "test/fixtures/statusPanelSendAutoOpenActions.ts",
+    "test/fixtures/statusPanelSendAutoOpenScenarios.ts",
+    "test/fixtures/statusPanelSendAutoOpenLifecycleScenarios.ts"
   ],
   "references": [
     { "path": "../provider" },

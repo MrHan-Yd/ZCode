@@ -15,6 +15,7 @@ export interface StatusPanelOverlayState {
 
 const EMPTY_STATE: StatusPanelOverlayState = { sessionId: null, open: false };
 let state: StatusPanelOverlayState = EMPTY_STATE;
+let intentRevision = 0;
 const listeners = new Set<() => void>();
 // 打开跃迁的旁路订阅：标题栏 Git 浮层与状态面板互斥，shell 在这里收到「面板刚被
 // 打开」的通知后收起 Git 浮层。只在 false → true 时触发，关闭与 reset 不通知。
@@ -42,8 +43,14 @@ export function subscribeStatusPanelOpened(listener: (sessionId: string) => void
   };
 }
 
+/** 只读操作代次：发送后的自动意图不能覆盖用户在等待 ACK 期间的显式操作。 */
+export function getStatusPanelOverlayIntentRevision(): number {
+  return intentRevision;
+}
+
 /** 标题栏图标点击：同一 session 再点一次收起，切到别的 session 则直接打开。 */
 export function toggleStatusPanelOverlay(sessionId: string): void {
+  intentRevision += 1;
   const nextOpen = state.sessionId === sessionId ? !state.open : true;
   state = { sessionId, open: nextOpen };
   emit();
@@ -52,6 +59,7 @@ export function toggleStatusPanelOverlay(sessionId: string): void {
 
 /** composer 的后台任务徽标等入口：明确要求打开。 */
 export function openStatusPanelOverlay(sessionId: string): void {
+  intentRevision += 1;
   if (state.sessionId === sessionId && state.open) return;
   state = { sessionId, open: true };
   emit();
@@ -60,6 +68,7 @@ export function openStatusPanelOverlay(sessionId: string): void {
 
 /** 面板自己的关闭按钮。 */
 export function closeStatusPanelOverlay(sessionId: string): void {
+  intentRevision += 1;
   if (state.sessionId !== sessionId || !state.open) return;
   state = { sessionId, open: false };
   emit();
@@ -74,6 +83,7 @@ export function useStatusPanelOverlayOpen(sessionId: string | null | undefined):
 
 /** 测试与冷恢复用：清空握手状态。 */
 export function resetStatusPanelOverlay(): void {
+  intentRevision += 1;
   if (state === EMPTY_STATE) return;
   state = EMPTY_STATE;
   emit();

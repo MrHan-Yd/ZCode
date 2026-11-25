@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   closeStatusPanelOverlay,
+  getStatusPanelOverlayIntentRevision,
   openStatusPanelOverlay,
   resetStatusPanelOverlay,
   subscribeStatusPanelOpened,
@@ -73,4 +74,16 @@ test("退订后不再收到打开通知", () => {
 
   openStatusPanelOverlay("s1");
   assert.deepEqual(events, []);
+});
+
+test("每次显式意图都更新代次，空态 reset 与重复 open 也能废弃旧自动意图", () => {
+  resetStatusPanelOverlay();
+  const start = getStatusPanelOverlayIntentRevision();
+  resetStatusPanelOverlay();
+  assert.equal(getStatusPanelOverlayIntentRevision(), start + 1);
+  openStatusPanelOverlay("s1");
+  openStatusPanelOverlay("s1");
+  closeStatusPanelOverlay("s1");
+  toggleStatusPanelOverlay("s1");
+  assert.equal(getStatusPanelOverlayIntentRevision(), start + 5);
 });

@@ -123,6 +123,10 @@ interface ConversationStatusPanelProps {
   open: boolean;
   /** 面板自己的关闭按钮。 */
   onClose?: () => void;
+  goalSectionOpen?: boolean;
+  onGoalSectionOpenChange?: (open: boolean) => void;
+  planSectionOpen?: boolean;
+  onPlanSectionOpenChange?: (open: boolean) => void;
   terminalSectionOpen?: boolean;
   onTerminalSectionOpenChange?: (open: boolean) => void;
   agentSectionOpen?: boolean;
@@ -315,11 +319,15 @@ function StatusSection({
 
 function GoalStatusSection({
   model,
+  onOpenChange,
+  open,
   onPauseGoal,
   onResumeGoal,
   separated,
 }: {
   model: ConversationStatusPanelModel;
+  onOpenChange?: (open: boolean) => void;
+  open?: boolean;
   onPauseGoal?: () => void;
   onResumeGoal?: () => void;
   separated: boolean;
@@ -385,6 +393,8 @@ function GoalStatusSection({
   return (
     <StatusSection
       section="goal"
+      open={open}
+      onOpenChange={onOpenChange}
       separated={separated}
       title={intl.formatMessage({ id: "chat.statusPanel.goal" })}
       trailing={() => (
@@ -729,10 +739,14 @@ function buildSessionPlanOpenRequest(
 
 function PlanStatusSection({
   model,
+  onOpenChange,
+  open,
   popoverSide,
   separated,
 }: {
   model: ConversationStatusPanelModel;
+  onOpenChange?: (open: boolean) => void;
+  open?: boolean;
   popoverSide: "bottom" | "left";
   separated: boolean;
 }) {
@@ -744,6 +758,8 @@ function PlanStatusSection({
   return (
     <StatusSection
       section="plan"
+      open={open}
+      onOpenChange={onOpenChange}
       separated={separated}
       title={intl.formatMessage({ id: "chat.statusPanel.todo" })}
       trailing={() => (
@@ -1866,6 +1882,10 @@ function ConversationStatusPanelImpl({
   parentSessionId,
   open,
   onClose,
+  goalSectionOpen,
+  onGoalSectionOpenChange,
+  planSectionOpen,
+  onPlanSectionOpenChange,
   terminalSectionOpen,
   onTerminalSectionOpenChange,
   agentSectionOpen,
@@ -1990,6 +2010,8 @@ function ConversationStatusPanelImpl({
           {canRenderGoal ? (
             <GoalStatusSection
               model={model}
+              open={goalSectionOpen}
+              onOpenChange={onGoalSectionOpenChange}
               separated={false}
               onPauseGoal={onPauseGoal}
               onResumeGoal={onResumeGoal}
@@ -2006,6 +2028,8 @@ function ConversationStatusPanelImpl({
           {canRenderPlan ? (
             <PlanStatusSection
               model={model}
+              open={planSectionOpen}
+              onOpenChange={onPlanSectionOpenChange}
               popoverSide={useVerticalFloatingPanels ? "bottom" : "left"}
               separated={canRenderGoal || canRenderSessionPlans}
             />
