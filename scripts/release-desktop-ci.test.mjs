@@ -48,6 +48,22 @@ test("手动重跑和普通标签构建均显式绑定同一源码标签", () =>
   assert.equal(workflow.jobs.release.needs, "build");
 });
 
+test("发行使用免费标准 arm64 macOS runner，重跑不改变目标架构和源码标签", () => {
+  const matrix = workflow.jobs.build.strategy.matrix.include;
+  const mac = matrix.find((entry) => entry.targetOs === "mac");
+  const windows = matrix.find((entry) => entry.targetOs === "win");
+  assert.equal(mac.runner, "macos-26");
+  assert.equal(mac.targetArch, "arm64");
+  assert.equal(windows.runner, "windows-latest");
+  assert.equal(windows.targetArch, "x64");
+  assert.doesNotMatch(mac.runner, /(?:large|intel)$/u);
+  assert.equal(workflow.jobs.release.needs, "build");
+  for (const job of [workflow.jobs.build, workflow.jobs.release]) {
+    const checkout = job.steps.find((step) => step.uses?.startsWith("actions/checkout@"));
+    assert.equal(checkout.with.ref, RELEASE_REF);
+  }
+});
+
 test("官方 Action 使用 Node24 版本，项目 Node 与 pnpm 不改", () => {
   for (const job of Object.values(workflow.jobs)) {
     for (const step of job.steps) {

@@ -67,9 +67,9 @@ jobs:
               packages/desktop/dist/*.exe.blockmap
               packages/desktop/dist/latest.yml
           - label: macOS arm64 (dmg + zip)
-            # macos-14 镜像已于 2026-11-02 全部下线，继续使用会在分配 runner 时直接失败。
-            # macos-15 是当前可用的同架构镜像（x64 要写 macos-15-intel）。
-            runner: macos-15
+            # macos-15 连续因 arm64 容量不足无法分配 runner；改用同架构的标准 macos-26。
+            # 不使用付费 large/xlarge runner；手动重跑仍检出原发行标签，不改产品源码。
+            runner: macos-26
             targetOs: mac
             targetArch: arm64
             # macOS 包需要远程工作区资源，保持默认的 prepare:remote-assets

@@ -18,6 +18,7 @@
 8. 下一次含本修复的新标签，在安装依赖后、bootstrap 与打包前执行发行环境和真实原生工具归档回归。手动重打不含该测试入口的旧标签明确记录跳过；不从 main 覆盖旧标签产品脚本。提交前门禁执行同一正式测试入口。
 9. GitHub Actions 依赖通过每周 Dependabot PR 提醒维护。仓库当前没有 PR 触发的 CI，因此合并这类 PR 前必须本地执行与门禁一致的发行回归、类型、Lint 与架构检查（`pnpm verify:pre-push` 已包含发行回归）。不因依赖更新自动打标签、创建 Release 或定时发布。
 10. 桌面正式回归入口按组及文件串行执行（Node `--test-concurrency=1`），避免多个独立 Vite / Chrome 冷启动争抢 CPU 后让首个真实交互场景超时；日常验证可用 `--suite` 选择相关功能。有效既有断言保留，`pnpm verify:pre-push` 执行完整非原生清单；About Electron 窗口及 Windows OS 采样移至显式 `pnpm test:desktop-native`，不再无条件置顶干扰用户桌面。详见 `specs/desktop-regression-scope.md`。
+11. 2026-11-25，`v4.0.3` 连续四次使用 `macos-15` 均在 15 分钟后因 hosted runner 未分配而失败，GitHub 注释明确为 macOS arm64 容量不足、没有执行构建步骤。发行矩阵改用已由官方 runner 文档核对的免费标准 `macos-26`（arm64），不使用 `large` / `xlarge` 付费 runner，不改目标架构、Node、pnpm、签名或发布门禁。使用 main 的新工作流 `workflow_dispatch tag=v4.0.3`，build/release 都检出原标签 `0937b124`；原标签保持不变，不以新 main 产品源码替代。新 run 完整构建两平台，不混用旧 run Windows 产物。
 
 ## 所有者与顺序
 
