@@ -1,5 +1,28 @@
 # Changelog
 
+## [4.0.2](https://github.com/MrHan-Yd/ZCode/compare/v4.0.1...v4.0.2) (2026-11-25)
+
+### Features
+
+* **ui:** 发送后自动展开会话状态面板并修正 Git 浮层对齐 ([4413d97](https://github.com/MrHan-Yd/ZCode/commit/4413d97da9b3d5171ca236260eab0d7a783cee44))
+
+
+### Bug Fixes
+
+* 修正会话性能统计并完善编排活动投影与运行时处理 ([7fe31f7](https://github.com/MrHan-Yd/ZCode/commit/7fe31f736a92e8aeba7257e817187e1656e603e5))
+
+* **ci:** 隔离 Windows PowerShell 模块并绑定重跑发行标签 ([d308e67](https://github.com/MrHan-Yd/ZCode/commit/d308e67c9bf2d581b3b3c000555cd93ccc13eb63))
+
+* **ci:** 永久修复 Windows 原生归档解压并补齐发行回归 ([4a59236](https://github.com/MrHan-Yd/ZCode/commit/4a592368deb3fab37cd4ffab60f806d5791f7dc3))
+  * 预构建归档适配器改用 .NET 两参数 ZipFile.ExtractToDirectory，不再调用
+  * 解压改为异步文件 IO 与异步子进程，检查真实退出码；损坏归档在解压阶段失败，
+  * 发布工作流在安装依赖后、bootstrap 前执行 test:release；重打无该入口的旧标签
+  * Action 统一到已核验的 Node 24 版本，新增每周 Dependabot 维护且不定时发布
+  * 新增原生工具归档正式回归，verify:pre-push 复用同一入口
+  * README 补充 v4.0.1 更新说明
+
+* **test:** 串行执行桌面浏览器回归避免冷启动超时 ([b1729fe](https://github.com/MrHan-Yd/ZCode/commit/b1729fea0956a4e75f142bab3b73b9ac3a672cf9))
+
 ## [4.0.1](https://github.com/MrHan-Yd/ZCode/compare/v3.19.4...v4.0.1) (2026-11-23)
 
 ### Features
