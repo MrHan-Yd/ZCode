@@ -47,7 +47,15 @@ for (const group of groups) {
   const code = await new Promise((resolve, reject) => {
     const child = spawn(
       process.execPath,
-      ["--import", "tsx", "--experimental-test-module-mocks", "--test", ...group.files],
+      // 多个 Vite/Chrome 冷启动会让首个交互用例超时；串行运行全部文件，不放宽场景超时。
+      [
+        "--import",
+        "tsx",
+        "--experimental-test-module-mocks",
+        "--test",
+        "--test-concurrency=1",
+        ...group.files,
+      ],
       {
         cwd: root,
         stdio: "inherit",
