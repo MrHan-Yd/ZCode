@@ -4614,6 +4614,7 @@ const zhCN: Record<string, string> = {
   "chat.contextUsage.breakdown.systemPrompt": "系统提示词",
   "chat.contextUsage.breakdown.metaUserContext": "其他",
   "chat.contextUsage.breakdown.skills": "技能",
+  "chat.contextUsage.breakdown.subagents": "子代理",
   "chat.contextUsage.breakdown.toolPrompt": "工具提示词",
   "chat.contextUsage.breakdown.systemTools": "系统工具",
   "chat.contextUsage.breakdown.mcpTools": "MCP 工具",

@@ -24,6 +24,8 @@
     "test/fixtures/aboutDialogFixture.tsx",
     "test/sessionPerformanceStats.browser.test.ts",
     "test/fixtures/sessionPerformanceStatsFixture.tsx",
+    "test/contextUsageSubagents.browser.test.ts",
+    "test/fixtures/contextUsageSubagentsFixture.tsx",
     "test/composerModelSelectionPort.test.ts",
     "test/gitCommitMessageModel.browser.test.ts",
     "test/fixtures/gitCommitMessageModelFixture.tsx",

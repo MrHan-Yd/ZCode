@@ -476,6 +476,7 @@ export const zcodeContextUsageBreakdownSourceSchema = z.enum([
   "system_prompt",
   "meta_user_context",
   "skills",
+  "subagents",
   "tool_prompt",
   "system_tool_schemas",
   "mcp_tool_schemas",

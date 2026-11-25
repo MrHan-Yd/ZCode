@@ -1,6 +1,7 @@
 import { modelMessageContentToText, traceContextToLogContext, estimateTokens } from "../deps.js";
 import type { ModelInputMessage, ModelToolContract, TraceContext } from "../deps.js";
 import type { ContextUsageBreakdownItem } from "@zcode/contracts";
+import { isSubagentDispatchToolName } from "../../tool/compat.js";
 import {
   measureUtf8Bytes,
   findLatestUserMessageFromEnd,
@@ -36,6 +37,7 @@ const CONTEXT_USAGE_BREAKDOWN_SOURCES = new Set<ContextUsageBreakdownSource>([
   "system_prompt",
   "meta_user_context",
   "skills",
+  "subagents",
   "tool_prompt",
   "system_tool_schemas",
   "mcp_tool_schemas",
@@ -140,7 +142,13 @@ export function buildContextUsageSnapshot(
   const skillSections = systemPromptSections.filter((section) => section.source === "skills");
   const toolPromptSections = systemPromptSections.filter((section) => section.source === "tools");
   const toolDetails = options.tools.map((tool) => this.buildToolUsageDetail(tool));
-  const systemTools = toolDetails.filter((tool) => tool.source === "system_tool");
+  // 派发合同含模型可见的子代理目录；从系统工具互斥拆出，不累计子会话用量。
+  const subagentTools = toolDetails.filter(
+    (tool) => tool.source === "system_tool" && isSubagentDispatchToolName(tool.name),
+  );
+  const systemTools = toolDetails.filter(
+    (tool) => tool.source === "system_tool" && !isSubagentDispatchToolName(tool.name),
+  );
   const mcpTools = toolDetails.filter((tool) => tool.source === "mcp_tool");
   const skillDetails = this.buildSkillUsageDetails();
   const messageBreakdown = this.buildMessageRoleBreakdown(options.messages);
@@ -167,6 +175,11 @@ export function buildContextUsageSnapshot(
       this.sumMetrics(metaUserSections, "medium"),
     ),
     this.buildContextUsageCategory("Skills", "skills", this.sumMetrics(skillSections, "medium")),
+    this.buildContextUsageCategory(
+      "Subagents",
+      "subagents",
+      this.sumMetrics(subagentTools, "low"),
+    ),
     this.buildContextUsageCategory(
       "Tool prompt",
       "tool_prompt",
@@ -211,6 +224,11 @@ export function buildContextUsageSnapshot(
     ),
     buildCategoryBreakdown(
       categoryBySource,
+      "subagents",
+      subagentTools.map((tool) => toolContributor("subagents", tool)),
+    ),
+    buildCategoryBreakdown(
+      categoryBySource,
       "tool_prompt",
       toolPromptSections.map((section) => sectionContributor("tool_prompt", section)),
     ),
@@ -242,6 +260,7 @@ export function buildContextUsageSnapshot(
     categoryBreakdown,
     systemPromptSections,
     systemTools,
+    subagentTools,
     mcpTools,
     skills: skillDetails,
     messageBreakdown,

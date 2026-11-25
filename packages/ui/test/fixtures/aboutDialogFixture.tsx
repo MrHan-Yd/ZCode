@@ -1,7 +1,6 @@
 import { createRoot } from "react-dom/client";
 import { useState } from "react";
 import type { IPlatformService, Locale } from "@zcode/shared";
-import { DesktopCommandIds } from "@zcode/shared";
 import { AboutDialogHost } from "@/AboutDialogHost.js";
 import { WorkspaceHelpMenuButton } from "@/WorkspaceHelpMenuButton.js";
 import { PlatformProvider } from "@/hooks/usePlatform.js";
@@ -40,13 +39,6 @@ function AboutFixture({ platform }: { platform: IPlatformService }) {
           className="mt-6 h-24 w-full rounded-lg border border-border bg-input p-3 text-ui-base"
           defaultValue="Synthetic content only. No Host or Agent is started."
         />
-        <button
-          data-testid="native-menu-about"
-          className="mt-4 rounded-lg bg-secondary px-3 py-2 text-ui-base"
-          onClick={() => void platform.executeDesktopCommand(DesktopCommandIds.ShowAbout)}
-        >
-          Native menu command fixture
-        </button>
       </main>
       {white ? (
         <div

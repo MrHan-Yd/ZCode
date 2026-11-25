@@ -7,6 +7,7 @@ import type {
   AgentTelemetryCausation,
   BackgroundResultOriginMeta,
   ContextUsageBreakdownItem,
+  ContextUsageBreakdownSource,
   CoordinatorResponsePort,
   ForkCommitBundle,
   ForkChildSessionMetadata,
@@ -936,14 +937,7 @@ export interface ContextUsageMetric {
 export interface ContextUsageCategory extends ContextUsageMetric {
   name: string;
   percentTokens: number;
-  source:
-    | "system_prompt"
-    | "meta_user_context"
-    | "skills"
-    | "tool_prompt"
-    | "system_tool_schemas"
-    | "mcp_tool_schemas"
-    | "messages";
+  source: ContextUsageBreakdownSource;
 }
 
 export interface ContextUsageToolDetail extends ContextUsageMetric {

@@ -45,9 +45,10 @@
     "architecture:report": "node scripts/architecture/architecture-check.mjs report",
     "architecture:baseline:update": "node scripts/architecture/architecture-check.mjs baseline:update",
     "architecture:context": "node scripts/architecture/architecture-check.mjs context",
-    "test:release": "node --test scripts/release-desktop-ci.test.mjs scripts/native-search-tools.test.mjs",
+    "test:release": "node --test scripts/release-desktop-ci.test.mjs scripts/native-search-tools.test.mjs scripts/test-desktop-regressions.test.mjs",
     "test:upstream-fixes": "node scripts/test-upstream-fixes.mjs",
-    "test:desktop-regressions": "node scripts/test-desktop-regressions.mjs"
+    "test:desktop-regressions": "node scripts/test-desktop-regressions.mjs",
+    "test:desktop-native": "node scripts/test-desktop-regressions.mjs --suite about --native"
   },
   "dependencies": {
     "border-beam": "^1.0.1",

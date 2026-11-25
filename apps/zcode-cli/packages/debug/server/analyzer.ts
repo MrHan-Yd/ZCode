@@ -1394,6 +1394,7 @@ function contextUsageSourceValue(value: unknown): ContextUsageCategory["source"]
     case "system_prompt":
     case "meta_user_context":
     case "skills":
+    case "subagents":
     case "tool_prompt":
     case "system_tool_schemas":
     case "mcp_tool_schemas":

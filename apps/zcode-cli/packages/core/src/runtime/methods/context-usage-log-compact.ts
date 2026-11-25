@@ -17,6 +17,7 @@ export function compactContextUsageSnapshot(
     skillCount: arrayLength(snapshot.skills),
     systemPromptSectionCount: arrayLength(snapshot.systemPromptSections),
     systemToolCount: arrayLength(snapshot.systemTools),
+    subagentToolCount: arrayLength(snapshot.subagentTools),
     warningCount: arrayLength(snapshot.warnings),
   };
 }

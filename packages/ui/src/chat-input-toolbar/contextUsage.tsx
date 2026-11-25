@@ -148,6 +148,7 @@ const BREAKDOWN_SOURCE_LABEL_ID: Record<ContextUsageBreakdownSource, string> = {
   system_prompt: "chat.contextUsage.breakdown.systemPrompt",
   meta_user_context: "chat.contextUsage.breakdown.metaUserContext",
   skills: "chat.contextUsage.breakdown.skills",
+  subagents: "chat.contextUsage.breakdown.subagents",
   tool_prompt: "chat.contextUsage.breakdown.toolPrompt",
   system_tool_schemas: "chat.contextUsage.breakdown.systemTools",
   mcp_tool_schemas: "chat.contextUsage.breakdown.mcpTools",
@@ -161,6 +162,7 @@ const BREAKDOWN_SOURCE_ORDER: Record<ContextUsageBreakdownSource, number> = {
   tool_prompt: 4,
   system_tool_schemas: 5,
   mcp_tool_schemas: 6,
+  subagents: 7,
 };
 
 function buildContextUsageBreakdownSegments(
@@ -187,6 +189,7 @@ function buildContextUsageBreakdownSegments(
     }))
     .sort(
       (left, right) =>
+        Number(left.source === "subagents") - Number(right.source === "subagents") ||
         right.chars - left.chars ||
         BREAKDOWN_SOURCE_ORDER[left.source] - BREAKDOWN_SOURCE_ORDER[right.source],
     );

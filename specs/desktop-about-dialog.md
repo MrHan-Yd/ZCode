@@ -47,6 +47,10 @@ Help / macOS menu → ShowAbout command → main 选择主 renderer、构造最�
 5. Windows 白闪验收使用隔离 Acrylic Electron fixture 的 OS 屏幕采样，不把 CDP/page screenshot 当成 DWM 证据。worker 唯一拥有 GDI handles 与累计统计，只采指定 native window 的物理内容 ROI；以每 4 像素采样的 RGB 均 ≥250、近白比例 >0.8 判定大面积白帧。`DwmFlush` 按实际桌面刷新采样并记录帧数/间隔；窗口被遮挡或 ROI 归属不明时失败，不抓生产窗口。先用 ≥100ms 的合成全白覆盖校准必须检出，再观察暗色正常/最大化窗口关闭前后 0 白帧。只返回数字不保存图。不能将有限次数无闪帧称为所有机器绝对保证。
 6. Electron profile、Vite root/cache、构建 fixture、日志/截图全部在系统临时目录，由 `finally` 清理；不启动、重启或改写当前生产 app。
 
+## 验证入口（2026-11-25）
+
+About 单元回归继续进入默认桌面门禁；需要真实窗口、置顶和无遮挡桌面的 Electron/OS 采样改为显式 `pnpm test:desktop-native`。日常与 About 无关的改动不反复执行该场景。未使用的 fixture 原生命令按钮删除，真实主侧 `invokeCommand()` 验证保留。旧运行记录不代表当前默认门禁仍包含原生采样。
+
 ## 已执行验证（2026-11-24）
 
 - 正式入口 `pnpm test:desktop-regressions` 最后一轮完成：107 passed、0 failed、1 非 Windows 分支 skipped。该入口同时纳入 About 与会话速度回归，并接入 `verify:pre-push`。

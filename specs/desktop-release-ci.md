@@ -17,7 +17,7 @@
 7. 修复 CI 定义后，使用 main 上的新工作流手动构建原 `v4.0.1` 源码；原标签和版本提交保持不变。不强推标签，不创建只有 macOS 产物的不完整正式版本。
 8. 下一次含本修复的新标签，在安装依赖后、bootstrap 与打包前执行发行环境和真实原生工具归档回归。手动重打不含该测试入口的旧标签明确记录跳过；不从 main 覆盖旧标签产品脚本。提交前门禁执行同一正式测试入口。
 9. GitHub Actions 依赖通过每周 Dependabot PR 提醒维护。仓库当前没有 PR 触发的 CI，因此合并这类 PR 前必须本地执行与门禁一致的发行回归、类型、Lint 与架构检查（`pnpm verify:pre-push` 已包含发行回归）。不因依赖更新自动打标签、创建 Release 或定时发布。
-10. 桌面正式回归入口按组及文件串行执行（Node `--test-concurrency=1`），避免多个独立 Vite / Chrome 冷启动争抢 CPU 后让首个真实交互场景超时；不增加场景超时、不过滤测试、不跳过浏览器或 Windows 原生采样检查。既有用例全部保留，`pnpm verify:pre-push` 使用同一个运行器。
+10. 桌面正式回归入口按组及文件串行执行（Node `--test-concurrency=1`），避免多个独立 Vite / Chrome 冷启动争抢 CPU 后让首个真实交互场景超时；日常验证可用 `--suite` 选择相关功能。有效既有断言保留，`pnpm verify:pre-push` 执行完整非原生清单；About Electron 窗口及 Windows OS 采样移至显式 `pnpm test:desktop-native`，不再无条件置顶干扰用户桌面。详见 `specs/desktop-regression-scope.md`。
 
 ## 所有者与顺序
 
@@ -42,9 +42,9 @@ CI 环境仅属于当前 runner，不保存应用/会话状态，也不修改标
 ## 验收与测试
 
 - YAML 回归校验两个 checkout 的标签绑定、并发分组、Windows 外层 Bash、PowerShell 环境准备顺序、固定工具链和已核验的 Action 版本。
-- 桌面回归运行器测试校验每组 Node 测试参数包含 `--test-concurrency=1`，原有正式测试列表和按组串行执行不变，保持 `--experimental-test-module-mocks` 与各组 `TSX_TSCONFIG_PATH`；任一失败仍停止门禁。
+- 桌面回归运行器测试校验 Node 参数保留 `--test-concurrency=1`、`--experimental-test-module-mocks` 与各组 `TSX_TSCONFIG_PATH`；默认非原生清单、按功能选择及显式原生清单都由同一运行器拥有，任何所选测试失败仍停止该次门禁。
 - Windows 上模拟继承不兼容 Archive 模块：先复现旧 Expand-Archive 错误，新解压器在不清理 PSModulePath 的条件下直接成功；另保留旧标签环境准备路径的回归。路径覆盖空格、单引号和中文，运行目录全部放系统临时目录并 finally 清理。
 - 损坏 ZIP 和缺文件路径：立即失败、不进入二进制验证、不覆盖已有正式文件；SHA-256 不匹配和可执行架构错误也保留目标文件。并发解压使用独占临时目录；成功与失败都清理。
 - 读取仓库固定原生工具计划和全部目标归档，校验 SHA-256；各 runner 在新系统临时目录完整准备自身目标两次，第二次复用验证后的缓存，执行 ugrep / ripgrep 等工具版本检查。无网络下载、无真实用户数据。
 - 原发行标签 SHA 与版本提交在修复前后不变。手动运行两平台均成功，最终 Release 必须包含 EXE、DMG、ZIP、latest.yml、latest-mac.yml、blockmap 与 force-update.json。
-- 正式入口：`pnpm test:release`（`node --test scripts/release-desktop-ci.test.mjs scripts/native-search-tools.test.mjs`）；发布工作流和 `pnpm verify:pre-push` 都执行它。实际执行根 `pnpm typecheck`、`pnpm lint` 和 `pnpm architecture:check --changed`。
+- 正式入口：`pnpm test:release`（`node --test scripts/release-desktop-ci.test.mjs scripts/native-search-tools.test.mjs scripts/test-desktop-regressions.test.mjs`）；发布工作流和 `pnpm verify:pre-push` 都执行它。实际执行根 `pnpm typecheck`、`pnpm lint` 和 `pnpm architecture:check --changed`。

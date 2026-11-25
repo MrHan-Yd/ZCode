@@ -4931,6 +4931,7 @@ const enUS: Record<string, string> = {
   "chat.contextUsage.breakdown.systemPrompt": "System prompt",
   "chat.contextUsage.breakdown.metaUserContext": "Meta context",
   "chat.contextUsage.breakdown.skills": "Skills",
+  "chat.contextUsage.breakdown.subagents": "Subagents",
   "chat.contextUsage.breakdown.toolPrompt": "Tool prompt",
   "chat.contextUsage.breakdown.systemTools": "System tools",
   "chat.contextUsage.breakdown.mcpTools": "MCP tools",

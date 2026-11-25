@@ -7,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { parse } from "yaml";
 import { extractPrebuiltArchive } from "./prebuilt-binary-extract.mjs";
+import { selectDesktopRegressionGroups } from "./test-desktop-regressions.mjs";
 
 const ROOT = fileURLToPath(new URL("../", import.meta.url));
 const workflow = parse(await readFile(join(ROOT, ".github/workflows/release-desktop.yml"), "utf8"));
@@ -85,22 +86,36 @@ test("提交前门禁执行同一发行回归入口", async () => {
   assert.match(manifest.scripts["verify:pre-push"], /pnpm (?:run )?test:release/u);
 });
 
-test("桌面正式回归按文件串行执行且不跳过已有场景", async () => {
+test("桌面回归按所选文件串行执行，原生屏幕采样只在显式入口运行", async () => {
   const runner = await readFile(join(ROOT, "scripts/test-desktop-regressions.mjs"), "utf8");
   assert.match(runner, /"--test-concurrency=1"/u);
   assert.match(runner, /"--experimental-test-module-mocks"/u);
-  assert.match(runner, /for \(const group of groups\)/u);
+  assert.match(runner, /for \(const group of selectedGroups\)/u);
   assert.match(runner, /TSX_TSCONFIG_PATH: join\(root, group\.project\)/u);
+  const selected = selectDesktopRegressionGroups().flatMap((group) => group.files);
   for (const file of [
     "gitCommitMessageModel.browser.test.ts",
     "gitToolsPanelAlignment.browser.test.ts",
     "sessionPerformanceStats.browser.test.ts",
     "statusPanelSendAutoOpen.browser.test.ts",
-    "aboutDialog.browser.test.ts",
+    "contextUsageSubagents.browser.test.ts",
     "desktopFrameSampler.test.ts",
   ])
-    assert.ok(runner.includes(file), `正式回归不得漏掉 ${file}`);
-  assert.doesNotMatch(runner, /--test-(?:name-pattern|skip-pattern)/u);
+    assert.ok(
+      selected.some((path) => path.endsWith(file)),
+      `默认回归不得漏掉 ${file}`,
+    );
+  assert.equal(
+    selected.some((path) => path.endsWith("aboutDialog.browser.test.ts")),
+    false,
+  );
+  const native = selectDesktopRegressionGroups(["--suite", "about", "--native"]).flatMap(
+    (group) => group.files,
+  );
+  assert.ok(native.some((path) => path.endsWith("aboutDialog.browser.test.ts")));
+  const manifest = JSON.parse(await readFile(join(ROOT, "package.json"), "utf8"));
+  assert.match(manifest.scripts["test:desktop-native"], /--suite about --native/u);
+  assert.doesNotMatch(manifest.scripts["verify:pre-push"], /test:desktop-native|--native/u);
   assert.match(runner, /if \(code !== 0\)/u);
 });
 
