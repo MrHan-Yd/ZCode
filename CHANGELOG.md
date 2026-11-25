@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.0.3](https://github.com/MrHan-Yd/ZCode/compare/v4.0.2...v4.0.3) (2026-11-25)
+
+### Features
+
+* 独立展示子代理上下文用量并完善桌面回归测试 ([0d4dfda](https://github.com/MrHan-Yd/ZCode/commit/0d4dfdabe0fcddc0c04e0add78420627b26d63d0))
+
+* **git:** 新增 Git 图谱独立入口、历史筛选与游标分页 ([94454f4](https://github.com/MrHan-Yd/ZCode/commit/94454f445c9c988c849fa787aeaf6f1313940f6d))
+
+### Documentation
+
+* 补充 2026-11 主流模型智能配置推荐规则 ([c52944c](https://github.com/MrHan-Yd/ZCode/commit/c52944c041f9f16ae658333790ad3a736ce1a014))
+
 ## [4.0.2](https://github.com/MrHan-Yd/ZCode/compare/v4.0.1...v4.0.2) (2026-11-25)
 
 ### Features
