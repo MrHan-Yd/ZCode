@@ -152,6 +152,7 @@ const API_TYPES: readonly ApiType[] = [
   "anthropic-messages",
   "openai-chat-completions",
   "openai-responses",
+  "gemini-generate-content",
 ];
 
 for (const apiType of API_TYPES) {

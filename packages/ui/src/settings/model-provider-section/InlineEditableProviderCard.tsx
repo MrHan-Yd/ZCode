@@ -17,7 +17,11 @@ import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { Switch } from "@/components/ui/switch.js";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import { isImeComposingKeyEvent } from "@/lib/imeComposition.js";
-import { resolvePendingProviderDraftSave, type ProviderDraftValues } from "./ProviderDraftSave.js";
+import {
+  resolvePendingProviderDraftSave,
+  resolveProviderFormApiFormat,
+  type ProviderDraftValues,
+} from "./ProviderDraftSave.js";
 import {
   ProviderApiKeySection,
   ProviderCardHeader,
@@ -186,7 +190,7 @@ export function InlineEditableProviderCard({
   const [editingName, setEditingName] = useState(false);
   const [nameValue, setNameValue] = useState(getProviderFormLabel(provider));
   const [apiFormat, setApiFormat] = useState<ProviderApiType>(
-    provider.config.api?.type ?? "anthropic-messages",
+    resolveProviderFormApiFormat(provider),
   );
   const [baseUrlValue, setBaseUrlValue] = useState(provider.config.api?.baseUrl ?? "");
   const [apiKeyValue, setApiKeyValue] = useState(getProviderFormApiKey(provider));
@@ -233,13 +237,13 @@ export function InlineEditableProviderCard({
   };
   const draftRef = useRef<ProviderDraftValues>({
     nameValue: getProviderFormLabel(provider),
-    apiFormat: provider.config.api?.type ?? "anthropic-messages",
+    apiFormat: resolveProviderFormApiFormat(provider),
     baseUrlValue: provider.config.api?.baseUrl ?? "",
     apiKeyValue: getProviderFormApiKey(provider),
   });
 
   useEffect(() => {
-    const resolvedApiFormat = provider.config.api?.type ?? "anthropic-messages";
+    const resolvedApiFormat = resolveProviderFormApiFormat(provider);
     const resolvedBaseUrl = provider.config.api?.baseUrl ?? "";
     const resolvedApiKey = getProviderFormApiKey(provider);
     const resolvedLabel = getProviderFormLabel(provider);

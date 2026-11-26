@@ -153,10 +153,14 @@ async function resolveBackgroundStopTarget(
 }
 
 function isTerminalBackgroundStopTarget(target: RuntimeBackgroundStopTarget): boolean {
-  return (
-    (target.registryTask ? isTerminalRuntimeTask(target.registryTask) : false) ||
-    isTerminalBackgroundTaskInfoStatus(target.existing?.status)
-  );
+  // registry 是活任务的权威：SendMessage 恢复会复用同一个 agentId/taskId，
+  // 但旧 projection 里仍留着上一轮的终态记录（BackgroundTaskCompleted 不删除条目，
+  // 恢复只发 SubagentSpawned 不发新的 BackgroundTaskStarted）。若把 existing 也当成
+  // 判据，正在跑的重启 child 会被判成 alreadyTerminal，Stop 只回 not_running 而任务
+  // 继续跑（Bug：恢复后的子智能体点了停止没反应）。只有 registry 完全没有该任务时，
+  // 才用投影状态判断冷历史。
+  if (target.registryTask) return isTerminalRuntimeTask(target.registryTask);
+  return isTerminalBackgroundTaskInfoStatus(target.existing?.status);
 }
 
 function isTypedBackgroundStopTarget(

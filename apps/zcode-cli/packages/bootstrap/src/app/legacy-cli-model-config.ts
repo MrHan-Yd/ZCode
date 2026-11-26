@@ -15,6 +15,7 @@ const providerModelSchema = z
   .object({
     id: z.string().min(1).optional(),
     name: z.string().min(1).optional(),
+    enabled: z.boolean().optional(),
     attachment: z.boolean().optional(),
     reasoning: z.union([z.boolean(), reasoningCapabilitySchema]).optional(),
     tool_call: z.boolean().optional(),
@@ -45,7 +46,9 @@ const providerModelSchema = z
 
 const providerSchema = z
   .object({
-    kind: z.enum(["anthropic", "openai", "openai-compatible"]),
+    // 旧 CLI 既可能把 Google 原生格式写成 gemini，也可能沿用 npm kind google；
+    // 两者都只在单向导入时规范化为 gemini-generate-content。
+    kind: z.enum(["anthropic", "openai", "openai-compatible", "gemini", "google"]),
     name: z.string().min(1).optional(),
     npm: z.never().optional(),
     options: z

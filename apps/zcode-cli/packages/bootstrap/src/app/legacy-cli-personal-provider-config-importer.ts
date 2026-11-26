@@ -35,13 +35,17 @@ class UnsupportedLegacyCliProviderConfigError extends Error {
 }
 
 function resolveLegacyProviderApiType(
-  kind: "anthropic" | "openai" | "openai-compatible" | undefined,
+  kind: "anthropic" | "openai" | "openai-compatible" | "gemini" | "google" | undefined,
 ): ProviderApiType {
   switch (kind) {
     case "anthropic":
       return "anthropic-messages";
     case "openai":
       return "openai-responses";
+    case "gemini":
+    case "google":
+      // Google 原生 GenerateContent，不是 OpenAI 兼容协议；产品身份与其它字段不变。
+      return "gemini-generate-content";
     case "openai-compatible":
     case undefined:
       return "openai-chat-completions";
@@ -109,12 +113,15 @@ function importLegacyCliPersonalProviderConfig(
       }),
     });
     for (const member of members) {
-      if (member.contextWindow === undefined) continue;
+      if (member.contextWindow === undefined && member.enabled === undefined) continue;
       models = models.setExact(
         providerId,
         member.modelId,
         new ModelConfig({
-          properties: new ModelPropertiesConfig({ contextWindow: member.contextWindow }),
+          ...(member.enabled === undefined ? {} : { enabled: member.enabled }),
+          ...(member.contextWindow === undefined
+            ? {}
+            : { properties: new ModelPropertiesConfig({ contextWindow: member.contextWindow }) }),
         }),
       );
     }
@@ -157,6 +164,7 @@ type LegacyCliProvider = NonNullable<LegacyCliModelConfigProjection["provider"]>
 interface LegacyCliModelMember {
   readonly modelId: string;
   readonly contextWindow?: number;
+  readonly enabled?: boolean;
 }
 
 function collectLegacyCliModelMembers(
@@ -173,6 +181,7 @@ function collectLegacyCliModelMembers(
     members.push({
       modelId,
       ...(isPositiveInteger(contextWindow) ? { contextWindow } : {}),
+      ...(model.enabled === undefined ? {} : { enabled: model.enabled }),
     });
   }
   return members;

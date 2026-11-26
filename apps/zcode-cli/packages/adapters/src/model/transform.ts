@@ -27,7 +27,7 @@ import { normalizeOpenAiCompatibleSystemMessages } from "./system-message-compat
 export interface AiSdkMessageTransformOptions {
   apiFormat?: string;
   providerOptions?: Record<string, unknown>;
-  providerKind?: "openai" | "anthropic" | "openai-compatible" | "gateway" | "custom";
+  providerKind?: "openai" | "anthropic" | "openai-compatible" | "google" | "gateway" | "custom";
   stripMedia?: boolean;
   inputFormat?: ModelInputFormat;
 }
@@ -88,7 +88,7 @@ export function toAiSdkMessages(
       case "assistant": {
         transformedMessages.push({
           role: "assistant",
-          content: toAiSdkAssistantContent(message.content, message.toolCalls, {
+          content: toAiSdkAssistantContent(message, {
             ...options,
             stripOpenAiResponsesStoredReasoning: shouldStripOpenAiResponsesStoredReasoning,
           }),
@@ -261,20 +261,29 @@ function contentBlockToAiSdkToolResultParts(
 }
 
 function toAiSdkAssistantContent(
-  content: ModelMessageContent,
-  toolCalls: ModelInputMessage["toolCalls"],
+  message: ModelInputMessage,
   options: AiSdkAssistantTransformOptions,
 ): AiSdkAssistantContent {
+  // assistantContent 存在时是 provider 回放的唯一权威，包括显式空数组；
+  // 不能再从 content/toolCalls 兼容视图重建顺序或签名。
+  if (message.assistantContent !== undefined) {
+    return toAiSdkAssistantContentFromParts(message.assistantContent, options);
+  }
+
   const toolCallParts =
-    toolCalls?.map(
-      (toolCall): AiSdkAssistantContentPart => ({
-        type: "tool-call",
-        toolCallId: toolCall.id,
-        toolName: projectToolNameForProvider(toolCall.name, options),
-        input: toolCall.input,
-      }),
+    message.toolCalls?.map(
+      (toolCall): AiSdkAssistantContentPart =>
+        ({
+          type: "tool-call",
+          toolCallId: toolCall.id,
+          toolName: projectToolNameForProvider(toolCall.name, options),
+          input: toolCall.input,
+          // 旧视图也可能携带调用级回放参数（例如 signed tool-call），原样保留。
+          ...(toolCall.providerOptions ? { providerOptions: toolCall.providerOptions } : {}),
+        }) as AiSdkAssistantContentPart,
     ) ?? [];
 
+  const content = message.content;
   if (typeof content === "string" && toolCallParts.length === 0) {
     return content;
   }
@@ -287,6 +296,59 @@ function toAiSdkAssistantContent(
       : content.flatMap((block) => contentBlockToAiSdkAssistantParts(block, options));
 
   return [...contentParts, ...toolCallParts];
+}
+
+function toAiSdkAssistantContentFromParts(
+  parts: NonNullable<ModelInputMessage["assistantContent"]>,
+  options: AiSdkAssistantTransformOptions,
+): AiSdkAssistantContentPart[] {
+  const contentParts: AiSdkAssistantContentPart[] = [];
+  for (const part of parts) {
+    switch (part.type) {
+      case "text": {
+        const hasProviderOptions = Object.keys(part.providerOptions ?? {}).length > 0;
+        // 空文本只有携带签名等回放元数据时才是有效 part；空数组本身已阻止回退旧视图。
+        if (part.text.length === 0 && !hasProviderOptions) continue;
+        contentParts.push({
+          type: "text",
+          text: part.text,
+          ...(part.providerOptions ? { providerOptions: part.providerOptions } : {}),
+        } as AiSdkAssistantContentPart);
+        break;
+      }
+
+      case "reasoning": {
+        if (
+          options.stripOpenAiResponsesStoredReasoning === true &&
+          hasOpenAiStoredReasoningItemId(part.providerOptions)
+        ) {
+          continue;
+        }
+        if (part.text.length === 0 && Object.keys(part.providerOptions ?? {}).length === 0) {
+          continue;
+        }
+        const providerOptions = providerOptionsForReasoningBlock(part, options);
+        contentParts.push({
+          type: "reasoning",
+          text: part.text,
+          ...providerOptions,
+        } as AiSdkAssistantContentPart);
+        break;
+      }
+
+      case "tool_call": {
+        contentParts.push({
+          type: "tool-call",
+          toolCallId: part.id,
+          toolName: projectToolNameForProvider(part.name, options),
+          input: part.input,
+          ...(part.providerOptions ? { providerOptions: part.providerOptions } : {}),
+        } as AiSdkAssistantContentPart);
+        break;
+      }
+    }
+  }
+  return contentParts;
 }
 
 function contentBlockToAiSdkAssistantParts(

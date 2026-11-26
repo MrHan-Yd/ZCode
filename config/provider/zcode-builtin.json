@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "revision": 36,
+  "revision": 40,
   "config": {
     "providerConfigRules": {
       "templateRules": [
@@ -3138,6 +3138,115 @@
               },
               "maxOutputTokens": {
                 "map": "{'max_output_tokens': maxOutputTokens}"
+              }
+            }
+          }
+        },
+        {
+          "modelMatch": ".*",
+          "apiTypeMatch": "gemini-generate-content",
+          "config": {
+            "properties": {
+              "inputFormat": {
+                "supportsText": true,
+                "supportsImage": false,
+                "supportsPdf": false,
+                "supportsAudio": false,
+                "supportsVideo": false
+              },
+              "outputFormat": {
+                "supportsText": true
+              },
+              "supportsToolCall": false,
+              "supportsJsonSchemaOutput": false,
+              "requiresMfjsToolSchema": false,
+              "supportsNativeWebSearch": false,
+              "supportsMidConversationSystem": false
+            },
+            "optionSpecs": {
+              "maxOutputTokens": {
+                "map": "{'generationConfig': {'maxOutputTokens': maxOutputTokens}}"
+              }
+            }
+          }
+        },
+        {
+          "modelMatch": ".*gemini-(?:1\\.5|2\\.|3\\.|4-).*",
+          "apiTypeMatch": "gemini-generate-content",
+          "config": {
+            "properties": {
+              "requiresMfjsToolSchema": true,
+              "inputFormat": {
+                "supportsText": true,
+                "supportsImage": true,
+                "supportsPdf": true,
+                "supportsAudio": true,
+                "supportsVideo": true
+              },
+              "outputFormat": {
+                "supportsText": true
+              },
+              "supportsToolCall": true,
+              "supportsJsonSchemaOutput": true
+            }
+          }
+        },
+        {
+          "modelMatch": ".*gemini-2\\.5-pro(?:[.\\-:/\\[].*)?",
+          "apiTypeMatch": "gemini-generate-content",
+          "config": {
+            "optionSpecs": {
+              "reasoningLevel": {
+                "values": ["low", "medium", "high"],
+                "map": "{'generationConfig': {'thinkingConfig': {'thinkingBudget': reasoningLevel == 'low' ? 1024 : reasoningLevel == 'medium' ? 8192 : 32768}}}"
+              }
+            }
+          }
+        },
+        {
+          "modelMatch": ".*gemini-2\\.5-flash(?:-lite)?(?:[.\\-:/\\[].*)?",
+          "apiTypeMatch": "gemini-generate-content",
+          "config": {
+            "optionSpecs": {
+              "reasoningLevel": {
+                "values": ["disabled", "low", "medium", "high"],
+                "map": "{'generationConfig': {'thinkingConfig': {'thinkingBudget': reasoningLevel == 'disabled' ? 0 : reasoningLevel == 'low' ? 1024 : reasoningLevel == 'medium' ? 8192 : 24576}}}"
+              }
+            }
+          }
+        },
+        {
+          "modelMatch": ".*gemini-(?:3\\.1-flash-lite|3\\.5-flash(?:-lite)?|3\\.6-flash|3\\.7-flash|3\\.8-flash)(?:[.\\-:/\\[].*)?",
+          "apiTypeMatch": "gemini-generate-content",
+          "config": {
+            "optionSpecs": {
+              "reasoningLevel": {
+                "values": ["low", "high"],
+                "map": "{'generationConfig': {'thinkingConfig': {'thinkingLevel': reasoningLevel}}}"
+              }
+            }
+          }
+        },
+        {
+          "modelMatch": ".*gemini-4-(?:carbon|argon)(?:[.\\-:/\\[].*)?",
+          "apiTypeMatch": "gemini-generate-content",
+          "config": {
+            "optionSpecs": {
+              "reasoningLevel": {
+                "values": ["low", "medium", "high"],
+                "map": "{'generationConfig': {'thinkingConfig': {'thinkingLevel': reasoningLevel}}}"
+              }
+            }
+          }
+        },
+        {
+          "modelMatch": ".*gemini-4-(?:neon|hydrogen)(?:[.\\-:/\\[].*)?",
+          "apiTypeMatch": "gemini-generate-content",
+          "config": {
+            "optionSpecs": {
+              "reasoningLevel": {
+                "values": ["low", "medium", "high", "xhigh"],
+                "map": "{'generationConfig': {'thinkingConfig': {'thinkingLevel': reasoningLevel}}}"
               }
             }
           }

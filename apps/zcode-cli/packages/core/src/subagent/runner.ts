@@ -591,6 +591,19 @@ export function createExploreSubagentPort(options: ExploreSubagentPortOptions): 
       if (!task || task.type !== "local_agent") return task;
       if (isTerminalRuntimeTask(task)) return task;
 
+      // 前台子智能体由父轮的 Agent 工具调用等待结果，没有后台完成通知/产物收口。
+      // 走下面的 finalizeBackgroundStopped 会为同一个 child 再写一份 stopped 产物、
+      // 再投递一条后台完成通知和 BackgroundTaskCompleted，而前台执行路径随后还会
+      // 写失败产物并发出自己的 SubagentStopped（Bug：停止前台子智能体会产生双份终态）。
+      // 因此这里只中断 child；终态、产物与事件由跑它的前台路径写入，与整轮 Stop 对该
+      // child 的现有收口一致。
+      if (task.isBackgrounded === false) {
+        abortControllers
+          .get(taskId)
+          ?.abort(new Error(`Subagent task stopped by the user: ${taskId}`));
+        return (await registry.waitForTerminal(taskId, { signal: stopOptions?.signal })) ?? task;
+      }
+
       const stopped = createBackgroundStoppedTask(registry, task);
       if (!stopped) return undefined;
       return finalizeBackgroundStopped(options, registry, stopped, () => {

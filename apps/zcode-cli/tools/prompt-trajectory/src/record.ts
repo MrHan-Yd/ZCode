@@ -252,8 +252,38 @@ function createRuntimeEventObserver(): RuntimeEventObserver {
   };
 }
 
-function assertNever(value: never): never {
-  throw new Error(`Unsupported fixture step: ${JSON.stringify(value)}`);
+function assertNever(value: never, label = "fixture step"): never {
+  throw new Error(`Unsupported ${label}: ${JSON.stringify(value)}`);
+}
+
+type PromptTrajectoryProviderKind =
+  | "anthropic"
+  | "gemini"
+  | "google"
+  | "openai"
+  | "openai-compatible"
+  | "responses";
+
+/**
+ * Fixture 的 provider kind 必须显式映射到协议；未知 kind 不能静默回落为
+ * openai-chat-completions，否则录制会在错误的 wire format 上产出看似成功的轨迹。
+ */
+function resolvePromptTrajectoryApiFormat(kind: PromptTrajectoryProviderKind): string {
+  switch (kind) {
+    case "anthropic":
+      return "anthropic-messages";
+    case "openai":
+      return "openai-responses";
+    case "responses":
+      return "openai-responses";
+    case "openai-compatible":
+      return "openai-chat-completions";
+    case "google":
+    case "gemini":
+      return "gemini-generate-content";
+    default:
+      return assertNever(kind, "prompt trajectory provider kind");
+  }
 }
 
 async function loadZCodeModules(): Promise<{
@@ -302,19 +332,17 @@ function createRecorderProviderRegistry(
   if (!target.baseURL) {
     throw new Error("Prompt trajectory Provider is missing baseURL");
   }
-  const apiFormat =
-    target.kind === "anthropic"
-      ? "anthropic-messages"
-      : target.kind === "openai"
-        ? "openai-responses"
-        : "openai-chat-completions";
+  const apiFormat = resolvePromptTrajectoryApiFormat(
+    (target.kind ?? "openai-compatible") as PromptTrajectoryProviderKind,
+  );
   const providerConfig = new provider.ProviderConfig({
     access: new provider.ApiKeyAccessConfig({
       apiKey: target.apiKey ?? "prompt-trajectory-key",
     }),
     api: new provider.ProviderApiConfig({
       type: apiFormat,
-      baseURL: target.baseURL,
+      // ProviderApiConfig 构造器字段是 baseUrl（小写 url），与 fixture 的 baseURL 不同。
+      baseUrl: target.baseURL,
       headers: target.headers,
     }),
     models: [target.model],

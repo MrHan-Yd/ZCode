@@ -25,6 +25,11 @@ import {
   persistPendingToolPart,
   projectToolNameForNonEmptyBoundary,
 } from "./tool-part-persistence.js";
+import {
+  mergeProviderReplayMetadata,
+  providerContentIndexForToolCall,
+  type ProviderReplayMetadata,
+} from "../../agent/assistant-part-replay.js";
 import { persistToolModelStepFinish } from "./turn-step-finish.js";
 import { completedToolPartMetadata, mcpToolPartMetadata } from "./tool-part-metadata.js";
 import { drainInlineGuideForNextRequest } from "./turn-guide-drain.js";
@@ -68,6 +73,17 @@ export async function executeToolCallsForModelStep(
     (options.streamedToolResults ?? []).map((entry) => [entry.toolCallId, entry]),
   );
   const toolCallById = new Map(coreToolCalls.map((toolCall) => [toolCall.id, toolCall]));
+  // providerContentIndex 只在新的有序 assistantContent 路径写入；旧数据不能伪造顺序。
+  const providerReplayByToolCallId = new Map<string, ProviderReplayMetadata>();
+  for (const toolCall of options.toolCalls) {
+    providerReplayByToolCallId.set(toolCall.id, {
+      ...(toolCall.providerOptions ? { providerOptions: toolCall.providerOptions } : {}),
+      ...(() => {
+        const index = providerContentIndexForToolCall(options.result.assistantContent, toolCall.id);
+        return index === undefined ? {} : { providerContentIndex: index };
+      })(),
+    });
+  }
   const toolParts = new Map<
     string,
     {
@@ -96,6 +112,7 @@ export async function executeToolCallsForModelStep(
           traceContext: options.modelTraceContext,
           model,
           metadata: mcpToolPartMetadata(this.registry.getMetadata(toolCall.name)?.mcpPresentation),
+          providerReplay: providerReplayByToolCallId.get(toolCall.id),
         });
         await emitStreamingToolLedgerUpdate(this, state.events, options.modelTraceContext, {
           assistantMessageId: options.assistantMessageId,
@@ -130,6 +147,7 @@ export async function executeToolCallsForModelStep(
       traceContext: options.modelTraceContext,
       model,
       metadata: mcpToolPartMetadata(this.registry.getMetadata(toolCall.name)?.mcpPresentation),
+      providerReplay: providerReplayByToolCallId.get(toolCall.id),
     });
     await emitStreamingToolLedgerUpdate(this, state.events, options.modelTraceContext, {
       assistantMessageId: options.assistantMessageId,
@@ -204,7 +222,10 @@ export async function executeToolCallsForModelStep(
               callID: toolCall.id,
               declarationIndex: persisted.declarationIndex,
               tool: projectedToolName.toolName,
-              metadata: projectedToolName.metadata,
+              metadata: mergeProviderReplayMetadata(
+                projectedToolName.metadata,
+                providerReplayByToolCallId.get(toolCall.id),
+              ),
               state: {
                 status: "running",
                 input: persisted.input,
@@ -308,7 +329,10 @@ export async function executeToolCallsForModelStep(
           callID: result.toolCallId,
           declarationIndex: persisted.declarationIndex,
           tool: projectedResultToolName.toolName,
-          metadata: projectedResultToolName.metadata,
+          metadata: mergeProviderReplayMetadata(
+            projectedResultToolName.metadata,
+            providerReplayByToolCallId.get(result.toolCallId),
+          ),
           state: result.success
             ? {
                 status: "completed",

@@ -52,7 +52,7 @@
 
 8. **TPS 是唯一速度口径**：行上的速度与收起态 trailing 的速度都只读 `session/performanceBatch` 返回的该子会话累计平均（`query_source = 'subagent'`，Σ `output_tokens` ÷ Σ（`duration_ms` − `time_to_first_token_ms`））。不显示实时估算、不显示 token 累计、不新增第二个速度字段。读数缺席（没有已完成请求、计量缺失、超出保留期、旧 CLI 不支持批量读）时整段不渲染，既不显示 `0` 也不显示 `--`。
 
-9. **只读展示**：状态、名字与 TPS 都不参与打开详情、停止、计数、目录入口中的任何一个判定。行仍然是「整行可点开子会话 + 独立的 Stop 按钮」这套既有交互。
+9. **只读展示**：状态、名字与 TPS 都不参与打开详情、停止、计数、目录入口中的任何一个判定。行仍然是「整行可点开子会话 + 独立的 Stop 按钮」这套既有交互。Stop 的可用身份（后台 work 精确匹配优先、回退行自身的 `agentId`）见 `specs/status-panel-subagent-stop.md`。
 
 10. **不新增取数**：名字与状态随 `runningSubagents` 投影一起到达；TPS 沿用既有批量只读轮询。不新增 RPC、不轮询、不缓存、不进 store。
 

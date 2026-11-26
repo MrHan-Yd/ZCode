@@ -2971,6 +2971,7 @@ const enUS: Record<string, string> = {
   "settings.modelProvider.apiFormat.title.chatCompletions": "Chat completions",
   "settings.modelProvider.apiFormat.title.responses": "Responses",
   "settings.modelProvider.apiFormat.title.anthropicMessages": "Anthropic messages",
+  "settings.modelProvider.apiFormat.title.geminiGenerateContent": "Gemini GenerateContent",
   "settings.modelProvider.apiKey": "API key",
   "settings.modelProvider.apiKeyPlaceholder": "Enter API key",
   "settings.modelProvider.apiKeyDisabledHint": "Set an API key to enable this provider.",
@@ -5075,6 +5076,7 @@ const enUS: Record<string, string> = {
   "chat.statusPanel.runningAgentsValue": "{count} running",
   "chat.statusPanel.runningAgentsValuePlural": "{count} running",
   "chat.statusPanel.runningStop": "Stop",
+  "chat.statusPanel.stopSubagent": "Stop running subagent",
   "chat.statusPanel.subagentStatus.running": "Running",
   "chat.statusPanel.subagentStatus.waiting": "Waiting",
   "chat.statusPanel.subagentStatus.blocked": "Blocked",
@@ -7222,7 +7224,7 @@ const enUS: Record<string, string> = {
   "chat.orchestration.picker.unavailable": "Unavailable",
   "chat.orchestration.picker.model.inherit": "Inherits default model",
   "chat.orchestration.picker.model.value": "Model: {model}",
-  "chat.orchestration.picker.editModel": "Edit role model in Settings",
+  "chat.orchestration.picker.roleSettings": "Open subagent settings",
   "chat.orchestration.picker.empty": "No roles match this search.",
   "chat.orchestration.picker.count": "{count}/{max} roles",
   "chat.orchestration.picker.limit.soft":
@@ -7230,10 +7232,10 @@ const enUS: Record<string, string> = {
   "chat.orchestration.picker.limit.hard": "Maximum team size reached.",
   "chat.orchestration.preset.fullStack": "Full stack",
   "chat.orchestration.preset.fullStack.description":
-    "Architecture, design, frontend, backend, tests, and review.",
+    "Architecture, design, frontend, backend, tests, bug fixing, and review.",
   "chat.orchestration.preset.solo": "Lean",
   "chat.orchestration.preset.solo.description":
-    "Only add review; generic execution and search are always available.",
+    "Add bug fixing and review; generic execution and search are always available.",
   "chat.orchestration.progress": "{completed}/{total} done · {running} running",
   "chat.orchestration.timeline.stop": "Stop",
   "chat.orchestration.timeline.replan": "Replan",

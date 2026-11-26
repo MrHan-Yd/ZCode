@@ -11,6 +11,7 @@
     "src/**/*.d.ts",
     "src/**/*.json",
     "test/gitRepositoryRefresh.test.ts",
+    "test/gitRepositoryHeal.test.ts",
     "test/gitAutoRefresh.test.ts",
     "test/subagentIdentityColors.test.ts",
     "test/subagentColors.test.ts",
@@ -21,6 +22,7 @@
     "test/sessionPerformanceStats.test.ts",
     "test/liveOutputTokens.test.ts",
     "test/subagentSpeeds.test.ts",
+    "test/subagentStopControlModel.test.ts",
     "test/fixtures/aboutDialogFixture.tsx",
     "test/sessionPerformanceStats.browser.test.ts",
     "test/fixtures/sessionPerformanceStatsFixture.tsx",
@@ -50,7 +52,10 @@
     "test/fixtures/statusPanelSendAutoOpenTransport.ts",
     "test/fixtures/statusPanelSendAutoOpenActions.ts",
     "test/fixtures/statusPanelSendAutoOpenScenarios.ts",
-    "test/fixtures/statusPanelSendAutoOpenLifecycleScenarios.ts"
+    "test/fixtures/statusPanelSendAutoOpenLifecycleScenarios.ts",
+    "test/modelProviderApiFormat.test.ts",
+    "test/modelProviderApiFormat.browser.test.ts",
+    "test/fixtures/modelProviderGeminiFormatFixture.tsx"
   ],
   "references": [
     { "path": "../provider" },

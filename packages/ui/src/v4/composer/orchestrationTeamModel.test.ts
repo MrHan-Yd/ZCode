@@ -22,7 +22,15 @@ import {
 } from "./orchestrationTeamModel.js";
 
 const generic = ["general-purpose", "Explore"];
-const specialistNames = ["architect", "frontend", "backend", "ui-designer", "tester", "reviewer"];
+const specialistNames = [
+  "architect",
+  "frontend",
+  "backend",
+  "ui-designer",
+  "tester",
+  "reviewer",
+  "bug-fixer",
+];
 
 function builtInAgents(overrides: Record<string, Partial<AgentSummary>> = {}): AgentSummary[] {
   return BUILT_IN_SUBAGENT_DEFINITIONS.map((role) => ({
@@ -87,7 +95,7 @@ test("搜索只匹配专业角色的名称、描述和标签", () => {
   assert.equal(filterOrchestrationRoles(roles, "no-such-role").length, 0);
 });
 
-test("预设仅保留全栈与精简，精简只选审阅且与共享默认一致", () => {
+test("预设仅保留全栈与精简，精简包含修复与审阅且与共享默认一致", () => {
   assert.deepEqual(
     ORCHESTRATION_TEAM_PRESETS.map((preset) => preset.id),
     ["full-stack", "solo"],
@@ -95,25 +103,26 @@ test("预设仅保留全栈与精简，精简只选审阅且与共享默认一�
   const roles = buildOrchestrationRoleViews([]);
   const fullStack = ORCHESTRATION_TEAM_PRESETS.find((preset) => preset.id === "full-stack")!;
   const solo = ORCHESTRATION_TEAM_PRESETS.find((preset) => preset.id === "solo")!;
-  assert.deepEqual(solo.roles, ["reviewer"]);
+  assert.deepEqual(solo.roles, ["bug-fixer", "reviewer"]);
   const leanTeam = applyOrchestrationPreset(solo, roles);
-  assert.deepEqual(leanTeam, [...generic, "reviewer"]);
+  assert.deepEqual(leanTeam, [...generic, "bug-fixer", "reviewer"]);
   assert.deepEqual(leanTeam, ORCHESTRATION_DEFAULT_TEAM);
   const allTeam = applyOrchestrationPreset(fullStack, roles);
-  assert.equal(allTeam.length, 8);
+  assert.equal(allTeam.length, 9);
   assert.deepEqual(new Set(allTeam), new Set([...generic, ...specialistNames]));
   assert.equal(matchOrchestrationPreset(allTeam), "full-stack");
-  assert.equal(matchOrchestrationPreset(["general-purpose", "reviewer"]), "solo");
+  assert.equal(matchOrchestrationPreset(["general-purpose", "reviewer"]), null);
+  assert.equal(matchOrchestrationPreset(["bug-fixer", "reviewer"]), "solo");
   assert.equal(matchOrchestrationPreset(["tester", "reviewer"]), null);
   assert.equal(matchOrchestrationPreset(["tester"]), null);
   assert.equal(matchOrchestrationPreset(generic), null);
 });
 
-test("精简跳过不可用审阅，但目录未加载时不把选择清空", () => {
+test("精简按可用性跳过角色，但目录未加载时不把选择清空", () => {
   const solo = ORCHESTRATION_TEAM_PRESETS.find((preset) => preset.id === "solo")!;
-  const roles = buildOrchestrationRoleViews(builtInAgents({ reviewer: { enabled: false } }));
-  assert.deepEqual(applyOrchestrationPreset(solo, roles), generic);
-  assert.deepEqual(applyOrchestrationPreset(solo, []), [...generic, "reviewer"]);
+  const reviewerOff = buildOrchestrationRoleViews(builtInAgents({ reviewer: { enabled: false } }));
+  assert.deepEqual(applyOrchestrationPreset(solo, reviewerOff), [...generic, "bug-fixer"]);
+  assert.deepEqual(applyOrchestrationPreset(solo, []), [...generic, "bug-fixer", "reviewer"]);
 });
 
 test("全选包含所有可用专业角色且幂等，不包含不可用角色", () => {
@@ -149,7 +158,7 @@ test("首次开启或清空后重新开启补精简，不因全栈排首项而�
   const roles = buildOrchestrationRoleViews([]);
   for (const team of [[], generic]) {
     const resolved = resolveOrchestrationTeamOnEnable(team, roles);
-    assert.deepEqual(resolved, [...generic, "reviewer"]);
+    assert.deepEqual(resolved, [...generic, "bug-fixer", "reviewer"]);
     assert.deepEqual(resolved, ORCHESTRATION_DEFAULT_TEAM);
     assert.equal(matchOrchestrationPreset(resolved), "solo");
   }
@@ -164,16 +173,23 @@ test("原预设和手动团队在重新开启时保持原专业选择", () => {
   }
 });
 
-test("默认审阅不可用时保持空专业团队，不自动改选测试或全栈", () => {
-  const roles = buildOrchestrationRoleViews(builtInAgents({ reviewer: { enabled: false } }));
-  assert.ok(roles.some((role) => role.name === "tester" && role.available));
-  const team = resolveOrchestrationTeamOnEnable(generic, roles);
+test("默认专业角色按可用性进入精简团队，全部不可用才保持空专业团队", () => {
+  const reviewerOff = buildOrchestrationRoleViews(builtInAgents({ reviewer: { enabled: false } }));
+  assert.deepEqual(resolveOrchestrationTeamOnEnable(generic, reviewerOff), [
+    ...generic,
+    "bug-fixer",
+  ]);
+
+  const defaultRolesOff = buildOrchestrationRoleViews(
+    builtInAgents({ reviewer: { enabled: false }, "bug-fixer": { enabled: false } }),
+  );
+  const team = resolveOrchestrationTeamOnEnable(generic, defaultRolesOff);
   assert.deepEqual(team, generic);
   assert.equal(hasSelectedOrchestrationRole(team), false);
 });
 
-test("面板人数上限只计六个专业角色，运行规模提示按生效团队计算", () => {
-  assert.deepEqual(getOrchestrationTeamLimits(), { soft: 4, hard: 6 });
+test("面板人数上限只计七个专业角色，运行规模提示按生效团队计算", () => {
+  assert.deepEqual(getOrchestrationTeamLimits(), { soft: 4, hard: 7 });
   assert.equal(orchestrationTeamSizeNotice(generic), null);
   assert.equal(orchestrationTeamSizeNotice([...generic, ...specialistNames.slice(0, 5)]), "soft");
   assert.equal(orchestrationTeamSizeNotice([...generic, ...specialistNames]), "hard");

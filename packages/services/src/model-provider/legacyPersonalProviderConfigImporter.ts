@@ -14,6 +14,7 @@ import {
   normalizeModelProviderConfiguredBaseUrl,
   resolveModelProviderApiFormat,
   resolveModelProviderRuntimeBaseUrl,
+  type ModelProviderApiFormat,
   type ModelProviderConfig,
   type ModelProviderModelEntry,
 } from "./legacyModelProviderSerialized.js";
@@ -101,6 +102,7 @@ function createPersonalProviderConfig(
   legacy: ModelProviderConfig,
   modelIds: readonly string[],
 ): ProviderConfig {
+  const apiType = resolveModelProviderApiFormat(legacy);
   return new ProviderConfig({
     group: "standard-personal",
     access: new ApiKeyAccessConfig({
@@ -108,14 +110,28 @@ function createPersonalProviderConfig(
       apiKeyManagementUrl: legacy.apiKeyUrl,
     }),
     api: new ProviderApiConfig({
-      type: resolveModelProviderApiFormat(legacy),
-      baseUrl:
-        resolveModelProviderRuntimeBaseUrl(legacy) ||
-        normalizeModelProviderConfiguredBaseUrl(legacy.endpoints.baseURL ?? ""),
+      type: apiType,
+      baseUrl: resolveImportedProviderBaseUrl(legacy, apiType),
       headers: legacy.headers,
     }),
     ...(modelIds.length > 0 ? { personalModelIds: modelIds, modelOrder: modelIds } : {}),
   });
+}
+
+function resolveImportedProviderBaseUrl(
+  legacy: ModelProviderConfig,
+  apiType: ModelProviderApiFormat,
+): string {
+  const runtimeBaseUrl = resolveModelProviderRuntimeBaseUrl(legacy);
+  if (runtimeBaseUrl) return runtimeBaseUrl;
+  // 旧 Gemini 只有 endpoints.gemini 时没有 canonical paths，不能落成空 Base URL。
+  if (apiType === "gemini-generate-content") {
+    const legacyGeminiEndpoint = normalizeModelProviderConfiguredBaseUrl(
+      legacy.endpoints.gemini ?? "",
+    );
+    if (legacyGeminiEndpoint) return legacyGeminiEndpoint;
+  }
+  return normalizeModelProviderConfiguredBaseUrl(legacy.endpoints.baseURL ?? "");
 }
 
 function collectLegacyPersonalModelMembers(

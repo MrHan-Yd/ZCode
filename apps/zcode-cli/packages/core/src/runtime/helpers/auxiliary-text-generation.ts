@@ -1,16 +1,15 @@
-import type {
-  Model,
-  ModelReasoningContentBlock,
-  ModelRequest,
-  ModelStreamEvent,
-  ModelTextResult,
-  ModelToolCall,
-  ModelUsage,
+import {
+  projectModelAssistantContent,
+  type Model,
+  type ModelAssistantContent,
+  type ModelRequest,
+  type ModelStreamEvent,
+  type ModelTextResult,
+  type ModelToolCall,
+  type ModelUsage,
 } from "@zcode/contracts";
+import { AssistantContentAccumulator } from "./assistant-content-accumulator.js";
 import { normalizeStreamError } from "./model-errors.js";
-
-/** `reasoning_delta` 允许不带 id；此时归并到最近一个 `reasoning_start` 的段。 */
-const OPEN_REASONING_FALLBACK_ID = "\u0000open";
 
 /**
  * 以流式传输完成一次辅助生成，并组装成与 `generateText` 等价的最终结果。
@@ -44,33 +43,27 @@ export async function collectAuxiliaryStreamResult(
   let usage: ModelUsage = {};
   let providerMetadata: Record<string, unknown> | undefined;
   const toolCalls: ModelToolCall[] = [];
-  const reasoningSegments = new Map<string, ModelReasoningContentBlock>();
-  let openReasoningId: string | undefined;
+  // 与主会话流共用同一 part 边界与元数据合并规则，保证辅助调用也能回放签名。
+  const assistantAccumulator = new AssistantContentAccumulator();
 
   for await (const event of events) {
     switch (event.type) {
       case "text_delta":
         text += event.text;
+        assistantAccumulator.handle(event);
         break;
 
       case "reasoning_start":
-        openReasoningId = event.id;
-        reasoningSegment(reasoningSegments, event.id, event.providerMetadata);
-        break;
-
-      case "reasoning_delta": {
-        const id = event.id ?? openReasoningId ?? OPEN_REASONING_FALLBACK_ID;
-        const segment = reasoningSegment(reasoningSegments, id, event.providerMetadata);
-        segment.text += event.text;
-        break;
-      }
-
+      case "reasoning_delta":
       case "reasoning_end":
-        openReasoningId = undefined;
+      case "text_start":
+      case "text_end":
+        assistantAccumulator.handle(event);
         break;
 
       case "tool_call":
         toolCalls.push(event.toolCall);
+        assistantAccumulator.handle(event);
         break;
 
       case "finish":
@@ -84,36 +77,19 @@ export async function collectAuxiliaryStreamResult(
     }
   }
 
-  // 只保留有正文的段：reasoning_start/end 之间可能只有元数据。
-  const reasoning = Array.from(reasoningSegments.values()).filter(
-    (segment) => segment.text.length > 0,
-  );
+  const assistantContent: ModelAssistantContent = assistantAccumulator.snapshot();
+  const projected =
+    assistantContent.length > 0 ? projectModelAssistantContent(assistantContent) : undefined;
+  // 只保留有正文或回放元数据的段：reasoning_start/end 之间可能只有元数据。
+  const reasoning = projected?.reasoning ?? [];
 
   return {
     finishReason,
-    text,
+    text: projected ? projected.text : text,
     usage,
+    ...(assistantContent.length > 0 ? { assistantContent } : {}),
     ...(reasoning.length > 0 ? { reasoning } : {}),
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
     ...(providerMetadata ? { providerMetadata } : {}),
   };
-}
-
-function reasoningSegment(
-  segments: Map<string, ModelReasoningContentBlock>,
-  id: string,
-  providerOptions: Record<string, unknown> | undefined,
-): ModelReasoningContentBlock {
-  const existing = segments.get(id);
-  if (existing) {
-    return existing;
-  }
-
-  const segment: ModelReasoningContentBlock = {
-    type: "reasoning",
-    text: "",
-    ...(providerOptions ? { providerOptions } : {}),
-  };
-  segments.set(id, segment);
-  return segment;
 }

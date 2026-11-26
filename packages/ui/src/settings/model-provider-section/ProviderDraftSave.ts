@@ -11,6 +11,17 @@ export interface ProviderDraftValues {
   apiKeyValue: string;
 }
 
+/**
+ * 表单默认协议只用于空配置展示，不是用户覆盖。
+ * 初始化、脏检查和只读展示共用这一默认值，避免四格式（含 gemini-generate-content）
+ * 在保存边界被误判为“从未填写”。
+ */
+export function resolveProviderFormApiFormat(
+  provider: Pick<ProviderSettingsFormProvider, "config">,
+): ProviderApiType {
+  return provider.config.api?.type ?? "anthropic-messages";
+}
+
 function normalizeConfiguredBaseUrl(value: string): string {
   const normalized = value.trim().replace(/\/+$/, "");
   if (!normalized) return "";
@@ -48,7 +59,7 @@ export function resolvePendingProviderDraftSave({
   // 名称只在 Enter/失焦确认；连接的闲时保存、测试和卸载不能夹带未确认的名称。
   const labelChanged = nameConfirmed && label !== getProviderFormLabel(provider);
   const typeChanged =
-    !readOnlyEndpoints && draft.apiFormat !== (provider.config.api?.type ?? "anthropic-messages");
+    !readOnlyEndpoints && draft.apiFormat !== resolveProviderFormApiFormat(provider);
   const urlChanged = !readOnlyEndpoints && baseURL !== (provider.config.api?.baseUrl ?? "");
   const keyChanged =
     isApiKeyAccess(provider.config.access) &&

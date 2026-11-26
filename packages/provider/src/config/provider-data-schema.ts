@@ -5,6 +5,8 @@ export const providerApiTypeDataSchema = z.enum([
   "anthropic-messages",
   "openai-chat-completions",
   "openai-responses",
+  // Gemini Developer API 原生 generateContent / streamGenerateContent；与 OpenAI 兼容协议不同。
+  "gemini-generate-content",
 ]);
 export const providerGroupDataSchema = z.enum([
   "standard-personal",

@@ -39,9 +39,9 @@ test("Agent 工具描述包含通用子代理与选中专业角色，其他专�
   assert.equal(description?.includes("- frontend:"), false);
 });
 
-test("8 个内置 profile 的工具面与只读约束符合目录", () => {
+test("9 个内置 profile 的工具面与只读约束符合目录", () => {
   const profiles = createBuiltInAgentProfiles();
-  assert.equal(profiles.length, 8);
+  assert.equal(profiles.length, 9);
 
   const byName = new Map(profiles.map((profile) => [profile.name, profile]));
   assert.equal(byName.get("general-purpose")?.tools?.join(","), "*");
@@ -59,6 +59,12 @@ test("8 个内置 profile 的工具面与只读约束符合目录", () => {
   assert.equal(byName.get("backend")?.tools?.join(","), "*");
   assert.equal(byName.get("tester")?.tools?.join(","), "*");
   assert.equal(byName.get("tester")?.maxTurns, 40);
+
+  const bugFixer = byName.get("bug-fixer");
+  assert.ok(bugFixer, "缺少内置角色: bug-fixer");
+  assert.equal(bugFixer.tools?.join(","), "*", "bug-fixer 必须可写");
+  assert.equal(bugFixer.maxTurns, 40);
+  assert.ok(bugFixer.systemPrompt.includes("Reproduce first"), "bug-fixer 提示词必须要求先复现");
 });
 
 test("内置角色的模型覆盖只影响对应角色", () => {

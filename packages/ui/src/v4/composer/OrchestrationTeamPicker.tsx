@@ -44,6 +44,8 @@ export interface OrchestrationTeamPickerProps {
   onToggleSelectAll: () => void;
   onApplyPreset: (preset: OrchestrationTeamPreset) => void;
   onOpenRoleSettings: (role?: string) => void;
+  /** 移动端 bottom sheet 右上角已有关闭按钮；设置入口要给它让位，避免两个按钮重叠。 */
+  reserveCloseButtonSpace?: boolean;
 }
 
 /**
@@ -57,6 +59,7 @@ export function OrchestrationTeamPicker({
   onToggleSelectAll,
   onApplyPreset,
   onOpenRoleSettings,
+  reserveCloseButtonSpace = false,
 }: OrchestrationTeamPickerProps) {
   const { intl } = useZCodeIntl();
   const [query, setQuery] = useState("");
@@ -74,13 +77,32 @@ export function OrchestrationTeamPicker({
       data-testid={TID_V4_ORCHESTRATION_TEAM_PICKER}
       className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden"
     >
-      <div className="flex shrink-0 flex-col gap-0.5">
-        <h3 className="text-ui-base font-medium text-foreground">
-          {intl.formatMessage({ id: "chat.orchestration.picker.title" })}
-        </h3>
-        <p className="text-ui-sm text-foreground-subtle">
-          {intl.formatMessage({ id: "chat.orchestration.picker.description" })}
-        </p>
+      <div
+        className={cn(
+          "flex shrink-0 items-start justify-between gap-2",
+          reserveCloseButtonSpace && "pr-8",
+        )}
+      >
+        <div className="flex min-w-0 flex-col gap-0.5">
+          <h3 className="text-ui-base font-medium text-foreground">
+            {intl.formatMessage({ id: "chat.orchestration.picker.title" })}
+          </h3>
+          <p className="text-ui-sm text-foreground-subtle">
+            {intl.formatMessage({ id: "chat.orchestration.picker.description" })}
+          </p>
+        </div>
+        {/* 角色设置是分区级入口：行内不再逐角色放按钮，整份面板只保留这一处。 */}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0"
+          aria-label={intl.formatMessage({ id: "chat.orchestration.picker.roleSettings" })}
+          title={intl.formatMessage({ id: "chat.orchestration.picker.roleSettings" })}
+          onClick={() => onOpenRoleSettings()}
+        >
+          <Settings2Icon className="size-3.5" aria-hidden />
+        </Button>
       </div>
 
       <div className="flex shrink-0 flex-wrap items-center gap-1.5">
@@ -203,16 +225,6 @@ export function OrchestrationTeamPicker({
                   ))}
                 </span>
               </button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label={intl.formatMessage({ id: "chat.orchestration.picker.editModel" })}
-                title={intl.formatMessage({ id: "chat.orchestration.picker.editModel" })}
-                onClick={() => onOpenRoleSettings(role.name)}
-              >
-                <Settings2Icon className="size-3.5" aria-hidden />
-              </Button>
             </div>
           );
         })}

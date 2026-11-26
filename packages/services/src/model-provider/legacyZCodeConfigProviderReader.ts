@@ -396,7 +396,17 @@ function inferModelProviderKindFromOpenCodeProvider(
   if (npm.includes("openai")) {
     return "openai";
   }
+  // 旧 config.json 的 @ai-sdk/google 指向 Gemini 原生 API，不是 OpenAI 兼容网关。
+  if (isLegacyGoogleSdkPackage(npm)) {
+    return "google";
+  }
   return "openai-compatible";
+}
+
+function isLegacyGoogleSdkPackage(npmPackage: string): boolean {
+  const normalized = npmPackage.trim().toLowerCase();
+  // 明确排除 google-vertex：本阶段不导入 Vertex，也不把其入口误标成原生 GenerateContent。
+  return normalized === "@ai-sdk/google" || normalized === "@ai-sdk/google/";
 }
 
 function hasOpenCodeProviderRuntimeFields(provider: ZCodeOpenCodeProviderConfig): boolean {
@@ -418,6 +428,10 @@ function resolveOpenCodeProviderDefaultKind(
   }
   if (readString(provider.options?.baseURL) || readString(provider.api) || provider.npm?.trim()) {
     return inferModelProviderKindFromOpenCodeProvider(provider);
+  }
+  // 只有旧 endpoints.gemini 时仍要识别 Gemini 原生入口；其余 endpoints 是历史迁移残留，不参与推断。
+  if (provider.endpoints?.gemini?.trim() || provider.zcode?.endpoints?.gemini?.trim()) {
+    return "google";
   }
   return (
     provider.defaultKind ??
@@ -874,13 +888,16 @@ function resolveProviderDefaultKindForStore(provider: ModelProviderConfig): Mode
     return resolveModelProviderDefaultKind(provider);
   }
 
-  // 旧 v2 store 可能仍只带 endpoints.anthropic/openai。
+  // 旧 v2 store 可能仍只带 endpoints.anthropic/openai/gemini。
   // 新运行态 helper 不再读取旧字段，这里必须在迁移边界先推导 defaultKind 再落 runtime endpoint。
   if (provider.endpoints.anthropic?.trim()) {
     return "anthropic";
   }
   if (provider.endpoints.openai?.trim()) {
     return "openai-compatible";
+  }
+  if (provider.endpoints.gemini?.trim()) {
+    return "google";
   }
   return resolveModelProviderDefaultKind(provider);
 }
@@ -952,11 +969,16 @@ function resolveLegacyRuntimeBaseUrlForKind(
   defaultKind: ModelProviderKind,
 ): string {
   const rawEndpoint =
-    defaultKind === "anthropic" ? endpoints.anthropic?.trim() : endpoints.openai?.trim();
+    defaultKind === "anthropic"
+      ? endpoints.anthropic?.trim()
+      : defaultKind === "google"
+        ? endpoints.gemini?.trim()
+        : endpoints.openai?.trim();
   if (rawEndpoint) {
     return normalizeModelProviderBaseUrlForKind(rawEndpoint, defaultKind);
   }
-  const fallbackEndpoint = endpoints.anthropic?.trim() || endpoints.openai?.trim() || "";
+  const fallbackEndpoint =
+    endpoints.anthropic?.trim() || endpoints.openai?.trim() || endpoints.gemini?.trim() || "";
   return fallbackEndpoint
     ? normalizeModelProviderBaseUrlForKind(fallbackEndpoint, defaultKind)
     : "";

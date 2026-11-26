@@ -18,7 +18,7 @@ test("每个内置编排角色都有 UI 调色板内的颜色和标签", () => {
 });
 
 test("编排默认团队引用的角色都存在", () => {
-  const defaultTeam = ["general-purpose", "Explore", "tester"];
+  const defaultTeam = ["general-purpose", "Explore", "bug-fixer", "reviewer"];
   for (const name of defaultTeam) {
     assert.ok(
       BUILT_IN_SUBAGENT_NAMES.includes(name as (typeof BUILT_IN_SUBAGENT_NAMES)[number]),

@@ -81,9 +81,7 @@ export function createGenerateTextOptions(input: {
     frequencyPenalty: input.request.frequencyPenalty,
     stopSequences: input.request.stopSequences,
     seed: input.request.seed,
-    output: input.request.responseJsonSchema
-      ? Output.object({ schema: jsonSchema(input.request.responseJsonSchema) })
-      : undefined,
+    output: createStructuredOutput(input.resolved, input.request.responseJsonSchema),
     providerOptions: requestProviderOptions,
     abortSignal: input.request.abortSignal,
     headers: mergeRequestHeaders(
@@ -146,6 +144,8 @@ export function createStreamTextOptions(input: {
     frequencyPenalty: input.request.frequencyPenalty,
     stopSequences: input.request.stopSequences,
     seed: input.request.seed,
+    // generate 与 stream 必须构造同一 output，否则流式请求会静默退化成普通文本请求。
+    output: createStructuredOutput(input.resolved, input.request.responseJsonSchema),
     providerOptions: requestProviderOptions,
     abortSignal: input.request.abortSignal,
     headers: mergeRequestHeaders(
@@ -181,6 +181,16 @@ function toAiSdkToolChoice(
   toolChoice?: ModelToolChoice,
 ): AiSdkGenerateTextOptions["toolChoice"] | undefined {
   return toolChoice as AiSdkGenerateTextOptions["toolChoice"] | undefined;
+}
+
+function createStructuredOutput(
+  resolved: ResolvedAiSdkModel,
+  responseJsonSchema: AiSdkModelTextRequest["responseJsonSchema"],
+): ReturnType<typeof Output.object> | undefined {
+  if (!responseJsonSchema || resolved.properties.supportsJsonSchemaOutput !== true) {
+    return undefined;
+  }
+  return Output.object({ schema: jsonSchema(responseJsonSchema) });
 }
 
 function mergeProviderOptions(

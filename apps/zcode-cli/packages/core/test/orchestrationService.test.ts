@@ -190,11 +190,16 @@ test("Create：校验计划后异步启动 run，完成后通知主会话并保�
   });
 });
 
-test("缺省精简团队由通用执行实现、审阅检查，未选测试角色在派发前被拒", async () => {
+test("缺省精简团队包含修复与审阅，未选测试角色在派发前被拒", async () => {
   await withOrchestrationDirectory(async (directory) => {
     const child = new AutoSubagent();
     const { service, context, notices } = setup(directory, child);
-    assert.deepEqual(service.currentTeam(), ["general-purpose", "Explore", "reviewer"]);
+    assert.deepEqual(service.currentTeam(), [
+      "general-purpose",
+      "Explore",
+      "bug-fixer",
+      "reviewer",
+    ]);
     await assert.rejects(service.start({ plan: phase3Plan(), context }), (error: unknown) => {
       assert.ok(orchestrationError("invalid_plan")(error));
       assert.ok(error instanceof Error);
@@ -214,7 +219,7 @@ test("缺省精简团队由通用执行实现、审阅检查，未选测试角�
     await service.whenIdle();
     const final = await service.get(created.runId);
     assert.equal(final?.status, "completed");
-    assert.deepEqual(final?.team, ["general-purpose", "Explore", "reviewer"]);
+    assert.deepEqual(final?.team, ["general-purpose", "Explore", "bug-fixer", "reviewer"]);
     assert.deepEqual(child.started, ["general-purpose", "reviewer"]);
     assert.equal(notices.length, 1);
   });

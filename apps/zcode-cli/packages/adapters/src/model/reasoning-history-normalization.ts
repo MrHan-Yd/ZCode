@@ -1,10 +1,12 @@
-import type {
-  ModelInputMessage,
-  ModelMessageContent,
-  ModelMessageContentBlock,
-  ModelReasoningContentBlock,
-  ModelId,
-  ModelProviderId,
+import {
+  projectModelAssistantContent,
+  type ModelAssistantContent,
+  type ModelInputMessage,
+  type ModelMessageContent,
+  type ModelMessageContentBlock,
+  type ModelReasoningContentBlock,
+  type ModelId,
+  type ModelProviderId,
 } from "@zcode/contracts";
 import { BUILTIN_MODEL_PROVIDER_IDS } from "@zcode/shared";
 import { getStatusCode, unwrapRetryError } from "./failure-inspection.js";
@@ -48,7 +50,22 @@ function removeRejectedReasoning(messages: ModelInputMessage[]): ModelInputMessa
     if (filtered[index] === messages[index]) continue;
 
     const message = filtered[index]!;
-    if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
+    if (message.role !== "assistant") continue;
+
+    // assistantContent 存在时是回放唯一权威；兼容 content 只能随后重算，
+    // 否则修复后的签名仍会从 assistantContent 发回上游。
+    if (message.assistantContent !== undefined) {
+      let parts = message.assistantContent.filter(
+        (part) => part.type !== "text" || part.text.trim().length > 0,
+      );
+      if (!hasToolCalls(message) && parts.every((part) => part.type === "reasoning")) {
+        parts = [...parts, { type: "text", text: REJECTED_REASONING_FALLBACK }];
+      }
+      result[index] = projectAssistantContentMessage(message, parts);
+      continue;
+    }
+
+    if (!Array.isArray(message.content)) continue;
 
     let content = message.content.filter(
       (block) => block.type !== "text" || block.text.trim().length > 0,
@@ -127,7 +144,22 @@ function filterReasoningBlocks(
 
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index]!;
-    if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
+    if (message.role !== "assistant") continue;
+
+    // assistantContent 是 provider 回放的唯一权威：必须直接过滤其 reasoning part，
+    // 兼容 content 只是派生视图，单独过滤不会影响发给上游的请求。
+    if (message.assistantContent !== undefined) {
+      const parts = message.assistantContent.filter(
+        (part) => part.type !== "reasoning" || !shouldRemove(part, message),
+      );
+      if (parts.length === message.assistantContent.length) continue;
+
+      result ??= messages.slice();
+      result[index] = projectAssistantContentMessage(message, parts);
+      continue;
+    }
+
+    if (!Array.isArray(message.content)) continue;
 
     const content = message.content.filter(
       (block) => block.type !== "reasoning" || !shouldRemove(block, message),
@@ -153,7 +185,24 @@ function removeReasoningOnlyAssistants(messages: ModelInputMessage[]): ModelInpu
 
 function removeTrailingReasoning(messages: ModelInputMessage[]): ModelInputMessage[] {
   const last = messages.at(-1);
-  if (last?.role !== "assistant" || !Array.isArray(last.content)) return messages;
+  if (last?.role !== "assistant") return messages;
+
+  if (last.assistantContent !== undefined) {
+    let end = last.assistantContent.length;
+    while (end > 0 && last.assistantContent[end - 1]?.type === "reasoning") {
+      end -= 1;
+    }
+    if (end === last.assistantContent.length) return messages;
+
+    const result = messages.slice();
+    result[result.length - 1] = projectAssistantContentMessage(
+      last,
+      last.assistantContent.slice(0, end),
+    );
+    return result;
+  }
+
+  if (!Array.isArray(last.content)) return messages;
 
   let end = last.content.length;
   while (end > 0 && last.content[end - 1]?.type === "reasoning") {
@@ -186,10 +235,26 @@ function removeWhitespaceOnlyAssistants(messages: ModelInputMessage[]): ModelInp
 function repairEmptyAssistantContent(messages: ModelInputMessage[]): ModelInputMessage[] {
   let result: ModelInputMessage[] | undefined;
 
-  for (let index = 0; index < messages.length - 1; index += 1) {
+  for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index]!;
+    if (message.role !== "assistant") continue;
+
+    // assistantContent 是 provider 回放的唯一权威，且显式空数组不会回退旧视图。
+    // 跨模型过滤或尾部 reasoning 裁剪可能把它清空；这里必须同步写回回退文本并
+    // 重新投影兼容视图，否则 transform 会把空 assistant content 发给上游。
+    if (message.assistantContent !== undefined) {
+      if (message.assistantContent.length > 0) continue;
+
+      result ??= messages.slice();
+      result[index] = projectAssistantContentMessage(message, [
+        { type: "text", text: EMPTY_ASSISTANT_CONTENT_FALLBACK },
+      ]);
+      continue;
+    }
+
+    // 旧视图保持原行为：只修复非尾部空 assistant。
     if (
-      message.role !== "assistant" ||
+      index >= messages.length - 1 ||
       !Array.isArray(message.content) ||
       message.content.length > 0 ||
       hasToolCalls(message)
@@ -274,6 +339,23 @@ function isSignedOrRedactedReasoning(block: ModelReasoningContentBlock): boolean
 
 function hasToolCalls(message: ModelInputMessage): boolean {
   return (message.toolCalls?.length ?? 0) > 0;
+}
+
+/**
+ * assistantContent 是唯一权威：过滤/裁剪后必须由同一数组重算兼容视图，
+ * 不能保留过滤前 content/toolCalls，否则旧签名仍会随兼容视图进入别处。
+ */
+function projectAssistantContentMessage(
+  message: ModelInputMessage,
+  parts: ModelAssistantContent,
+): ModelInputMessage {
+  const projected = projectModelAssistantContent(parts);
+  return {
+    ...message,
+    assistantContent: parts,
+    content: projected.content,
+    toolCalls: projected.toolCalls,
+  };
 }
 
 function anthropicOptions(providerOptions: unknown): Record<string, unknown> {

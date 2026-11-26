@@ -24,7 +24,7 @@ test("旧团队补齐通用角色、去空去重，保持专业角色选择", ()
   ]);
 });
 
-test("全专业团队最多八个生效角色，归一化幂等", () => {
+test("全专业团队最多九个生效角色，归一化幂等", () => {
   const team = normalizeOrchestrationTeamSelection([
     "architect",
     "frontend",
@@ -32,6 +32,7 @@ test("全专业团队最多八个生效角色，归一化幂等", () => {
     "ui-designer",
     "tester",
     "reviewer",
+    "bug-fixer",
     "extra",
   ]);
   assert.deepEqual(team, [
@@ -42,10 +43,11 @@ test("全专业团队最多八个生效角色，归一化幂等", () => {
     "ui-designer",
     "tester",
     "reviewer",
+    "bug-fixer",
   ]);
   assert.deepEqual(normalizeOrchestrationTeamSelection(team), team);
 });
 
-test("默认精简团队仅增加审阅，不需要手选通用子代理", () => {
-  assert.deepEqual(ORCHESTRATION_DEFAULT_TEAM, [...generic, "reviewer"]);
+test("默认精简团队增加修复与审阅，不需要手选通用子代理", () => {
+  assert.deepEqual(ORCHESTRATION_DEFAULT_TEAM, [...generic, "bug-fixer", "reviewer"]);
 });

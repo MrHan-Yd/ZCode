@@ -4,6 +4,9 @@ import type { GitFileChange, GitRefreshRequest, GitRefreshResult } from "@zcode/
 import {
   createGitRepositoryRefreshCoordinator,
   GitRepositoryRefreshInvalidatedError,
+  isGitRefreshTimeoutError,
+  shouldKeepGitRepositorySnapshot,
+  type GitRepositoryRefreshRetryPolicy,
 } from "../src/lib/gitRepositoryRefresh.js";
 import {
   buildGitBranchCommitPreviewFiles,
@@ -71,7 +74,10 @@ function snapshot(overrides: Partial<GitRefreshResult> = {}): GitRefreshResult {
   };
 }
 
-function harness(isCurrent?: () => boolean) {
+function harness(
+  isCurrent?: () => boolean,
+  options: { retry?: GitRepositoryRefreshRetryPolicy } = {},
+) {
   const reads: Array<{
     request: GitRefreshRequest;
     completion: ReturnType<typeof Promise.withResolvers<GitRefreshResult>>;
@@ -90,6 +96,7 @@ function harness(isCurrent?: () => boolean) {
     onStart: (sequence) => starts.push(sequence),
     publish: (result, sequence) => publications.push({ result, sequence }),
     onError: (error, sequence) => failures.push({ error, sequence }),
+    retry: options.retry,
   });
   return { owner, reads, publications, failures, starts };
 }
@@ -429,4 +436,179 @@ test("同一基线仍保留部分暂存边界，取消勾选不改 owner 的整�
   } finally {
     state.owner.dispose();
   }
+});
+
+const waitMs = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+const timeoutError = (label: string) =>
+  new Error(`${label} timed out after 15000ms (elapsed=19032ms, killAt=15011ms, forceKill=true)`);
+
+test("Git 命令超时按退避重试：第二次成功后发布，不落到 onError", async () => {
+  const state = harness(undefined, {
+    retry: { delaysMs: [1], isRetryable: isGitRefreshTimeoutError },
+  });
+  try {
+    // 复现 2026-11-26 的现场：重启后 host 冷启动，首个 git.refresh 因 numstat 超时失败。
+    const result = snapshot({ identity: null });
+    const loading = state.owner.refresh();
+    readAt(state, 0).completion.reject(timeoutError("git diff --numstat"));
+    await waitMs(20);
+    assert.equal(state.reads.length, 2);
+    assert.deepEqual(state.starts, [1, 2]);
+
+    readAt(state, 1).completion.resolve(result);
+    assert.equal(await loading, result);
+    assert.equal(state.failures.length, 0);
+    assert.equal(state.publications.length, 1);
+    assert.equal(state.publications[0]?.sequence, 2);
+  } finally {
+    state.owner.dispose();
+  }
+});
+
+test("非超时错误不重试：直接拒绝并只上报一次", async () => {
+  const state = harness(undefined, {
+    retry: { delaysMs: [1, 1], isRetryable: isGitRefreshTimeoutError },
+  });
+  try {
+    const error = new Error("fatal: unable to access repository");
+    const loading = state.owner.refresh();
+    const rejected = assert.rejects(loading, (failure) => failure === error);
+    readAt(state, 0).completion.reject(error);
+    await rejected;
+    await waitMs(20);
+    assert.equal(state.reads.length, 1);
+    assert.equal(state.failures.length, 1);
+    assert.equal(state.publications.length, 0);
+  } finally {
+    state.owner.dispose();
+  }
+});
+
+test("重试耗尽后拒绝一次，onError 只报一次", async () => {
+  const state = harness(undefined, {
+    retry: { delaysMs: [1, 1], isRetryable: isGitRefreshTimeoutError },
+  });
+  try {
+    const lastError = timeoutError("git diff --numstat");
+    const loading = state.owner.refresh();
+    const rejected = assert.rejects(loading, (failure) => failure === lastError);
+    readAt(state, 0).completion.reject(timeoutError("git status"));
+    await waitMs(20);
+    readAt(state, 1).completion.reject(timeoutError("git status"));
+    await waitMs(20);
+    assert.equal(state.reads.length, 3);
+    readAt(state, 2).completion.reject(lastError);
+    await rejected;
+    assert.equal(state.failures.length, 1);
+    assert.equal(state.failures[0]?.error, lastError);
+    assert.equal(state.publications.length, 0);
+  } finally {
+    state.owner.dispose();
+  }
+});
+
+test("退避等待期间 dispose 立即结束，不再发起读取", async () => {
+  const state = harness(undefined, {
+    retry: { delaysMs: [60_000], isRetryable: isGitRefreshTimeoutError },
+  });
+  try {
+    const loading = state.owner.refresh();
+    const rejected = assert.rejects(loading, GitRepositoryRefreshInvalidatedError);
+    readAt(state, 0).completion.reject(timeoutError("git diff --numstat"));
+    await waitMs(5);
+    state.owner.dispose();
+    await rejected;
+    assert.equal(state.reads.length, 1);
+    assert.equal(state.failures.length, 0);
+    assert.equal(state.publications.length, 0);
+  } finally {
+    state.owner.dispose();
+  }
+});
+
+test("读取失败时只沿用已确认的仓库摘要，不为非仓库伪造快照", () => {
+  assert.equal(shouldKeepGitRepositorySnapshot({ isGitAvailable: true, isRepository: true }), true);
+  assert.equal(
+    shouldKeepGitRepositorySnapshot({ isGitAvailable: true, isRepository: false }),
+    false,
+  );
+  assert.equal(
+    shouldKeepGitRepositorySnapshot({ isGitAvailable: false, isRepository: true }),
+    false,
+  );
+});
+
+test("重试等待期间的新请求进入 pending，重试成功后只再 launch 一次", async () => {
+  const state = harness(undefined, {
+    retry: { delaysMs: [1], isRetryable: isGitRefreshTimeoutError },
+  });
+  try {
+    const first = state.owner.refresh();
+    readAt(state, 0).completion.reject(timeoutError("git diff --numstat"));
+    const second = state.owner.refresh({ includeIdentity: true });
+    await waitMs(20);
+    assert.equal(state.reads.length, 2);
+
+    const retried = snapshot({ identity: null });
+    readAt(state, 1).completion.resolve(retried);
+    assert.equal(await first, retried);
+    assert.equal(state.reads.length, 3);
+    assert.equal(readAt(state, 2).request.includeIdentity, true);
+
+    const pending = snapshot();
+    readAt(state, 2).completion.resolve(pending);
+    assert.equal(await second, pending);
+    assert.deepEqual(
+      state.publications.map(({ sequence }) => sequence),
+      [2, 3],
+    );
+  } finally {
+    state.owner.dispose();
+  }
+});
+
+test("退避等待期间有 pending 时 dispose：两者各拒绝一次且不再读取", async () => {
+  const state = harness(undefined, {
+    retry: { delaysMs: [60_000], isRetryable: isGitRefreshTimeoutError },
+  });
+  try {
+    const first = state.owner.refresh();
+    const second = state.owner.refresh();
+    const firstRejected = assert.rejects(first, GitRepositoryRefreshInvalidatedError);
+    const secondRejected = assert.rejects(second, GitRepositoryRefreshInvalidatedError);
+    readAt(state, 0).completion.reject(timeoutError("git status"));
+    await waitMs(5);
+    state.owner.dispose();
+    await Promise.all([firstRejected, secondRejected]);
+    await waitMs(5);
+    assert.equal(state.reads.length, 1);
+    assert.equal(state.failures.length, 0);
+    assert.equal(state.publications.length, 0);
+  } finally {
+    state.owner.dispose();
+  }
+});
+
+test("InvalidatedError 不被当作可重试错误", async () => {
+  const invalidated = new GitRepositoryRefreshInvalidatedError();
+  const state = harness(undefined, {
+    retry: { delaysMs: [1, 1], isRetryable: isGitRefreshTimeoutError },
+  });
+  try {
+    const loading = state.owner.refresh();
+    const rejected = assert.rejects(loading, (failure) => failure === invalidated);
+    readAt(state, 0).completion.reject(invalidated);
+    await rejected;
+    await waitMs(10);
+    assert.equal(state.reads.length, 1);
+    assert.equal(state.failures.length, 1);
+  } finally {
+    state.owner.dispose();
+  }
+});
+
+test("裸对象形式的超时错误（RPC PromiseErrorObj）也能识别", () => {
+  assert.equal(isGitRefreshTimeoutError({ message: "git status timed out after 15000ms" }), true);
+  assert.equal(isGitRefreshTimeoutError({ message: "fatal: not a repository" }), false);
+  assert.equal(isGitRefreshTimeoutError(null), false);
 });

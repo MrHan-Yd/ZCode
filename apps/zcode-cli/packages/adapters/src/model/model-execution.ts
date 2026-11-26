@@ -4,6 +4,7 @@
 // ============================================================
 
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModel } from "ai";
@@ -13,6 +14,7 @@ import {
   type ModelOptionValues,
 } from "@zcode/model-option-map";
 import {
+  ModelErrorCode,
   type Logger,
   type ModelId,
   type ModelProviderId,
@@ -21,6 +23,7 @@ import {
 import type { RegistryProviderConfig } from "@zcode/provider";
 import { withOpenRouterAttributionHeaders } from "@zcode/shared";
 import { createAnthropicCompatFetch } from "./anthropic-stream-compat.js";
+import { AiSdkModelAdapterError } from "./errors.js";
 import { createOpenAIResponsesJsonCompatFetch } from "./openai-responses-json-compat.js";
 import { createModelOptionMapFetch, type RawRequestBodyCapture } from "./model-option-map-fetch.js";
 import { createNetworkProxyFetch } from "../network/proxy-fetch.js";
@@ -28,7 +31,7 @@ import { createOfficialCodingPlanGatewayFetch } from "./official-coding-plan-gat
 import { normalizeModelTlsFailure } from "./failure-tls.js";
 import { mergeModelRequestHeaders } from "./model-request-headers.js";
 
-export type AiSdkProviderKind = "openai" | "anthropic" | "openai-compatible";
+export type AiSdkProviderKind = "openai" | "anthropic" | "openai-compatible" | "google";
 
 export type EnvRecord = Record<string, string | undefined>;
 
@@ -228,7 +231,9 @@ export class AiSdkModelExecution {
     optionMaps: CompiledModelOptionMaps | undefined,
     optionValues: ModelOptionValues | undefined,
   ): AiSdkResolvedModel {
-    const providerConfig = applyModelRequestAuth(snapshot.providerConfig, requestAuth);
+    const providerConfig = normalizeProviderAuthHeaders(
+      applyModelRequestAuth(snapshot.providerConfig, requestAuth),
+    );
     // Model 创建时的 Provider 事实必须被冻结在当前 binding 中。若按 providerId 缓存
     // factory，配置更新后创建的新 Model 会错误复用旧 Endpoint / Header / API Key。
     const rawRequestBodyCapture: RawRequestBodyCapture = {};
@@ -314,6 +319,20 @@ export class AiSdkModelExecution {
         });
         return provider as LanguageModelFactory;
       }
+
+      case "google": {
+        const googleAuth = resolveGoogleApiKey(apiKey, headers);
+        const provider = createGoogleGenerativeAI({
+          apiKey: googleAuth.apiKey,
+          baseURL: normalizeGoogleBaseURL(providerConfig.baseURL),
+          fetch: optionFetch,
+          headers: googleAuth.headers,
+        });
+        // Gemini Developer API 的 registry identity 仍保留 models/ 前缀；
+        // SDK 自身会补 models/，因此只在 factory 调用边界去掉一次。
+        return ((modelId: string) =>
+          provider.chat(stripGoogleModelPrefix(modelId))) as LanguageModelFactory;
+      }
     }
   }
 
@@ -367,6 +386,8 @@ function toAiSdkProviderConfig(
       return { kind: "openai", ...common };
     case "openai-chat-completions":
       return { kind: "openai-compatible", name: providerId, ...common };
+    case "gemini-generate-content":
+      return { kind: "google", ...common };
   }
   throw new Error(`Unsupported Provider API type: ${String(config.api.type)}`);
 }
@@ -406,6 +427,111 @@ function hasHeader(headers: Record<string, string> | undefined, name: string): b
   }
   const normalizedName = name.toLowerCase();
   return Object.keys(headers).some((key) => key.toLowerCase() === normalizedName);
+}
+
+const GOOGLE_API_KEY_HEADER_NAME = "x-goog-api-key";
+const GOOGLE_DEFAULT_API_VERSION = "v1beta";
+
+/**
+ * Google 的 SDK 会自动生成 x-goog-api-key。显式配置的同名 header 优先，
+ * 但不同大小写会让 fetch 把两个头拼成一个值，因此在 binding 副本里统一成规范名。
+ */
+function normalizeProviderAuthHeaders(providerConfig: AiSdkProviderConfig): AiSdkProviderConfig {
+  if (providerConfig.kind !== "google" || !providerConfig.headers) {
+    return providerConfig;
+  }
+  const headers = normalizeGoogleApiKeyHeaderCase(providerConfig.headers);
+  return headers === providerConfig.headers
+    ? providerConfig
+    : { ...providerConfig, headers: headers };
+}
+
+function normalizeGoogleApiKeyHeaderCase(headers: Record<string, string>): Record<string, string> {
+  const variants = Object.keys(headers).filter(
+    (name) =>
+      name !== GOOGLE_API_KEY_HEADER_NAME && name.toLowerCase() === GOOGLE_API_KEY_HEADER_NAME,
+  );
+  if (variants.length === 0) {
+    return headers;
+  }
+
+  const normalized: Record<string, string> = {};
+  let explicitValue: string | undefined;
+  for (const [name, value] of Object.entries(headers)) {
+    if (name.toLowerCase() === GOOGLE_API_KEY_HEADER_NAME) {
+      explicitValue = value;
+      continue;
+    }
+    normalized[name] = value;
+  }
+  if (explicitValue !== undefined) {
+    normalized[GOOGLE_API_KEY_HEADER_NAME] = explicitValue;
+  }
+  return normalized;
+}
+
+function resolveGoogleApiKey(
+  apiKey: string | undefined,
+  headers: Record<string, string> | undefined,
+): { apiKey: string | undefined; headers: Record<string, string> | undefined } {
+  if (!hasHeader(headers, GOOGLE_API_KEY_HEADER_NAME)) {
+    return { apiKey, headers };
+  }
+
+  // 显式 x-goog-api-key 必须保持唯一值。SDK 会先写入自己的 key，再展开 headers；
+  // 这里传入空 key 让显式 header 成为唯一来源，而不是拼成 "explicit, frozen"。
+  return {
+    apiKey: "",
+    headers: headers ? normalizeGoogleApiKeyHeaderCase(headers) : headers,
+  };
+}
+
+function stripGoogleModelPrefix(modelId: string): string {
+  const prefix = "models/";
+  return modelId.startsWith(prefix) ? modelId.slice(prefix.length) : modelId;
+}
+
+/**
+ * Gemini Developer API 前缀规范化：只在 factory 请求副本上做，binding 保留用户原值。
+ * 拒绝 query/fragment 与已含 model action 的端点，避免把不兼容 URL 静默降级到其它协议。
+ */
+function normalizeGoogleBaseURL(baseURL: string | undefined): string | undefined {
+  const trimmed = baseURL?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw invalidGoogleBaseURL(trimmed, "not-a-url");
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw invalidGoogleBaseURL(trimmed, "unsupported-protocol");
+  }
+  if (url.search.length > 0 || url.hash.length > 0 || /[?#]/u.test(trimmed)) {
+    throw invalidGoogleBaseURL(trimmed, "query-or-fragment");
+  }
+
+  const pathname = url.pathname.replace(/\/+$/u, "");
+  if (/:[A-Za-z][A-Za-z0-9]*/u.test(pathname)) {
+    throw invalidGoogleBaseURL(trimmed, "model-action");
+  }
+
+  const versionedPath = /\/v1(?:beta)?$/iu.test(pathname)
+    ? pathname
+    : `${pathname}/${GOOGLE_DEFAULT_API_VERSION}`;
+  url.pathname = versionedPath;
+  return url.href.replace(/\/+$/u, "");
+}
+
+function invalidGoogleBaseURL(baseURL: string, reason: string): AiSdkModelAdapterError {
+  return new AiSdkModelAdapterError(
+    ModelErrorCode.InvalidModelRequest,
+    "Google GenerateContent base URL must be a plain HTTP(S) API prefix",
+    { context: { baseURL, reason } },
+  );
 }
 
 function normalizeAnthropicBaseURL(baseURL: string | undefined): string | undefined {

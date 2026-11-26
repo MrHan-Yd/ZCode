@@ -1,6 +1,7 @@
 import type { LanguageModelUsage, TextStreamPart, ToolSet } from "ai";
 import type {
   Logger,
+  ModelAssistantContent,
   ModelReasoningContentBlock,
   ModelSource,
   ModelStreamEvent,
@@ -62,6 +63,99 @@ export function normalizeReasoning(
     }));
 }
 
+/**
+ * 从 SDK 原始有序 content 生成 assistantContent。
+ * 原因：聚合 text/toolCalls 会丢失签名归属和 interleaving；不能从 result.text 重建。
+ * 显式空 content 返回空数组，调用方不得再回退旧视图。
+ */
+export function normalizeAssistantContent(
+  result: AiSdkGenerateTextResult,
+  logger?: Logger,
+): ModelAssistantContent | undefined {
+  const content = (result as unknown as { content?: unknown }).content;
+  if (!Array.isArray(content)) {
+    return undefined;
+  }
+
+  const blocks: ModelAssistantContent = [];
+  content.forEach((part, index) => {
+    const record = plainRecord(part);
+    switch (record?.type) {
+      case "text": {
+        if (typeof record.text !== "string") return;
+        const providerOptions = plainRecord(record.providerMetadata);
+        // 空文本只有在携带签名等回放元数据时才是有效 part。
+        if (record.text.length === 0 && providerOptions === undefined) return;
+        blocks.push({
+          type: "text",
+          text: record.text,
+          ...(providerOptions ? { providerOptions } : {}),
+        });
+        return;
+      }
+
+      case "reasoning": {
+        if (typeof record.text !== "string") return;
+        const providerOptions = plainRecord(record.providerMetadata);
+        // 无正文但有 provider 元数据的 reasoning 也要保留，不能用空壳清理误删签名。
+        if (record.text.length === 0 && providerOptions === undefined) return;
+        blocks.push({
+          type: "reasoning",
+          text: record.text,
+          ...(providerOptions ? { providerOptions } : {}),
+        });
+        return;
+      }
+
+      case "tool-call": {
+        const id = typeof record.toolCallId === "string" ? record.toolCallId : crypto.randomUUID();
+        const name = normalizeModelToolName(record.toolName, {
+          providerExecuted: booleanProperty(record, "providerExecuted"),
+          source: "generateText",
+          toolCallId: id,
+          toolCallIndex: index,
+        });
+        const providerOptions = plainRecord(record.providerMetadata);
+        const providerExecuted = booleanProperty(record, "providerExecuted");
+        blocks.push({
+          type: "tool_call",
+          id,
+          name,
+          ...(providerExecuted === undefined ? {} : { providerExecuted }),
+          input: normalizeModelToolInput(record.input, {
+            logger,
+            source: "generateText",
+            toolName: name,
+          }),
+          ...(providerOptions ? { providerOptions } : {}),
+        });
+        return;
+      }
+
+      default:
+        // source/file/tool-result 等不在 assistant replay 联合内；它们不拥有签名。
+        return;
+    }
+  });
+
+  return blocks;
+}
+
+function plainRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined;
+}
+
+function booleanProperty(record: Record<string, unknown>, key: string): boolean | undefined {
+  const value = record[key];
+  return typeof value === "boolean" ? value : undefined;
+}
+
+function providerMetadataRecord(value: unknown): Record<string, unknown> | undefined {
+  return plainRecord(value);
+}
+
 export function toModelStreamEvent(chunk: TextStreamPart<ToolSet>): ModelStreamEvent | undefined {
   switch (chunk.type) {
     case "start":
@@ -73,6 +167,7 @@ export function toModelStreamEvent(chunk: TextStreamPart<ToolSet>): ModelStreamE
       return {
         type: "text_start",
         id: chunk.id,
+        providerMetadata: providerMetadataRecord(chunk.providerMetadata),
       };
 
     case "text-delta":
@@ -80,12 +175,14 @@ export function toModelStreamEvent(chunk: TextStreamPart<ToolSet>): ModelStreamE
         type: "text_delta",
         id: chunk.id,
         text: chunk.text,
+        providerMetadata: providerMetadataRecord(chunk.providerMetadata),
       };
 
     case "text-end":
       return {
         type: "text_end",
         id: chunk.id,
+        providerMetadata: providerMetadataRecord(chunk.providerMetadata),
       };
 
     case "reasoning-start":
@@ -140,6 +237,8 @@ export function toModelStreamEvent(chunk: TextStreamPart<ToolSet>): ModelStreamE
       };
 
     case "tool-call": {
+      // 签名/回放元数据只属于这个调用 part，不能挂到结果或聚合文本上。
+      const providerOptions = providerMetadataRecord(chunk.providerMetadata);
       return {
         type: "tool_call",
         toolCall: {
@@ -150,6 +249,7 @@ export function toModelStreamEvent(chunk: TextStreamPart<ToolSet>): ModelStreamE
           // 执行参数只取 AI SDK final tool-call，避免从展示用 delta 猜测输入，
           // 也避免 stream/model-io 多次解析并重复告警。
           input: chunk.input,
+          ...(providerOptions ? { providerOptions } : {}),
         },
       };
     }

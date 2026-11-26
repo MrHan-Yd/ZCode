@@ -109,7 +109,12 @@ test("executor 硬拒绝：即使工具已注册，编排会话调用 Write 也�
 test("团队校验：通用角色隐式保留，未知角色与重复角色仍被拒", () => {
   assert.deepEqual(resolveOrchestrationTeam(undefined), [...DEFAULT_ORCHESTRATION_TEAM]);
   assert.deepEqual(resolveOrchestrationTeam([]), [...DEFAULT_ORCHESTRATION_TEAM]);
-  assert.deepEqual(DEFAULT_ORCHESTRATION_TEAM, ["general-purpose", "Explore", "reviewer"]);
+  assert.deepEqual(DEFAULT_ORCHESTRATION_TEAM, [
+    "general-purpose",
+    "Explore",
+    "bug-fixer",
+    "reviewer",
+  ]);
   assert.deepEqual(resolveOrchestrationTeam(["Explore"]), ["general-purpose", "Explore"]);
   assert.deepEqual(resolveOrchestrationTeam(["tester", "reviewer"]), [
     "general-purpose",

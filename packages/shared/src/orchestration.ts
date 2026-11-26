@@ -18,14 +18,17 @@ export {
 export const ORCHESTRATION_MAX_STEPS = 32;
 export const ORCHESTRATION_MAX_ATTEMPTS = 5;
 
-/** 默认精简团队：通用执行/检索按需可用，仅增加审阅专业角色。 */
+/** 默认精简团队：通用执行/检索按需可用，增加修复与审阅两个专业角色。 */
 export const ORCHESTRATION_DEFAULT_TEAM: readonly string[] = [
   ...GENERIC_SUBAGENT_NAMES,
+  "bug-fixer",
   "reviewer",
 ];
 /** 软上限只用于 UI 提示；硬上限由 CLI 校验并拒绝超限团队。 */
 export const ORCHESTRATION_SOFT_TEAM_SIZE = 6;
-export const ORCHESTRATION_MAX_TEAM_SIZE = 8;
+// 2 个通用角色 + 全部 7 个专业角色（full-stack 预设）= 9。上限若停在 8，
+// 归一化会静默截断最后一个专业角色，让「全选」与 preset 不一致。
+export const ORCHESTRATION_MAX_TEAM_SIZE = 9;
 export const ORCHESTRATION_DEFAULT_MAX_CONCURRENCY = 3;
 export const ORCHESTRATION_MAX_CONCURRENCY = 8;
 

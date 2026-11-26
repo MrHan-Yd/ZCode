@@ -216,7 +216,61 @@ test("新增模型在对应模板中默认启用", async () => {
 
 test("内置 release revision 随内容递增", async () => {
   const release = decodeZCodeBuiltinRelease(JSON.parse(await readFile(BUILTIN_PATH, "utf8")));
-  assert.equal(release.revision, 36);
+  assert.equal(release.revision, 40);
+});
+
+test("gemini 已验证家族规则声明原生输入输出与 JSON Schema 能力", async () => {
+  const rules = await readBuiltinRules();
+  for (const modelId of [
+    "models/gemini-1.5-pro",
+    "models/gemini-2.5-flash",
+    "gemini-2.5-pro",
+    "gemini-3.5-flash",
+    "gemini-4-argon",
+  ]) {
+    const resolved = rules.resolve({
+      apiType: "gemini-generate-content",
+      modelId,
+      providerId: "p",
+    });
+    assert.equal(resolved.properties?.inputFormat?.supportsText, true, modelId);
+    assert.equal(resolved.properties?.inputFormat?.supportsImage, true, modelId);
+    assert.equal(resolved.properties?.inputFormat?.supportsPdf, true, modelId);
+    assert.equal(resolved.properties?.inputFormat?.supportsAudio, true, modelId);
+    assert.equal(resolved.properties?.inputFormat?.supportsVideo, true, modelId);
+    assert.equal(resolved.properties?.outputFormat?.supportsText, true, modelId);
+    assert.equal(resolved.properties?.supportsToolCall, true, modelId);
+    assert.equal(resolved.properties?.supportsJsonSchemaOutput, true, modelId);
+    // MCP 本地 #/properties 引用需要在 adapter 提升为 #/$defs，Google 转换器只接受后者。
+    assert.equal(resolved.properties?.requiresMfjsToolSchema, true, modelId);
+    assert.equal(resolved.properties?.supportsNativeWebSearch, false, modelId);
+    assert.equal(resolved.properties?.supportsMidConversationSystem, false, modelId);
+  }
+});
+
+test("gemini 兜底规则不向未验证型号（gemma/未知 id）授予工具与 JSON 能力", async () => {
+  const rules = await readBuiltinRules();
+  for (const modelId of ["gemma-3-27b-it", "gemini-unknown", "gemini-2-preview"]) {
+    const resolved = rules.resolve({
+      apiType: "gemini-generate-content",
+      modelId,
+      providerId: "p",
+    });
+    // 兜底必须显式覆盖通用 `.*` 规则的工具能力，只保留 maxOutputTokens 映射；
+    // 未验证型号不能因为继承了通用默认而获得工具调用或 JSON Schema 能力。
+    assert.equal(resolved.properties?.supportsToolCall, false, modelId);
+    assert.equal(resolved.properties?.supportsJsonSchemaOutput, false, modelId);
+    assert.equal(resolved.properties?.requiresMfjsToolSchema, false, modelId);
+    assert.equal(resolved.properties?.inputFormat?.supportsText, true, modelId);
+    assert.equal(resolved.properties?.inputFormat?.supportsImage, false, modelId);
+    assert.equal(resolved.properties?.inputFormat?.supportsPdf, false, modelId);
+    assert.equal(resolved.properties?.inputFormat?.supportsAudio, false, modelId);
+    assert.equal(resolved.properties?.inputFormat?.supportsVideo, false, modelId);
+    assert.equal(resolved.properties?.outputFormat?.supportsText, true, modelId);
+    assert.equal(resolved.properties?.supportsNativeWebSearch, false, modelId);
+    assert.equal(resolved.properties?.supportsMidConversationSystem, false, modelId);
+    assert.ok(resolved.optionSpecs?.maxOutputTokens?.map, modelId);
+  }
 });
 
 test("CommandCode / ClinePass / Ollama Cloud 模板声明内置 Logo key", async () => {

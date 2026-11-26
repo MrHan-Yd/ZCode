@@ -27,6 +27,7 @@ export interface CreateModelOptions {
   providerId: ModelProviderId;
   modelId: ModelId;
   displayName?: string;
+  providerKind?: string;
   properties: ModelPropertiesInput;
   optionSpecs: ModelOptionSpecs;
   options?: ModelOptions;
@@ -41,6 +42,7 @@ class ExecutableModel implements Model {
   readonly providerId: ModelProviderId;
   readonly modelId: ModelId;
   readonly displayName?: string;
+  readonly providerKind?: string;
   readonly properties: ModelProperties;
   readonly optionSpecs: ModelOptionSpecs;
   readonly options: ModelOptions;
@@ -50,6 +52,7 @@ class ExecutableModel implements Model {
     this.providerId = input.providerId;
     this.modelId = input.modelId;
     this.displayName = input.displayName;
+    this.providerKind = input.providerKind;
     this.properties = Object.freeze({ ...input.properties });
     this.optionSpecs = freezeOptionSpecs(input.optionSpecs);
     this.options = Object.freeze(validatePartialOptions(this.optionSpecs, input.options ?? {}));
@@ -62,6 +65,7 @@ class ExecutableModel implements Model {
       providerId: this.providerId,
       modelId: this.modelId,
       displayName: this.displayName,
+      providerKind: this.providerKind,
       properties: this.properties,
       optionSpecs: this.optionSpecs,
       options: { ...this.options, ...options },

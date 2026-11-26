@@ -14,7 +14,8 @@
     "test/subagent*.test.ts",
     "test/sessionPerformance.test.ts",
     "test/sessionPerformanceBatch.test.ts",
-    "test/gitCommitMessageGeneration.test.ts"
+    "test/gitCommitMessageGeneration.test.ts",
+    "test/gemini*.test.ts"
   ],
   "exclude": ["node_modules", "dist"]
 }

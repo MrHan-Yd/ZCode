@@ -43,6 +43,14 @@ if (added + removed <= 0) return null;   // added/removed 只统计 unstaged + s
    - 标题栏 `GitBranch` 图标：`gitTools !== null` 时始终渲染（不再受面板展开/收起或窄屏 auto 影响）；点击切换 Git 浮层（`TID_GIT_TOOLS_PANEL`），按钮同步 `aria-expanded`。
    - 不再渲染 Git chip、不再渲染右上 Git 卡片；`TID_GIT_TOOLS_ENTRY` 是 Git 工具的唯一入口锚点。
    - 打开浮层不改变 Git 事实，隐藏/显示入口也不改变任何 Git 状态；展开状态只写 shell 的 `summaryPanelVariantOverride`（`"panel"` = 打开，其余 = 关闭）。唯一的额外写入是互斥：打开时调 `resetStatusPanelOverlay()` 收起会话状态面板，不写其他 store、不写会话状态卡片的本地状态。
+10. **读取失败不等于「不是仓库」**：`git.refresh` 失败时不得把已确认的仓库摘要重置为空。`useGitRepository` 的错误路径保留上一次成功快照（`summary.isGitAvailable && summary.isRepository`），只写 `error` 与 `loading: false`。
+    - 入口可见性只取决于「最后一次**成功**的读取」，不取决于「最后一次读取是否成功」；一次超时不能让图标、徽标和 Git 面板数据凭空消失。
+    - 浮层数据保留上一次快照；打开浮层本身会调 `onRefreshGit()`，天然就是一次手动重试。
+    - 冷启动从未成功读取过时仍是空态（没有可信的仓库事实，不能伪造 `isRepository`），由规则 11 的重试负责补上。
+11. **瞬时失败两级恢复**：
+    - **内联重试**：`createGitRepositoryRefreshCoordinator` 接受重试策略，只对 Git 命令超时（错误信息形如 `<label> timed out after Nms`）重试，最多 2 次、退避 1.5s / 4s。非超时错误不重试；`GitRepositoryRefreshInvalidatedError` 属于作用域失效，同样不重试。重试期间共用同一个 intent，`dispose()`（workspace / 服务切换）立即结束退避等待；只有重试耗尽才调 `onError`，且只报一次。
+    - **冷启动补偿刷新**：内联重试合计只能覆盖数秒。若本轮 workspace **从未成功读到仓库**，`useGitRepository` 在 `onError` 后按 `nextGitRepositoryHealDelayMs` 的低频节奏（10s / 30s / 60s，共 3 次）再调一次 `refresh()`；补偿只调度、不 await，已在等待的调用方不会被拉长。任意一次成功发布即关闭补偿；切换 scope 重置计数。
+    - 因此「一次超时就永久消失、只能手动切 workspace」的状态被消除：常见冷启动超时由内联重试恢复，持续数十秒的负载由补偿刷新恢复；两者都有上限，避免对真正不可用的仓库无限轮询。
 
 ## 状态所有者
 
@@ -52,6 +60,8 @@ if (added + removed <= 0) return null;   // added/removed 只统计 unstaged + s
 - **徽标摘要的唯一实现**：`resolveGitToolsBadge(model)` 按规则 7 选计数；原 `resolveGitToolsChip` 删除，不保留第二套摘要实现。
 - **展开状态唯一所有者**：shell 的 `summaryPanelVariantOverride`。标题栏图标是唯一写者；没有第二个打开状态、没有 `gitToolsPanelStore`。它与会话状态面板互斥：Git 打开时 shell 调 `resetStatusPanelOverlay()`，状态面板打开时 shell 写 `summaryPanelVariantOverride = null`（`specs/status-panel-git-tools-split.md` 规则 5）。
 - **`gitSummary.behind` 仍然只由 fetch/push/pull 推进**，本改动不引入任何后台 fetch；规则 5 是对「该值不可靠」的补偿，不是把它变成实时值。
+- **失败快照的保留者是 `useGitRepository`**：它持有 `GitPaneRepositoryState`，错误路径用 `shouldKeepGitRepositorySnapshot`（`packages/ui/src/lib/gitRepositoryRefresh.ts`）判断能否沿用旧摘要，不新增第二份 Git 状态。
+- **重试/补偿的唯一触发者是 `useGitRepository` + 协调器**：内联重试在协调器 `read` 之内完成，调用方只看到一次 `refresh()` 的结果；冷启动补偿由 hook 的定时器触发，但它只调用同一个 `refresh()`，不写任何 Git 状态（状态写入仍只有 `publish` / `onError` 两条）。组件层不各自写定时器。
 
 ## 接口
 
@@ -105,6 +115,11 @@ export function resolveGitToolsBadge(model: GitToolsModel | null): GitToolsBadge
 10. 展开/关闭往返：点图标 → 浮层出现且 `aria-expanded="true"`；`Escape` / 点击外部 / 再点图标 → 浮层关闭，`aria-expanded="false"`，焦点回到图标。
 11. 只有 Git 事情可做（无状态内容）→ 标题栏图标可打开浮层；composer 不渲染状态触发器。
 12. Git 与状态都存在 → 两个标题栏图标各自可打开自己的浮层，但两者互斥：打开 Git 浮层会收起会话状态面板，打开会话状态面板（图标或 composer 后台任务徽标）会收起 Git 浮层，两者不会同时可见（见 `specs/status-panel-git-tools-split.md` 规则 5）。
+13. **冷启动首读超时、第二次成功**（2026-11-26 实测场景：重启后 host 冷启动，`git diff --numstat` 被拖过 15s）→ 协调器按规则 11 的内联重试重读，成功后图标与徽标自行出现，用户不需要切换 workspace 或重启。
+    - 若内联重试仍连续超时（持续负载），补偿刷新在 10s / 30s / 60s 各再试一次；三次都失败才停手。
+    - 补偿同样失败后仍保持空态（没有可信的仓库事实），此时切换 workspace 会重建 scope 并重新读取。
+14. **已显示图标后某次刷新失败** → 规则 10 保留上一次成功摘要：图标、徽标与浮层数据不消失，`error` 只记录在 `GitRepositoryState`；点开浮层触发 `onRefreshGit()`，或下一次文件变更触发的自动刷新即可恢复。
+15. **非超时错误（如权限/路径失效）** → 不重试，直接记录错误；已有成功摘要时入口仍保留（规则 10），从无成功摘要时保持空态，不伪造仓库事实。
 
 ## E2E 锚点
 
@@ -120,3 +135,4 @@ export function resolveGitToolsBadge(model: GitToolsModel | null): GitToolsBadge
 - `behind > 0` 与「有上游」都会保留入口，且主按钮在这些状态下可以拉取（见 `specs/git-pull.md`）；本文件只负责「入口不被误隐藏」，拉取自身的交互与结果展示不在范围内。
 - 标题栏图标是工作区级、不是 pane 级：拆分窗格共享同一个 `summaryPanelVariantOverride`，一个窗格打开浮层会同时改变另一窗格的入口态；这是有意的工作区级语义。
 - 不做「提交后自动提示推送」之类的引导，只保证入口不被误隐藏。
+- 自动重试只覆盖 Git 命令超时（本机负载/冷启动导致），不覆盖权限、磁盘损坏等需要用户处理的错误；这类错误的恢复依赖规则 10 保留的旧快照与下一次用户触发刷新。

@@ -21,6 +21,7 @@ function renderPicker(
   locale: Locale,
   views: readonly OrchestrationRoleView[] = roles,
   team: readonly string[] = ["general-purpose", "tester"],
+  reserveCloseButtonSpace = false,
 ): string {
   return renderToStaticMarkup(
     createElement(ZCodeIntlProvider, {
@@ -32,6 +33,7 @@ function renderPicker(
         onToggleSelectAll: () => {},
         onApplyPreset: () => {},
         onOpenRoleSettings: () => {},
+        reserveCloseButtonSpace,
       }),
     }),
   );
@@ -62,12 +64,34 @@ test("受限高度下只收缩角色列表，角色行保留内容高度", () =>
     for (const token of ["flex-1", "min-h-0", "overflow-x-hidden"]) {
       assert.ok(list.has(token), `role list must use ${token}`);
     }
-    assert.equal(roles.length, 6);
+    assert.equal(roles.length, 7);
     for (const role of roles) {
       const row = classNames(openingTag(html, testId(TID_V4_ORCHESTRATION_TEAM_ROLE, role.name)));
       assert.ok(row.has("shrink-0"), `${role.name} must not compress below its text`);
     }
   }
+});
+
+test("角色设置只保留面板右上角一处，行内不再重复按钮", () => {
+  const labels = { "zh-CN": "打开子智能体设置", "en-US": "Open subagent settings" } as const;
+  for (const locale of ["zh-CN", "en-US"] as const) {
+    const html = renderPicker(locale);
+    const label = labels[locale];
+    const settingsCount = html.match(new RegExp(`aria-label="${label}"`, "gu"))?.length ?? 0;
+    assert.equal(settingsCount, 1);
+    // 入口在标题区，排在第一条角色行之前；行内不再出现设置按钮。
+    const headerIndex = html.indexOf(`aria-label="${label}"`);
+    const firstRoleIndex = html.indexOf(testId(TID_V4_ORCHESTRATION_TEAM_ROLE, "architect"));
+    assert.ok(headerIndex >= 0 && firstRoleIndex > headerIndex);
+    assert.equal(html.match(/lucide-settings-2/gu)?.length ?? 0, 1);
+    assert.equal(html.includes("在设置页编辑角色模型"), false);
+    assert.equal(html.includes("Edit role model in Settings"), false);
+  }
+});
+
+test("移动端团队面板给右上角关闭按钮让位，桌面端不额外留白", () => {
+  assert.equal(renderPicker("zh-CN").includes("pr-8"), false);
+  assert.ok(renderPicker("zh-CN", roles, ["general-purpose", "tester"], true).includes("pr-8"));
 });
 
 test("勾选图标使用普通前景色，在明暗输入背景上可辨", () => {
@@ -86,7 +110,7 @@ test("通用子代理不出现也不计数，专业团队提供独立全选", ()
   const html = renderPicker("zh-CN");
   assert.equal(html.includes(testId(TID_V4_ORCHESTRATION_TEAM_ROLE, "general-purpose")), false);
   assert.equal(html.includes(testId(TID_V4_ORCHESTRATION_TEAM_ROLE, "Explore")), false);
-  assert.ok(html.includes("1/6"));
+  assert.ok(html.includes("1/7"));
   assert.ok(html.includes("全选"));
 });
 
@@ -107,7 +131,7 @@ test("仅显示全栈和精简两个预设，图标不复用推荐或提示词�
   }
 });
 
-test("面板说明通用执行与检索默认可用，精简团队只勾选审阅", () => {
+test("面板说明通用执行与检索默认可用，专业角色独立计数", () => {
   const html = renderPicker("zh-CN", roles, ["general-purpose", "Explore", "reviewer"]);
   const description = html.match(/<p[^>]*>([^<]*)<\/p>/u)?.[1];
   assert.ok(description?.includes("通用执行与检索默认可用"));
@@ -116,7 +140,7 @@ test("面板说明通用执行与检索默认可用，精简团队只勾选审�
     ?.filter((tag) => tag.includes('role="checkbox"') && tag.includes('aria-checked="true"'));
   assert.equal(selected?.length, 1);
   assert.ok(selected?.[0]?.includes('aria-label="reviewer"'));
-  assert.ok(html.includes("1/6"));
+  assert.ok(html.includes("1/7"));
 });
 
 test("全部可选角色已选时，全选按钮切换为取消全选", () => {

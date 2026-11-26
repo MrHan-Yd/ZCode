@@ -31,6 +31,7 @@ test("可见角色从编排团队派生，关闭编排后回落经典两角色",
   assert.deepEqual(resolveVisibleSubagentProfileNames({ orchestration: { enabled: true } }), [
     "general-purpose",
     "Explore",
+    "bug-fixer",
     "reviewer",
   ]);
   assert.equal(

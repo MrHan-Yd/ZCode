@@ -45,6 +45,7 @@ import {
   ProviderApiFormatSelect,
   resolveProviderConnectionApiFormatDisplayLabel,
 } from "@/settings/model-provider-section/ProviderApiFormatSelect.js";
+import { resolveProviderFormApiFormat } from "@/settings/model-provider-section/ProviderDraftSave.js";
 import { SortableProviderModelList } from "@/settings/model-provider-section/SortableProviderModelList.js";
 import { useProviderModelDraft } from "@/settings/model-provider-section/useProviderModelDraft.js";
 import { ProviderLogo } from "@/settings/model-provider-section/ProviderLogo.js";
@@ -207,7 +208,7 @@ export function ProviderConnectionSection({
   const { intl } = useZCodeIntl();
   const showApiFormat = shouldShowProviderApiFormat(provider);
   const readOnlyBaseUrl = provider.config.api?.baseUrl ?? "";
-  const resolvedApiFormat = provider.config.api?.type ?? "anthropic-messages";
+  const resolvedApiFormat = resolveProviderFormApiFormat(provider);
 
   const renderReadOnlyField = (label: string, value: string) => (
     <div>

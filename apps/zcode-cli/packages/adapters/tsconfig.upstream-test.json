@@ -10,6 +10,12 @@
       "@zcode/contracts": ["../contracts/src/index.ts"]
     }
   },
-  "include": ["test/upstream*.test.ts", "test/sessionPerformance.test.ts"],
+  "include": [
+    "test/upstream*.test.ts",
+    "test/sessionPerformance.test.ts",
+    "test/gemini*.test.ts",
+    "test/geminiTestSupport.ts",
+    "test/signatureRepairRetry.test.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }

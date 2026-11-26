@@ -3,11 +3,17 @@ import { runtimeInputMetadata } from "./runtime-input-presentation.js";
 // Session History Hydration - rebuild provider-visible context
 // ============================================================
 
-import { modelMessageContentToText, selectActiveConversationBranch } from "@zcode/contracts";
+import {
+  modelMessageContentToText,
+  projectModelAssistantContent,
+  selectActiveConversationBranch,
+} from "@zcode/contracts";
 import type {
   FilePart,
   MessagePart,
   MessageWithParts,
+  ModelAssistantContent,
+  ModelAssistantContentBlock,
   ModelMessageContent,
   ModelMessageContentBlock,
   ModelReasoningContentBlock,
@@ -41,6 +47,12 @@ import {
 import { compactActiveSessionMessages, isActiveCompactionBoundaryPart } from "./compact-session.js";
 import { filePartToContentBlock, projectPersistedToolMediaContent } from "./file-part-hydration.js";
 import { selectToolPartsForHistory } from "./tool-part-order.js";
+import {
+  providerContentIndexFromMetadata,
+  providerOptionsFromPartMetadata,
+  providerOptionsFromReasoningMetadata,
+  toolCallPart,
+} from "./assistant-part-replay.js";
 
 const INTERRUPTED_TOOL_RESULT = "[Tool execution was interrupted before resume]";
 
@@ -115,15 +127,17 @@ export async function hydrateMessageHistoryFromSession(input: {
       continue;
     }
 
-    const text = assistantTextFromParts(parts);
-    const reasoning = assistantReasoningFromParts(parts);
     const toolParts = selectToolPartsForHistory(parts.filter(isToolPart));
+    const hydrated = replayableAssistantParts(parts, toolParts);
+    const text = hydrated.text;
+    const reasoning = hydrated.reasoning;
     // live history 会保留带合法 provider usage 的空 assistant 作为估算锚点，
     // 旧 hydration 却无条件丢弃它，导致重启前后的 context estimate 不一致。
     if (
       text.trim().length === 0 &&
       reasoning.length === 0 &&
       toolParts.length === 0 &&
+      !hydrated.hasReplayableContent &&
       !persistedTokenUsageBaseline(message.info.tokens)
     ) {
       continue;
@@ -131,18 +145,13 @@ export async function hydrateMessageHistoryFromSession(input: {
 
     input.history.addAssistant(
       text,
-      toolParts.map(
-        (part): ToolCallInput => ({
-          id: part.callID,
-          input: part.state.input,
-          name: providerToolNameFromPart(part),
-        }),
-      ),
+      hydrated.toolCalls,
       reasoning,
       message.info.modelId && message.info.providerId
         ? { modelId: message.info.modelId, providerId: message.info.providerId }
         : undefined,
       message.info.tokens,
+      hydrated.assistantContent,
     );
     appliedMessageCount++;
 
@@ -547,6 +556,112 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+interface IndexedAssistantPart {
+  block: ModelAssistantContentBlock;
+  index?: number;
+}
+
+interface ReplayableAssistantParts {
+  assistantContent?: ModelAssistantContent;
+  hasReplayableContent: boolean;
+  reasoning: ModelReasoningContentBlock[];
+  text: string;
+  toolCalls: ToolCallInput[];
+}
+
+/**
+ * 冷恢复按 providerContentIndex 还原完整 interleaving 和逐 part 签名。
+ * 旧数据没有该 owner 字段时沿用原聚合视图，不能凭空重排或补签名。
+ */
+function replayableAssistantParts(
+  parts: MessagePart[],
+  toolParts: readonly ToolPart[],
+): ReplayableAssistantParts {
+  const indexed: IndexedAssistantPart[] = [];
+  for (const part of parts) {
+    if (part.type === "text" && !part.ignored) {
+      const providerOptions = providerOptionsFromPartMetadata(part.metadata);
+      indexed.push({
+        index: providerContentIndexFromMetadata(part.metadata),
+        block: { type: "text", text: part.text, ...(providerOptions ? { providerOptions } : {}) },
+      });
+      continue;
+    }
+    if (part.type === "reasoning") {
+      const providerOptions = providerOptionsFromReasoningMetadata(part.metadata);
+      indexed.push({
+        index: providerContentIndexFromMetadata(part.metadata),
+        block: {
+          type: "reasoning",
+          text: part.text,
+          ...(providerOptions ? { providerOptions } : {}),
+        },
+      });
+    }
+  }
+  for (const part of toolParts) {
+    const providerOptions = providerOptionsFromPartMetadata(part.metadata);
+    indexed.push({
+      index: providerContentIndexFromMetadata(part.metadata),
+      block: toolCallPart({
+        id: part.callID,
+        input: part.state.input,
+        name: providerToolNameFromPart(part),
+        ...(providerOptions ? { providerOptions } : {}),
+      }),
+    });
+  }
+
+  const hasProviderContentIndex = indexed.some((entry) => entry.index !== undefined);
+  if (!hasProviderContentIndex) {
+    const reasoning = parts
+      .filter(
+        (part): part is Extract<MessagePart, { type: "reasoning" }> => part.type === "reasoning",
+      )
+      .map(
+        (part): ModelReasoningContentBlock => ({
+          type: "reasoning",
+          text: part.text,
+          providerOptions: providerOptionsFromReasoningMetadata(part.metadata),
+        }),
+      );
+    return {
+      hasReplayableContent: indexed.some((entry) => entry.block.providerOptions !== undefined),
+      reasoning,
+      text: assistantTextFromParts(parts),
+      toolCalls: toolParts.map((part): ToolCallInput => {
+        const providerOptions = providerOptionsFromPartMetadata(part.metadata);
+        return {
+          id: part.callID,
+          input: part.state.input,
+          name: providerToolNameFromPart(part),
+          ...(providerOptions ? { providerOptions } : {}),
+        };
+      }),
+    };
+  }
+
+  const ordered = indexed
+    .map((entry) => entry)
+    .sort((left, right) => compareContentIndex(left.index, right.index));
+  const assistantContent = ordered.map((entry) => entry.block);
+  const projected = projectModelAssistantContent(assistantContent);
+  return {
+    assistantContent,
+    hasReplayableContent: true,
+    reasoning: projected.reasoning,
+    text: projected.text,
+    toolCalls: projected.toolCalls,
+  };
+}
+
+function compareContentIndex(left: number | undefined, right: number | undefined): number {
+  if (left === undefined && right === undefined) return 0;
+  if (left === undefined) return 1;
+  if (right === undefined) return -1;
+  return left - right;
+}
+
 function assistantTextFromParts(parts: MessagePart[]): string {
   const chunks: string[] = [];
 
@@ -557,22 +672,6 @@ function assistantTextFromParts(parts: MessagePart[]): string {
   }
 
   return chunks.join("\n\n");
-}
-
-function assistantReasoningFromParts(parts: MessagePart[]): ModelReasoningContentBlock[] {
-  const blocks: ModelReasoningContentBlock[] = [];
-
-  for (const part of parts) {
-    if (part.type === "reasoning") {
-      blocks.push({
-        type: "reasoning",
-        text: part.text,
-        providerOptions: part.metadata ? { ...part.metadata } : undefined,
-      });
-    }
-  }
-
-  return blocks;
 }
 
 function isToolPart(part: MessagePart): part is ToolPart {

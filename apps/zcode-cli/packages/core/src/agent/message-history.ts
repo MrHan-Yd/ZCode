@@ -5,6 +5,8 @@
 import {
   type RuntimeInputPresentation,
   modelMessageContentToText,
+  projectModelAssistantContent,
+  type ModelAssistantContent,
   type ModelCacheControl,
   type ModelMessageContent,
   type ModelMessageContentBlock,
@@ -19,6 +21,9 @@ export interface ToolCallInput {
   id: string;
   name: string;
   input: unknown;
+  providerExecuted?: boolean;
+  /** 调用级回放参数；不能与结果 metadata 或请求级 metadata 混用。 */
+  providerOptions?: Record<string, unknown>;
 }
 
 export type ReasoningContentInput = ModelReasoningContentBlock;
@@ -26,6 +31,8 @@ export type ReasoningContentInput = ModelReasoningContentBlock;
 export interface ModelInputMessage {
   role: "system" | "user" | "assistant" | "tool";
   content: ModelMessageContent;
+  /** 仅 assistant role；存在时是 provider 内容的唯一权威，包括显式空数组。 */
+  assistantContent?: ModelAssistantContent;
   cacheControl?: ModelCacheControl;
   toolCalls?: ToolCallInput[];
   toolCallId?: string;
@@ -96,6 +103,7 @@ export interface MessageHistory {
     reasoning?: ReasoningContentInput[],
     model?: Pick<Model, "providerId" | "modelId">,
     tokens?: TokenUsageInfo,
+    assistantContent?: ModelAssistantContent,
   ): void;
 
   // Add tool result
@@ -182,27 +190,11 @@ export class MessageHistoryImpl implements MessageHistory {
     reasoning?: ReasoningContentInput[],
     model?: Pick<Model, "providerId" | "modelId">,
     tokens?: TokenUsageInfo,
+    assistantContent?: ModelAssistantContent,
   ): void {
-    const reasoningBlocks = reasoning?.map((block) => cloneReasoningBlock(block)) ?? [];
-    this.entries.push({
-      message: {
-        role: "assistant",
-        content:
-          reasoningBlocks.length > 0
-            ? [
-                ...reasoningBlocks,
-                ...(content.length > 0 ? [{ type: "text" as const, text: content }] : []),
-              ]
-            : content,
-        toolCalls: toolCalls?.map((tc) => ({
-          id: tc.id,
-          name: tc.name,
-          input: tc.input,
-        })),
-        ...(model ? { providerId: model.providerId, modelId: model.modelId } : {}),
-      },
-      ...(tokens ? { tokens: cloneTokenUsageInfo(tokens) } : {}),
-    });
+    this.entries.push(
+      createRuntimeAssistantEntry(content, toolCalls, reasoning, model, tokens, assistantContent),
+    );
     this.cacheStats.totalMessages = this.entries.length;
   }
 
@@ -353,23 +345,35 @@ export function createRuntimeAssistantEntry(
   reasoning?: readonly ReasoningContentInput[],
   model?: Pick<Model, "providerId" | "modelId">,
   tokens?: TokenUsageInfo,
+  assistantContent?: ModelAssistantContent,
 ): RuntimeMessageMessageEntry {
-  const reasoningBlocks = reasoning?.map((block) => cloneReasoningBlock(block)) ?? [];
+  const orderedContent = assistantContent ? cloneAssistantContent(assistantContent) : undefined;
+  // assistantContent 是唯一权威；兼容 text/reasoning/toolCalls 只能从同一数组派生。
+  const projected = orderedContent ? projectModelAssistantContent(orderedContent) : undefined;
+  const reasoningBlocks = orderedContent
+    ? projected!.reasoning
+    : (reasoning?.map((block) => cloneReasoningBlock(block)) ?? []);
+  const compatibleToolCalls = orderedContent
+    ? projected!.toolCalls
+    : (toolCalls?.map((toolCall) => cloneToolCallInput(toolCall)) ?? undefined);
+  const compatibleContent = orderedContent
+    ? projected!.content.length > 0
+      ? projected!.content
+      : content
+    : reasoningBlocks.length > 0
+      ? [
+          ...reasoningBlocks,
+          ...(content.length > 0 ? [{ type: "text" as const, text: content }] : []),
+        ]
+      : content;
   return {
     message: {
       role: "assistant",
-      content:
-        reasoningBlocks.length > 0
-          ? [
-              ...reasoningBlocks,
-              ...(content.length > 0 ? [{ type: "text" as const, text: content }] : []),
-            ]
-          : content,
-      toolCalls: toolCalls?.map((toolCall) => ({
-        id: toolCall.id,
-        name: toolCall.name,
-        input: toolCall.input,
-      })),
+      content: compatibleContent,
+      ...(orderedContent ? { assistantContent: orderedContent } : {}),
+      ...(compatibleToolCalls && compatibleToolCalls.length > 0
+        ? { toolCalls: compatibleToolCalls }
+        : {}),
       ...(model ? { providerId: model.providerId, modelId: model.modelId } : {}),
     },
     ...(tokens ? { tokens: cloneTokenUsageInfo(tokens) } : {}),
@@ -484,8 +488,10 @@ export function cloneModelInputMessage(message: ModelInputMessage): ModelInputMe
     role: message.role,
     content: cloneModelMessageContent(message.content),
   };
+  if (message.assistantContent)
+    next.assistantContent = cloneAssistantContent(message.assistantContent);
   if (message.cacheControl) next.cacheControl = { ...message.cacheControl };
-  if (message.toolCalls) next.toolCalls = message.toolCalls.map((toolCall) => ({ ...toolCall }));
+  if (message.toolCalls) next.toolCalls = message.toolCalls.map(cloneToolCallInput);
   if (message.toolCallId) next.toolCallId = message.toolCallId;
   // 空字符串是可恢复调用的 provider 原始名称，不能在 request-local clone 时按 falsy 丢失。
   if (message.toolName !== undefined) next.toolName = message.toolName;
@@ -495,10 +501,44 @@ export function cloneModelInputMessage(message: ModelInputMessage): ModelInputMe
   return next;
 }
 
+function cloneToolCallInput(toolCall: ToolCallInput): ToolCallInput {
+  return {
+    id: toolCall.id,
+    name: toolCall.name,
+    input: toolCall.input,
+    ...(toolCall.providerExecuted === undefined
+      ? {}
+      : { providerExecuted: toolCall.providerExecuted }),
+    ...(toolCall.providerOptions
+      ? { providerOptions: structuredClone(toolCall.providerOptions) }
+      : {}),
+  };
+}
+
+export function cloneAssistantContent(content: ModelAssistantContent): ModelAssistantContent {
+  return content.map((part) => {
+    if (part.type === "tool_call") {
+      return {
+        type: "tool_call",
+        id: part.id,
+        name: part.name,
+        input: part.input,
+        ...(part.providerExecuted === undefined ? {} : { providerExecuted: part.providerExecuted }),
+        ...(part.providerOptions ? { providerOptions: structuredClone(part.providerOptions) } : {}),
+      };
+    }
+    return {
+      type: part.type,
+      text: part.text,
+      ...(part.providerOptions ? { providerOptions: structuredClone(part.providerOptions) } : {}),
+    };
+  });
+}
+
 function cloneReasoningBlock(block: ReasoningContentInput): ReasoningContentInput {
   return {
     ...block,
-    providerOptions: block.providerOptions ? { ...block.providerOptions } : undefined,
+    providerOptions: block.providerOptions ? structuredClone(block.providerOptions) : undefined,
   };
 }
 

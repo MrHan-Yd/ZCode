@@ -46,6 +46,7 @@ import type {
   ModelRequestAdmission,
   Model,
   ModelNetworkStatusEvent,
+  ModelAssistantContent,
   ModelMessageContentBlock,
   ModelReasoningContentBlock,
   ModelStreamRecoveryStatus,
@@ -869,7 +870,7 @@ export interface RunModelTextRequestOptions {
   onStreamSnapshot?: (snapshot: RuntimeModelStreamSnapshot) => void;
   onStreamReasoningDelta?: (text: string) => void;
   onStreamTextDelta?: (text: string) => void;
-  onStreamToolCall?: (toolCall: ModelToolCall) => void;
+  onStreamToolCall?: (toolCall: ModelToolCall, providerContentIndex?: number) => void;
   onModelNetworkStatus?: (event: ModelNetworkStatusEvent) => void;
   streamRecovery?: ModelStreamRecoveryStatus;
   tools: ModelToolContract[];
@@ -877,6 +878,8 @@ export interface RunModelTextRequestOptions {
 }
 
 export interface RuntimeModelStreamSnapshot {
+  /** 已收到的有序 assistant 内容；取消时按 part 持久化。 */
+  assistantContent?: ModelAssistantContent;
   reasoning: ModelReasoningContentBlock[];
   text: string;
 }
@@ -890,6 +893,7 @@ export interface StreamedToolExecutionResult {
 }
 
 export interface RuntimeModelTextResult {
+  assistantContent?: ModelAssistantContent;
   contextUsageBreakdown?: ContextUsageBreakdownItem[];
   finishReason: string;
   providerMetadata?: Record<string, unknown>;

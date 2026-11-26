@@ -36,11 +36,14 @@ export type ModelProviderSupportedFormat = "anthropic" | "openai" | "responses" 
 export type ModelProviderApiFormat =
   | "anthropic-messages"
   | "openai-chat-completions"
-  | "openai-responses";
+  | "openai-responses"
+  // 旧 store 没有原生 Gemini 格式；读取旧 gemini/Google 数据时在此统一成 canonical 格式名，
+  // 再交给 Personal importer 单向写入。旧文件不会被反向改写。
+  | "gemini-generate-content";
 
 export type ModelProviderCatalogSourceId = "china-llm-zcode-dev";
 
-export type ModelProviderKind = "anthropic" | "openai" | "openai-compatible";
+export type ModelProviderKind = "anthropic" | "openai" | "openai-compatible" | "google";
 
 export type ModelProviderModality = "text" | "image" | "video" | "audio" | "pdf";
 
@@ -149,9 +152,15 @@ export const modelProviderApiFormatSchema = z.enum([
   "anthropic-messages",
   "openai-chat-completions",
   "openai-responses",
+  "gemini-generate-content",
 ]);
 
-export const modelProviderKindSchema = z.enum(["anthropic", "openai", "openai-compatible"]);
+export const modelProviderKindSchema = z.enum([
+  "anthropic",
+  "openai",
+  "openai-compatible",
+  "google",
+]);
 
 export const modelProviderCatalogSourceIdSchema = z.enum(["china-llm-zcode-dev"]);
 
@@ -367,7 +376,8 @@ export function mapModelProviderSupportedFormatToKind(
     case "responses":
       return "openai";
     case "gemini":
-      return null;
+      // 旧 gemini 格式不是 OpenAI 兼容；作为 Google kind 保留到 importer，再写成原生格式。
+      return "google";
   }
 }
 
@@ -438,6 +448,13 @@ export function resolveModelProviderDefaultKind(
   if (paths?.anthropic !== undefined) {
     return "anthropic";
   }
+  if (paths?.google !== undefined) {
+    return "google";
+  }
+  // 旧 v2 store 只把 Gemini 入口放在 endpoints.gemini，没有 canonical paths。
+  if (provider.endpoints.gemini?.trim()) {
+    return "google";
+  }
 
   const apiFormat = resolveModelProviderApiFormat(provider);
   switch (apiFormat) {
@@ -447,6 +464,8 @@ export function resolveModelProviderDefaultKind(
       return "openai";
     case "openai-chat-completions":
       return "openai-compatible";
+    case "gemini-generate-content":
+      return "google";
   }
 }
 
@@ -458,6 +477,8 @@ export function resolveModelProviderKindApiFormat(kind: ModelProviderKind): Mode
       return "openai-responses";
     case "openai-compatible":
       return "openai-chat-completions";
+    case "google":
+      return "gemini-generate-content";
   }
 }
 
@@ -469,6 +490,8 @@ function mapModelProviderApiFormatToKind(apiFormat: ModelProviderApiFormat): Mod
       return "openai";
     case "openai-chat-completions":
       return "openai-compatible";
+    case "gemini-generate-content":
+      return "google";
   }
 }
 
@@ -480,6 +503,9 @@ export function getDefaultModelProviderEndpointPathForKind(kind: ModelProviderKi
       return "/responses";
     case "openai-compatible":
       return "/chat/completions";
+    case "google":
+      // 原生 GenerateContent 的 Base URL 本身就是 API 前缀；model action 由 SDK 追加。
+      return "";
   }
 }
 
@@ -556,6 +582,8 @@ export function normalizeModelProviderBaseUrlForKind(
     // 不能把 /v1/responses 整段剥掉，否则用户填写 https://host/v1 会被展示/落盘成 https://host。
     openai: ["/responses"],
     "openai-compatible": ["/chat/completions"],
+    // Gemini 显式 /v1 或 /v1beta 是用户配置的 API 版本，必须原样保留，由 factory 判断是否补 /v1beta。
+    google: [],
   };
   let normalized = normalizeModelProviderConfiguredBaseUrl(baseURL);
   for (const suffix of suffixes[kind]) {
@@ -641,6 +669,8 @@ function resolveLegacyModelProviderDefaultKind(
       return "openai";
     case "openai-chat-completions":
       return "openai-compatible";
+    case "gemini-generate-content":
+      return "google";
     case undefined:
       break;
   }
@@ -651,11 +681,14 @@ function resolveLegacyModelProviderDefaultKind(
   if (provider.endpoints.openai?.trim()) {
     return "openai-compatible";
   }
+  if (provider.endpoints.gemini?.trim()) {
+    return "google";
+  }
   return "anthropic";
 }
 
 function getDefaultModelSupportedFormatsFromLegacyEndpoints(
-  endpoints: Pick<ModelProviderEndpoints, "anthropic" | "openai">,
+  endpoints: Pick<ModelProviderEndpoints, "anthropic" | "openai" | "gemini">,
 ): ModelProviderSupportedFormat[] {
   const formats: ModelProviderSupportedFormat[] = [];
   if (endpoints.anthropic?.trim()) {
@@ -663,6 +696,9 @@ function getDefaultModelSupportedFormatsFromLegacyEndpoints(
   }
   if (endpoints.openai?.trim()) {
     formats.push("openai");
+  }
+  if (endpoints.gemini?.trim()) {
+    formats.push("gemini");
   }
   return formats;
 }
@@ -682,6 +718,11 @@ export function migrateLegacyModelProviderConfig(
   if (openaiEndpoint) {
     legacyEntries.push([defaultKind === "openai" ? "openai" : "openai-compatible", openaiEndpoint]);
   }
+  // 旧 Gemini 入口只在旧 store 中存在；保留为 Google kind，供单向 importer 写成原生格式。
+  const geminiEndpoint = provider.endpoints.gemini?.trim();
+  if (geminiEndpoint) {
+    legacyEntries.push(["google", geminiEndpoint]);
+  }
   const endpoints = buildEndpointsFromLegacyRuntimeBaseUrls(legacyEntries);
   const migratedModels = provider.models.map((modelId) => {
     const formats =
@@ -695,17 +736,12 @@ export function migrateLegacyModelProviderConfig(
         return kind ? [kind] : [];
       }),
     );
-    const disabledReason =
-      kinds.length === 0 && formats.includes("gemini")
-        ? "legacy gemini format is not supported by zcode.model-providers.v2"
-        : undefined;
 
     return createModelProviderModelConfig({
       id: modelId,
       name: provider.modelDisplayNames?.[modelId],
       kinds,
       defaultKind: kinds.includes(defaultKind) ? defaultKind : kinds[0],
-      disabledReason,
     });
   });
 
@@ -717,7 +753,10 @@ export function migrateLegacyModelProviderConfig(
       ? { systemDisabledReason: provider.systemDisabledReason }
       : {}),
     endpoints,
-    apiFormat: provider.apiFormat,
+    // 旧 store 从不写 apiFormat；Gemini 入口必须在迁移结果里保留协议身份，
+    // 否则 importer 只能看到 endpoints.gemini 而丢失原生格式。
+    apiFormat:
+      provider.apiFormat ?? (defaultKind === "google" ? "gemini-generate-content" : undefined),
     source: provider.source,
     modelsDevProviderId: provider.modelsDevProviderId,
     apiKeyRequired: provider.apiKeyRequired,
@@ -750,6 +789,9 @@ export function getDefaultModelSupportedFormatsFromEndpoints(
     if (paths?.openai !== undefined) {
       formats.push("responses");
     }
+    if (paths?.google !== undefined) {
+      formats.push("gemini");
+    }
     return formats;
   }
   return [];
@@ -765,6 +807,8 @@ export function getDefaultModelSupportedFormatsFromApiFormat(
       return ["responses"];
     case "openai-chat-completions":
       return ["openai"];
+    case "gemini-generate-content":
+      return ["gemini"];
   }
 }
 
@@ -775,7 +819,8 @@ export function resolveModelProviderApiFormat(
   if (
     provider.apiFormat === "anthropic-messages" ||
     provider.apiFormat === "openai-chat-completions" ||
-    provider.apiFormat === "openai-responses"
+    provider.apiFormat === "openai-responses" ||
+    provider.apiFormat === "gemini-generate-content"
   ) {
     return provider.apiFormat;
   }
@@ -796,6 +841,10 @@ export function resolveModelProviderApiFormat(
 
   if (provider.endpoints.paths?.["openai-compatible"] !== undefined) {
     return "openai-chat-completions";
+  }
+
+  if (provider.endpoints.paths?.google !== undefined || provider.endpoints.gemini?.trim()) {
+    return "gemini-generate-content";
   }
 
   return "anthropic-messages";

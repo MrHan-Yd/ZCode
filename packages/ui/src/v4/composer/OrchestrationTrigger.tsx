@@ -165,6 +165,7 @@ export function OrchestrationTrigger({
                 setPickerOpen(false);
                 controls.onOpenRoleSettings(role);
               }}
+              reserveCloseButtonSpace
             />
           </DialogContent>
         </Dialog>

@@ -348,12 +348,7 @@ export function extractToolCallsFromResult(
   for (const response of responses) {
     if (response.toolCalls && Array.isArray(response.toolCalls)) {
       for (const tc of response.toolCalls) {
-        toolCalls.push({
-          id: tc.id,
-          name: tc.name ?? tc.toolName,
-          input: tc.input,
-          providerExecuted: tc.providerExecuted,
-        });
+        toolCalls.push(toolCallFromProviderResult(tc));
       }
     }
   }
@@ -362,17 +357,33 @@ export function extractToolCallsFromResult(
   if (result.toolCalls && Array.isArray(result.toolCalls)) {
     for (const tc of result.toolCalls) {
       if (!toolCalls.find((c) => c.id === tc.id)) {
-        toolCalls.push({
-          id: tc.id,
-          name: tc.name ?? tc.toolName,
-          input: tc.input,
-          providerExecuted: tc.providerExecuted,
-        });
+        toolCalls.push(toolCallFromProviderResult(tc));
       }
     }
   }
 
   return toolCalls;
+}
+
+/**
+ * 调用签名属于单个 provider tool part；聚合 toolCalls 视图必须原样带出，
+ * 不能只保留 id/name/input 导致回放丢失。
+ */
+function toolCallFromProviderResult(tc: {
+  id: string;
+  input: unknown;
+  name?: string;
+  toolName?: string;
+  providerExecuted?: boolean;
+  providerOptions?: Record<string, unknown>;
+}): ModelToolCall {
+  return {
+    id: tc.id,
+    name: tc.name ?? tc.toolName ?? "",
+    input: tc.input,
+    ...(tc.providerExecuted === undefined ? {} : { providerExecuted: tc.providerExecuted }),
+    ...(tc.providerOptions ? { providerOptions: { ...tc.providerOptions } } : {}),
+  };
 }
 
 export function shouldStreamModelText(this: AgentRuntimeInternal): boolean {

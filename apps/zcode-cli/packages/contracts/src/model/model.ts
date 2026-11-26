@@ -45,6 +45,8 @@ export interface Model {
   readonly providerId: ModelProviderId;
   readonly modelId: ModelId;
   readonly displayName?: string;
+  /** 绑定时冻结的 provider API kind；仅供请求投影选择协议能力，不参与选型或鉴权。 */
+  readonly providerKind?: string;
   readonly properties: ModelProperties;
   readonly optionSpecs: ModelOptionSpecs;
   readonly options: ModelOptions;

@@ -10,16 +10,17 @@
 
 1. **内置配色唯一来源**：复用公开 `@zcode/shared` 的 `BUILT_IN_SUBAGENT_DEFINITIONS`，不在 UI 或 CLI 再维护第二份角色配色表，不把 reviewer 改成另一种角色颜色。
 
-   | 内置名称        | 定义颜色                        |
-   | --------------- | ------------------------------- |
-   | general-purpose | blue                            |
-   | Explore         | cyan                            |
-   | architect       | purple                          |
-   | frontend        | teal                            |
-   | backend         | green                           |
-   | ui-designer     | pink                            |
-   | tester          | orange                          |
-   | reviewer        | red（既有 UI 色板的 rose 色相） |
+   | 内置名称        | 定义颜色                            |
+   | --------------- | ----------------------------------- |
+   | general-purpose | blue                                |
+   | Explore         | cyan                                |
+   | architect       | purple                              |
+   | frontend        | teal                                |
+   | backend         | green                               |
+   | ui-designer     | pink                                |
+   | tester          | orange                              |
+   | reviewer        | red（既有 UI 色板的 rose 色相）     |
+   | bug-fixer       | yellow（既有 UI 色板的 amber 色相） |
 
 2. **统一身份色解析**：设置列表、会话 Agent 工具行、运行中智能体身份和编排步骤角色使用同一 UI 纯函数取色。已匹配当前工作区配置的角色优先使用其声明颜色；内置角色即使配置未加载或缺旧字段，也按内置定义取色。只有未匹配配置且不是内置的角色，才采用合法工具颜色或稳定的名称兜底色。
 3. **内置目录优先于旧通用元数据**：明确为内置的 `frontend`、`architect` 等不能被工具数据中的统一 `red` 覆盖。运行时已归一化的权威子智能体类型优先识别；不根据任务描述、状态或是否执行失败选择身份色。
@@ -53,9 +54,9 @@ workspaceIdentity / provider → 既有配置桶（不跨远端身份复用）
 
 ## 验收场景
 
-1. 无任何已加载配置时，逐一显示八个内置角色，颜色与目录逐项一致，不能统一红色。
-2. 为所有内置工具行传入旧 `color: red`，仍分别显示 blue/cyan/purple/teal/green/pink/orange/red；reviewer 保留 rose 色相。
-3. 为八个角色加载当前工作区目录，加载前后取色一致；同名工具摘要、状态面板角色与设置颜色点使用相同身份色。
+1. 无任何已加载配置时，逐一显示全部内置角色，颜色与目录逐项一致，不能统一红色。
+2. 为所有内置工具行传入旧 `color: red`，仍分别显示各自目录色（blue/cyan/purple/teal/green/pink/orange/red/yellow）；reviewer 保留 rose 色相，bug-fixer 使用 amber 色相。
+3. 为全部内置角色加载当前工作区目录，加载前后取色一致；同名工具摘要、状态面板角色与设置颜色点使用相同身份色。
 4. `ui-designer` / `ui_designer` / `UI-DESIGNER` / `ui designer` 与其既有 built-in ID 取相同颜色，显示名原文不变；Explore 的大小写也不导致颜色变化。
 5. `plugin:reviewer`、带声明颜色的同名自定义定义和不同稳定 ID 不被误认成内置；自定义声明颜色优先。
 6. 两个归一化后相同的自定义定义发生歧义时，不随机选其中一个；精确名称/ID仍可唯一匹配。

@@ -18,6 +18,7 @@ export const BUILT_IN_SUBAGENT_NAMES = [
   "ui-designer",
   "tester",
   "reviewer",
+  "bug-fixer",
 ] as const;
 
 export type BuiltInSubagentName = (typeof BUILT_IN_SUBAGENT_NAMES)[number];

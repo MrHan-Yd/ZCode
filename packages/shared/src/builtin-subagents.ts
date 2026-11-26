@@ -32,6 +32,9 @@ const GENERAL_PURPOSE_AGENT_DESCRIPTION =
 const EXPLORE_AGENT_DESCRIPTION =
   'Read-only search agent for broad fan-out searches - when answering means sweeping many files, directories, or naming conventions and you only need the conclusion, not the file dumps. It reads excerpts rather than whole files, so it locates code; it doesn\'t review or audit it. Specify search breadth: "medium" for moderate exploration, "very thorough" for multiple locations and naming conventions.';
 
+const BUG_FIXER_AGENT_DESCRIPTION =
+  "Bug-fixing agent for regressions, failing tests, runtime errors, and review findings that need code changes. It reproduces the failure first, fixes the root cause at the owning layer, adds regression coverage, and reports the commands it ran. Prefer this over general-purpose for a known defect that needs a verified fix.";
+
 export const BUILT_IN_SUBAGENT_DEFINITIONS: readonly BuiltInSubagentDefinition[] = [
   {
     name: "general-purpose",
@@ -164,6 +167,18 @@ export const BUILT_IN_SUBAGENT_DEFINITIONS: readonly BuiltInSubagentDefinition[]
     maxTurns: 15,
     injectAgentsMd: true,
     tags: ["安全", "性能", "逻辑", "兼容"],
+  },
+  {
+    name: "bug-fixer",
+    description:
+      "Bug-fix agent for reproducing failures, finding root causes, applying minimal fixes, and adding regression coverage.",
+    agentDescription: BUG_FIXER_AGENT_DESCRIPTION,
+    color: "yellow",
+    canWrite: true,
+    tools: ["*"],
+    maxTurns: 40,
+    injectAgentsMd: true,
+    tags: ["Bug", "修复", "根因", "回归"],
   },
 ];
 

@@ -42,6 +42,7 @@ import {
   projectMessagesForModelMediaPolicy,
   logCompactMediaRetryProjection,
   readApprovedPlanFileReferenceEntry,
+  resolveUseMidConversationSystem,
 } from "../helpers/index.js";
 import type { CompactTimelineContext, RuntimeModelTextResult } from "../types.js";
 import type { Model } from "../deps.js";
@@ -183,9 +184,7 @@ async function compactActiveConversationImpl(
   const activeEntries = [
     ...(options.activeEntries ?? this.messageHistory.borrowReadOnlyRuntimeEntries()),
   ];
-  const useMidConversationSystem =
-    this.config.midConversationSystem?.mode === "force" ||
-    compactModel.properties.supportsMidConversationSystem;
+  const useMidConversationSystem = resolveUseMidConversationSystem(this.config, compactModel);
   const initialSelection = selectInitialCompactEntriesForActiveConversation({
     activeEntries,
     initialPromptTooLongCause: options.initialPromptTooLongCause,

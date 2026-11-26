@@ -78,6 +78,12 @@
     "source": "https://raw.githubusercontent.com/vercel/ai/@ai-sdk/provider-utils@4.0.39/LICENSE"
   },
   {
+    "package": "@ai-sdk/provider-utils@4.0.68",
+    "file": "third-party/upstream/b4f9adb7c568904834d0dd6cc98d16c390d21ca32fc17ae7a267715269bd5529.txt",
+    "sha256": "b4f9adb7c568904834d0dd6cc98d16c390d21ca32fc17ae7a267715269bd5529",
+    "source": "https://raw.githubusercontent.com/vercel/ai/@ai-sdk/provider-utils@4.0.68/LICENSE"
+  },
+  {
     "package": "data-uri-to-buffer@4.0.1",
     "file": "third-party/upstream/9b7a157a0079ef346f3215b964071fa460d0dd251ca93cbf581bcc91595066ca.txt",
     "sha256": "9b7a157a0079ef346f3215b964071fa460d0dd251ca93cbf581bcc91595066ca",

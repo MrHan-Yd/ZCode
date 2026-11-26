@@ -5,8 +5,12 @@
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,
-    "target": "ES2024"
+    "target": "ES2024",
+    "paths": {
+      "@zcode/contracts": ["../contracts/src/index.ts"],
+      "@zcode/contracts/browser-control": ["../contracts/src/interfaces/browser-control.port.ts"]
+    }
   },
-  "include": ["test/upstream*.test.ts"],
+  "include": ["test/upstream*.test.ts", "test/gemini*.test.ts", "test/subagent*.test.ts"],
   "exclude": ["node_modules", "dist"]
 }

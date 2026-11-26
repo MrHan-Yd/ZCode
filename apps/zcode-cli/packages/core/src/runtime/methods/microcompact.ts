@@ -12,7 +12,11 @@ import type {
   SessionEvent,
   TraceContext,
 } from "../deps.js";
-import { maybeLocalMicrocompactRuntimeEntries, throwIfTurnAborted } from "../helpers/index.js";
+import {
+  maybeLocalMicrocompactRuntimeEntries,
+  resolveUseMidConversationSystem,
+  throwIfTurnAborted,
+} from "../helpers/index.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { resolveNormalRequestMaxOutputTokens } from "./model-token-limits.js";
 import type { TurnRequestState } from "./turn-loop-state.js";
@@ -45,9 +49,7 @@ export async function microcompactIfNeeded(
     modelContextBudgetStrategy: this.config.modelContextBudgetStrategy,
   };
   const microcompactConfig = resolveLocalMicrocompactConfig(autoConfig);
-  const useMidConversationSystem =
-    this.config.midConversationSystem?.mode === "force" ||
-    context.model.properties.supportsMidConversationSystem;
+  const useMidConversationSystem = resolveUseMidConversationSystem(this.config, context.model);
   const result = maybeLocalMicrocompactRuntimeEntries({
     config: microcompactConfig,
     entries: context.turnRequestState.entries,

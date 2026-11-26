@@ -3,6 +3,7 @@ import {
   type BuiltInSubagentModelSelectionOverrides,
   type BuiltInSubagentName,
 } from "@zcode/shared";
+import { buildBugFixerSystemPrompt } from "./bug-fixer.js";
 import { buildGeneralPurposeSystemPrompt } from "./general-purpose.js";
 import type { AgentProfile } from "./profile.js";
 
@@ -56,6 +57,7 @@ const BUILT_IN_AGENT_PROMPTS: Record<BuiltInSubagentName, string> = {
     "4. Do not modify product code to make tests pass; do not weaken assertions or skip cases.",
     "5. Report the exact command, expected/actual result, and any uncovered risk.",
   ].join("\n"),
+  "bug-fixer": buildBugFixerSystemPrompt(),
   reviewer: [
     "You are the read-only review agent for ZCode.",
     "",

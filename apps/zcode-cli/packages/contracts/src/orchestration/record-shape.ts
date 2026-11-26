@@ -1,5 +1,6 @@
 import {
   ORCHESTRATION_MAX_STEPS,
+  ORCHESTRATION_MAX_TEAM_SIZE,
   parseOrchestrationPlan,
   validateOrchestrationPlan,
 } from "@zcode/shared";
@@ -18,7 +19,6 @@ import {
 import { normalizeOrchestrationOwner } from "./owner.js";
 
 const RECORD_VERSION = 1;
-const MAX_TEAM_SIZE = 8;
 const MAX_ROLE_LENGTH = 80;
 const DEFAULT_MAX_CONCURRENCY = 3;
 const STEP_STATUSES = [
@@ -112,7 +112,7 @@ function roles(value: unknown, team = false, normalize = false): string[] {
     new Set(result).size !== result.length
   )
     return invalidRecord();
-  if (team && (!result.includes("general-purpose") || result.length > MAX_TEAM_SIZE))
+  if (team && (!result.includes("general-purpose") || result.length > ORCHESTRATION_MAX_TEAM_SIZE))
     return invalidRecord("Invalid orchestration team.");
   return result;
 }

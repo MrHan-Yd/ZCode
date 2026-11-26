@@ -64,7 +64,11 @@ export function detectProviderBusinessFinishError(
 }
 
 function normalizeProviderKind(value: AiSdkProviderKind | string | undefined): AiSdkProviderKind {
-  return value === "openai" || value === "anthropic" || value === "openai-compatible"
+  // google 是独立原生协议，不能降级归因成 openai-compatible。
+  return value === "openai" ||
+    value === "anthropic" ||
+    value === "openai-compatible" ||
+    value === "google"
     ? value
     : "openai-compatible";
 }

@@ -2776,6 +2776,7 @@ const zhCN: Record<string, string> = {
   "settings.modelProvider.apiFormat.title.chatCompletions": "Chat Completions",
   "settings.modelProvider.apiFormat.title.responses": "Responses",
   "settings.modelProvider.apiFormat.title.anthropicMessages": "Anthropic Messages",
+  "settings.modelProvider.apiFormat.title.geminiGenerateContent": "Gemini GenerateContent",
   "settings.modelProvider.apiKey": "API Key",
   "settings.modelProvider.apiKeyPlaceholder": "输入 API Key",
   "settings.modelProvider.apiKeyDisabledHint": "设置 API Key 后即可启用。",
@@ -4765,6 +4766,9 @@ const zhCN: Record<string, string> = {
   "chat.statusPanel.runningAgentsValue": "{count} 运行",
   "chat.statusPanel.runningAgentsValuePlural": "{count} 运行",
   "chat.statusPanel.runningStop": "停止",
+  // 子智能体行的 Stop 与 Bash/Workflow 行共用按钮，但不能复述「后台任务」：
+  // 前台子智能体不是后台任务，可访问名称必须说清停的是谁。
+  "chat.statusPanel.stopSubagent": "停止运行中的子智能体",
   // 运行中子智能体的状态词与状态摘要。刻意不复用 subagentDirectory.status.*：
   // 目录页用的是「等待中 / 已阻塞」，本分区用「等待 / 阻塞」，不改历史目录文案。
   "chat.statusPanel.subagentStatus.running": "运行中",
@@ -6877,15 +6881,16 @@ const zhCN: Record<string, string> = {
   "chat.orchestration.picker.unavailable": "不可用",
   "chat.orchestration.picker.model.inherit": "继承默认模型",
   "chat.orchestration.picker.model.value": "模型：{model}",
-  "chat.orchestration.picker.editModel": "在设置页编辑角色模型",
+  "chat.orchestration.picker.roleSettings": "打开子智能体设置",
   "chat.orchestration.picker.empty": "没有匹配的角色。",
   "chat.orchestration.picker.count": "{count}/{max} 个角色",
   "chat.orchestration.picker.limit.soft": "已超过推荐规模，计划会更难审阅。",
   "chat.orchestration.picker.limit.hard": "已达到团队人数上限。",
   "chat.orchestration.preset.fullStack": "全栈",
-  "chat.orchestration.preset.fullStack.description": "架构、设计、前端、后端、测试与审阅。",
+  "chat.orchestration.preset.fullStack.description": "架构、设计、前端、后端、测试、修复与审阅。",
   "chat.orchestration.preset.solo": "精简",
-  "chat.orchestration.preset.solo.description": "仅增加审阅角色；通用执行与检索默认可用。",
+  "chat.orchestration.preset.solo.description":
+    "增加修复与审阅角色；通用执行与检索默认可用。",
   "chat.orchestration.progress": "完成 {completed}/{total} · {running} 个运行中",
   "chat.orchestration.timeline.stop": "停止",
   "chat.orchestration.timeline.replan": "重排",

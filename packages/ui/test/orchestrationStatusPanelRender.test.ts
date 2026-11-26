@@ -118,6 +118,8 @@ const RUNNING_SUBAGENTS: readonly RunningSubagentSummary[] = [
 function renderSubagentPanel(
   runningSubagents: readonly RunningSubagentSummary[] = RUNNING_SUBAGENTS,
   workspaceIdentity?: string,
+  onCancelBackgroundWork?: (workId: string) => void,
+  endedSubagentCount = 0,
 ): string {
   // useSessionPerformanceBatch 只在渲染期读取 zcodeAgentService；SSR 不执行 effect，
   // 因此这里只需要一个带该方法的最小 accessor，不触发任何请求。
@@ -140,8 +142,11 @@ function renderSubagentPanel(
             parentSessionId: "session-1",
             open: true,
             runningSubagents,
+            endedSubagentCount,
             agentSectionOpen: true,
             onAgentSectionOpenChange: () => {},
+            onOpenSubagentDirectory: () => {},
+            ...(onCancelBackgroundWork ? { onCancelBackgroundWork } : {}),
           }),
         ),
       }),
@@ -237,6 +242,56 @@ test("智能体分区用前置状态图标表达 running / waiting / blocked", (
   assert.ok(!html.includes("animate-spin"));
 });
 
+test("运行中子智能体没有后台 work 时仍渲染 Stop，句柄回退到行自身 agentId", () => {
+  // 编排调度直接进入 subagent port，没有 BackgroundTaskStarted，backgroundWorks 为空。
+  const subagents: readonly RunningSubagentSummary[] = [
+    {
+      childSessionId: "child-orchestrated",
+      agentId: "agent-orchestrated",
+      subagentType: "general-purpose",
+      title: "落地元数据契约",
+      status: "running",
+      startedAt: RUN.startedAt! + 10,
+    },
+  ];
+  const html = renderSubagentPanel(subagents, undefined, () => {});
+
+  // workId ≡ agentId：停止命令的身份与 runtime taskId 相同，不按标题猜。
+  assert.ok(html.includes('data-testid="v4-background-work-cancel-agent-orchestrated"'));
+  assert.ok(html.includes('data-work-id="agent-orchestrated"'));
+  assert.match(html, /aria-label="停止运行中的子智能体"/u);
+  assert.match(html, />停止</u);
+});
+
+test("只有已结束页脚时仍保留分区头下的上间距，不贴住分隔线", () => {
+  const html = renderSubagentPanel([], undefined, undefined, 1);
+  assert.match(html, /已结束/u);
+
+  // 页脚行的容器必须同时有上间距；没有前一条运行行时不得多出一条 border-t。
+  const endedIndex = html.indexOf("已结束");
+  const containerStart = html.lastIndexOf('<div class="', endedIndex);
+  assert.ok(containerStart >= 0, "missing ended footer container");
+  const containerTag = html.slice(containerStart, html.indexOf(">", containerStart) + 1);
+  assert.ok(containerTag.includes("pt-2"), containerTag);
+  assert.ok(!containerTag.includes("border-t"), containerTag);
+});
+
+test("没有停止回调的宿主（只读/分享）不渲染不可用的 Stop", () => {
+  const subagents: readonly RunningSubagentSummary[] = [
+    {
+      childSessionId: "child-orchestrated",
+      agentId: "agent-orchestrated",
+      subagentType: "general-purpose",
+      title: "落地元数据契约",
+      status: "running",
+      startedAt: RUN.startedAt! + 10,
+    },
+  ];
+  const html = renderSubagentPanel(subagents);
+
+  assert.ok(!html.includes("v4-background-work-cancel"));
+});
+
 function assertIdentityColor(
   html: string,
   name: string,
@@ -252,7 +307,7 @@ function assertIdentityColor(
   assert.ok(!span.includes("text-[var(--color-destructive)]"), span);
 }
 
-test("真实 SSR 中全部八角色在编排和智能体分区使用同源身份色，失败/阻塞状态保持独立", () => {
+test("真实 SSR 中全部内置角色在编排和智能体分区使用同源身份色，失败/阻塞状态保持独立", () => {
   const statuses = ["running", "waiting", "blocked"] as const;
   const runningSubagents = BUILT_IN_SUBAGENT_DEFINITIONS.map((definition, index) => ({
     childSessionId: `child-${definition.name}`,

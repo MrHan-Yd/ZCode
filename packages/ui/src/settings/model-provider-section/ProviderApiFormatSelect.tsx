@@ -17,18 +17,23 @@ const PROVIDER_CONNECTION_API_FORMATS: readonly ProviderApiType[] = [
   "anthropic-messages",
   "openai-chat-completions",
   "openai-responses",
+  "gemini-generate-content",
 ];
 
 const PROVIDER_CONNECTION_API_FORMAT_PATHS: Record<ProviderApiType, string> = {
   "anthropic-messages": "/v1/messages",
   "openai-chat-completions": "/chat/completions",
   "openai-responses": "/responses",
+  // 展示 Developer API 的规范路径（含版本），与 Anthropic 的 /v1/messages 保持一致认知。
+  // 模型 ID 由 factory 绑定；配置的 Base URL 可省略版本，运行时未写版本时补 /v1beta。
+  "gemini-generate-content": "/v1beta/models/{model}:generateContent",
 };
 
 const PROVIDER_CONNECTION_API_FORMAT_TITLE_IDS: Record<ProviderApiType, string> = {
   "anthropic-messages": "settings.modelProvider.apiFormat.title.anthropicMessages",
   "openai-chat-completions": "settings.modelProvider.apiFormat.title.chatCompletions",
   "openai-responses": "settings.modelProvider.apiFormat.title.responses",
+  "gemini-generate-content": "settings.modelProvider.apiFormat.title.geminiGenerateContent",
 };
 
 export function resolveProviderConnectionApiFormatOptions(): ProviderApiType[] {

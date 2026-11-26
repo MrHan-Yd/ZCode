@@ -286,9 +286,27 @@ function attachEnabledState(agents: AgentSummary[], state: AgentsStateFile): Age
   }));
 }
 
-function applyRuntimePrecedence(agents: AgentSummary[]): AgentSummary[] {
+function isDisabledUserAgent(agent: AgentSummary, disabledAgentIds: ReadonlySet<string>): boolean {
+  return agent.scope === "user" && disabledAgentIds.has(agent.id);
+}
+
+function applyRuntimePrecedence(
+  agents: AgentSummary[],
+  disabledAgentIds: ReadonlySet<string>,
+): AgentSummary[] {
   const byName = new Map<string, AgentSummary>();
   for (const agent of agents) {
+    const existing = byName.get(agent.name);
+    // 停用的用户级文件不参与运行时目录：loader 会直接跳过它，同名内置角色仍然生效。
+    // 列表若让停用文件覆盖内置角色，编排团队会把这个可用的内置角色误标成「不可用」，
+    // 而实际派发仍会落到内置 profile——显示与运行事实不一致。
+    if (
+      existing &&
+      isDisabledUserAgent(agent, disabledAgentIds) &&
+      !isDisabledUserAgent(existing, disabledAgentIds)
+    ) {
+      continue;
+    }
     byName.set(agent.name, agent);
   }
   return [...byName.values()];
@@ -661,12 +679,15 @@ export function createSubagentsService(options?: SubagentsServiceOptions): ISuba
       const discoveredAgents =
         mode === "settingsUserOnly"
           ? [...builtInAgents, ...sortedUserAgents]
-          : applyRuntimePrecedence([
-              ...builtInAgents,
-              ...sortedUserAgents,
-              ...sortedWorkspaceAgents,
-              ...pluginAgentDiscovery.runtimeAgents,
-            ]);
+          : applyRuntimePrecedence(
+              [
+                ...builtInAgents,
+                ...sortedUserAgents,
+                ...sortedWorkspaceAgents,
+                ...pluginAgentDiscovery.runtimeAgents,
+              ],
+              new Set(state.disabledAgentIds),
+            );
       const agents = attachEnabledState(discoveredAgents, state);
 
       return {

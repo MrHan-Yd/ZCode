@@ -47,6 +47,11 @@ import {
 import { createStreamingToolCoordinator } from "./streaming-tool-coordinator.js";
 import { persistCancelledStreamSnapshot } from "./cancelled-stream-persistence.js";
 import {
+  hasProviderReplayOptions,
+  mergeProviderReplayMetadata,
+  providerReplayMetadata,
+} from "../../agent/assistant-part-replay.js";
+import {
   beginStartPlanBusyAdmissionRetryAttempt,
   createStartPlanBusyAutoRetryExhaustedError,
   emitStreamRecoveryRetryEvents,
@@ -255,7 +260,8 @@ async function runModelBackedTurnStepImpl(
       onModelNetworkStatus: recordModelNetworkStatus,
       onStreamReasoningDelta: (text) => streamingToolCoordinator.recordReasoningDelta(text),
       onStreamTextDelta: (text) => streamingToolCoordinator.recordTextDelta(text),
-      onStreamToolCall: (toolCall) => streamingToolCoordinator.accept(toolCall),
+      onStreamToolCall: (toolCall, providerContentIndex) =>
+        streamingToolCoordinator.accept(toolCall, providerContentIndex),
       streamRecovery: streamRecoveryRequest,
       tools: options.tools,
       traceContext: modelTraceContext,
@@ -379,6 +385,10 @@ async function runModelBackedTurnStepImpl(
       if (latestStreamSnapshot.text.length > 0 || reasoning.length > 0) {
         // 取消时 durable snapshot 已经持久化，但成功路径的 live history commit
         // 和 historyRoundCount 不会执行，导致当前进程与 cold resume 的 provider history 不一致。
+        // 未闭合的 tool_call 不能进入 history：取消路径没有对应 tool result，会造成 provider 序列非法。
+        const committedContent = latestStreamSnapshot.assistantContent?.filter(
+          (part) => part.type !== "tool_call",
+        );
         commitTurnRequestEntries(this, state.turnRequestState, [
           createRuntimeAssistantEntry(
             latestStreamSnapshot.text,
@@ -387,6 +397,8 @@ async function runModelBackedTurnStepImpl(
             state.model
               ? { providerId: state.model.providerId, modelId: state.model.modelId }
               : undefined,
+            undefined,
+            committedContent && committedContent.length > 0 ? committedContent : undefined,
           ),
         ]);
         recordModelHistoryRound(state);
@@ -548,39 +560,88 @@ async function runModelBackedTurnStepImpl(
   // AI SDK 可能把非标准 output-limit 归一化为 other；Runtime 已确认恢复语义后，
   // live 事件与持久化必须统一使用 length，同时由上方 diagnostics 保留 provider 原始事实。
   if (outputTokenContinuation !== "none") result.finishReason = "length";
-  for (const reasoning of result.reasoning ?? []) {
-    if (!hasAssistantReasoningContent(reasoning)) continue;
-    await this.persistPart(
-      {
-        id: createPartId(),
-        sessionID: this.sessionId,
-        messageID: assistantMessageId,
-        type: "reasoning",
-        text: reasoning.text,
-        metadata: reasoning.providerOptions,
-        time: {
-          start: modelStartedAt,
-          end: Date.now(),
+  // 有序 assistantContent 存在时按 part 保存，保留 interleaving 与逐 part 签名；
+  // Automation create-limit 已替换 modelResponse，此时沿用旧的聚合文本落盘。
+  const persistedAssistantContent = localTerminalResponse ? undefined : result.assistantContent;
+  if (persistedAssistantContent) {
+    for (const [providerContentIndex, part] of persistedAssistantContent.entries()) {
+      if (part.type === "text") {
+        if (part.text.length === 0 && !hasProviderReplayOptions(part.providerOptions)) continue;
+        await this.persistPart(
+          {
+            id: createPartId(),
+            sessionID: this.sessionId,
+            messageID: assistantMessageId,
+            type: "text",
+            text: part.text,
+            metadata: providerReplayMetadata({
+              providerContentIndex,
+              providerOptions: part.providerOptions,
+            }),
+            time: {
+              start: modelStartedAt,
+              end: Date.now(),
+            },
+          },
+          modelTraceContext,
+        );
+        continue;
+      }
+      if (part.type === "reasoning") {
+        if (part.text.length === 0 && !hasProviderReplayOptions(part.providerOptions)) continue;
+        await this.persistPart(
+          {
+            id: createPartId(),
+            sessionID: this.sessionId,
+            messageID: assistantMessageId,
+            type: "reasoning",
+            text: part.text,
+            metadata: mergeProviderReplayMetadata(part.providerOptions, { providerContentIndex }),
+            time: {
+              start: modelStartedAt,
+              end: Date.now(),
+            },
+          },
+          modelTraceContext,
+        );
+      }
+      // tool_call 由 turn-tools/streaming coordinator 以同一 id 和 providerContentIndex 落盘。
+    }
+  } else {
+    for (const reasoning of result.reasoning ?? []) {
+      if (!hasAssistantReasoningContent(reasoning)) continue;
+      await this.persistPart(
+        {
+          id: createPartId(),
+          sessionID: this.sessionId,
+          messageID: assistantMessageId,
+          type: "reasoning",
+          text: reasoning.text,
+          metadata: reasoning.providerOptions,
+          time: {
+            start: modelStartedAt,
+            end: Date.now(),
+          },
         },
-      },
-      modelTraceContext,
-    );
-  }
-  if (state.modelResponse.length > 0) {
-    await this.persistPart(
-      {
-        id: createPartId(),
-        sessionID: this.sessionId,
-        messageID: assistantMessageId,
-        type: "text",
-        text: state.modelResponse,
-        time: {
-          start: modelStartedAt,
-          end: Date.now(),
+        modelTraceContext,
+      );
+    }
+    if (state.modelResponse.length > 0) {
+      await this.persistPart(
+        {
+          id: createPartId(),
+          sessionID: this.sessionId,
+          messageID: assistantMessageId,
+          type: "text",
+          text: state.modelResponse,
+          time: {
+            start: modelStartedAt,
+            end: Date.now(),
+          },
         },
-      },
-      modelTraceContext,
-    );
+        modelTraceContext,
+      );
+    }
   }
 
   const cacheHit =

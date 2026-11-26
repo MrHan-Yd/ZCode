@@ -1,7 +1,8 @@
-import { beginLocalTurnPreparation } from "@zcode/contracts";
+import { beginLocalTurnPreparation, projectModelAssistantContent } from "@zcode/contracts";
 import { runWithModelInvocationContext, traceContextToLogContext } from "../deps.js";
 import type { ModelReasoningContentBlock, ModelToolCall, ModelUsage, ToolCallId } from "../deps.js";
 import {
+  AssistantContentAccumulator,
   buildSuspiciousEmptyDiagnostics,
   finalizeSuspiciousEmptyModelResult,
   isContextExceededFinishReason,
@@ -148,9 +149,20 @@ export async function runModelTextRequest(
       source: "generateText",
       traceContext: projectedOptions.traceContext,
     });
+    // 兼容视图与 assistantContent 必须来自同一次 runtime 名称归一化，不能让回放 part
+    // 保留 adapter 层已修整前的空白名称。
+    const normalizedNameById = new Map(
+      (normalizedToolCalls ?? []).map((toolCall) => [toolCall.id, toolCall.name]),
+    );
+    const assistantContent = result.assistantContent?.map((part) =>
+      part.type === "tool_call" && normalizedNameById.has(part.id)
+        ? { ...part, name: normalizedNameById.get(part.id)! }
+        : part,
+    );
     return {
       ...result,
       ...(contextUsageBreakdown.length > 0 ? { contextUsageBreakdown } : {}),
+      ...(assistantContent ? { assistantContent } : {}),
       toolCalls: normalizedToolCalls,
     };
   }
@@ -164,7 +176,14 @@ export async function runModelTextRequest(
   const toolCalls: ModelToolCall[] = [];
   const toolCallIds = new Set<string>();
   const toolInputDeltaBuffers = new Map<ToolCallId, string>();
-  const publishStreamSnapshot = () => options.onStreamSnapshot?.({ reasoning, text });
+  // 顺序与 part 级签名属于 provider 原始内容；聚合 text/reasoning 只是兼容视图。
+  const assistantAccumulator = new AssistantContentAccumulator();
+  const publishStreamSnapshot = () =>
+    options.onStreamSnapshot?.({
+      assistantContent: assistantAccumulator.snapshot(),
+      reasoning,
+      text,
+    });
   const streamingEventQueue = createModelStreamingEventQueue({
     events: options.events,
     runtime: this,
@@ -243,6 +262,8 @@ export async function runModelTextRequest(
         }
 
         case "text_start": {
+          assistantAccumulator.handle(event);
+          publishStreamSnapshot();
           await enqueueStreamingEvent({
             assistantMessageId: options.assistantMessageId,
             delta: "",
@@ -253,6 +274,7 @@ export async function runModelTextRequest(
         }
 
         case "text_delta": {
+          assistantAccumulator.handle(event);
           text += event.text;
           options.onStreamTextDelta?.(event.text);
           publishStreamSnapshot();
@@ -266,6 +288,8 @@ export async function runModelTextRequest(
         }
 
         case "text_end": {
+          assistantAccumulator.handle(event);
+          publishStreamSnapshot();
           await enqueueStreamingEvent({
             assistantMessageId: options.assistantMessageId,
             delta: "",
@@ -276,6 +300,7 @@ export async function runModelTextRequest(
         }
 
         case "reasoning_start": {
+          assistantAccumulator.handle(event);
           const block = getOrCreateReasoningBlock({
             id: event.id,
             providerMetadata: event.providerMetadata,
@@ -285,6 +310,7 @@ export async function runModelTextRequest(
           if (event.providerMetadata) {
             block.providerOptions = event.providerMetadata;
           }
+          publishStreamSnapshot();
           await enqueueStreamingEvent({
             assistantMessageId: options.assistantMessageId,
             delta: "",
@@ -295,6 +321,7 @@ export async function runModelTextRequest(
         }
 
         case "reasoning_delta": {
+          assistantAccumulator.handle(event);
           const block = getOrCreateReasoningBlock({
             id: event.id,
             providerMetadata: event.providerMetadata,
@@ -315,11 +342,13 @@ export async function runModelTextRequest(
         }
 
         case "reasoning_end": {
+          assistantAccumulator.handle(event);
           const block = reasoningById.get(event.id);
           if (block && event.providerMetadata) {
             block.providerOptions = event.providerMetadata;
           }
           reasoningById.delete(event.id);
+          publishStreamSnapshot();
           await enqueueStreamingEvent({
             assistantMessageId: options.assistantMessageId,
             delta: "",
@@ -392,8 +421,10 @@ export async function runModelTextRequest(
             // runtime 按 id 去重，避免同一次响应内重复执行。
             break;
           }
+          const providerContentIndex = assistantAccumulator.nextContentIndex();
           toolCallIds.add(toolCall.id);
           toolCalls.push(toolCall);
+          assistantAccumulator.handle({ type: "tool_call", toolCall });
           this.logger?.debug("Model streaming tool call completed", {
             ...traceContextToLogContext(options.traceContext),
             event: "model.streaming.tool_call",
@@ -416,7 +447,7 @@ export async function runModelTextRequest(
             toolCallId: toolCall.id as ToolCallId,
             toolName: toolCall.name,
           });
-          options.onStreamToolCall?.(toolCall);
+          options.onStreamToolCall?.(toolCall, providerContentIndex);
           break;
         }
 
@@ -506,13 +537,25 @@ export async function runModelTextRequest(
     });
   }
 
+  const assistantContent = assistantAccumulator.snapshot();
+  // assistantContent 是唯一权威；兼容视图只能从同一数组派生，不能分别累积。
+  const projectedContent =
+    assistantContent.length > 0 ? projectModelAssistantContent(assistantContent) : undefined;
+
   return {
     ...(contextUsageBreakdown.length > 0 ? { contextUsageBreakdown } : {}),
+    ...(assistantContent.length > 0 ? { assistantContent } : {}),
     finishReason,
     providerMetadata,
-    reasoning: reasoning.length > 0 ? reasoning : undefined,
-    text,
-    toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+    reasoning:
+      projectedContent && projectedContent.reasoning.length > 0
+        ? projectedContent.reasoning
+        : undefined,
+    text: projectedContent ? projectedContent.text : text,
+    toolCalls:
+      projectedContent && projectedContent.toolCalls.length > 0
+        ? projectedContent.toolCalls
+        : undefined,
     usage,
   };
 }

@@ -4,6 +4,7 @@ import {
   ModelProtocolError,
   ModelRetryReason,
   ModelTransportKind as ModelTransportKindValue,
+  projectModelAssistantContent,
 } from "@zcode/contracts";
 import { classifyModelFailure, inspectProviderFailure } from "./failure-classifier.js";
 import type { ClassifiedModelFailure } from "./failure-classifier.js";
@@ -14,6 +15,7 @@ import { resolveAnthropicRequestMetadataUserId } from "./anthropic-request-metad
 import { createGenerateTextOptions } from "./runner-options.js";
 import { detectProviderBusinessFinishError } from "./provider-finish-business-error.js";
 import {
+  normalizeAssistantContent,
   normalizeReasoning,
   normalizeSources,
   normalizeToolCalls,
@@ -101,17 +103,14 @@ export async function runGenerateText(input: {
     );
     attempt += 1
   ) {
-    const retryBudgetAttempt =
-      attempt - Number(signatureRepairAttempted);
+    const retryBudgetAttempt = attempt - Number(signatureRepairAttempted);
     const attemptRequest = { ...input.request, messages: requestMessages };
     const startedAt = Date.now();
     let resolved = input.resolved;
     let statusContext = createAttemptStatusContext(
       {
         ...baseStatusContext,
-        maxAttempts: statusMaxAttempts(
-          Number(signatureRepairAttempted),
-        ),
+        maxAttempts: statusMaxAttempts(Number(signatureRepairAttempted)),
       },
       attempt,
     );
@@ -216,13 +215,28 @@ export async function runGenerateText(input: {
         throw providerBusinessFinishError;
       }
       const usage = normalizeUsage(result.totalUsage ?? result.usage);
-      const toolCalls = normalizeToolCalls(result, input.logger);
+      // 原生 signed part 的顺序与签名只存在于 SDK 原始 content；
+      // 兼容视图必须从 assistantContent 派生，不能各自累积。
+      const assistantContent = normalizeAssistantContent(result, input.logger);
+      const projected =
+        assistantContent === undefined ? undefined : projectModelAssistantContent(assistantContent);
+      const toolCalls = projected
+        ? projected.toolCalls.length > 0
+          ? projected.toolCalls
+          : undefined
+        : normalizeToolCalls(result, input.logger);
       const toolResults = normalizeToolResults(result, toolCalls);
       const sources = normalizeSources(result);
       const text = input.request.responseJsonSchema
         ? serializeStructuredOutput(result)
-        : result.text;
-      const reasoning = normalizeReasoning(result.reasoning);
+        : projected
+          ? projected.text
+          : result.text;
+      const reasoning = projected
+        ? projected.reasoning.length > 0
+          ? projected.reasoning
+          : undefined
+        : normalizeReasoning(result.reasoning);
       const reasoningLength = (reasoning ?? []).reduce(
         (total, block) => total + block.text.length,
         0,
@@ -322,6 +336,7 @@ export async function runGenerateText(input: {
         text,
         finishReason: result.finishReason,
         usage,
+        ...(assistantContent === undefined ? {} : { assistantContent }),
         reasoning,
         toolCalls,
         toolResults,

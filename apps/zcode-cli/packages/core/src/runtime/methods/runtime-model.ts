@@ -57,6 +57,7 @@ export function withModelInvocationContext(
     providerId: model.providerId,
     modelId: model.modelId,
     displayName: model.displayName,
+    providerKind: model.providerKind,
     properties: model.properties,
     optionSpecs: model.optionSpecs,
     options: model.options,

@@ -27,6 +27,10 @@ import { executeToolCallsForModelStep } from "./turn-tools.js";
 import { mcpToolPartMetadata } from "./tool-part-metadata.js";
 import { persistPendingToolPart } from "./tool-part-persistence.js";
 import {
+  mergeProviderReplayMetadata,
+  type ProviderReplayMetadata,
+} from "../../agent/assistant-part-replay.js";
+import {
   isAutomationMutationRestrictedTurn,
   isOffPeakCreateRestrictedTurn,
   recordModelHistoryRound,
@@ -39,7 +43,7 @@ const STREAMING_TOOL_CANCEL_DRAIN_TIMEOUT_MS = 250;
 const STREAMING_TOOL_EXECUTION_MODE = "readOnly";
 
 interface StreamingToolCoordinator {
-  accept(toolCall: ModelToolCall): void;
+  accept(toolCall: ModelToolCall, providerContentIndex?: number): void;
   abandon(reason: "cancelled" | "model_failed"): Promise<void>;
   drain(toolCalls: readonly ModelToolCall[]): Promise<StreamedToolExecutionResult[]>;
   recordReasoningDelta(text: string): void;
@@ -70,7 +74,7 @@ export function createStreamingToolCoordinator(
   state.turnAbortSignal.addEventListener("abort", abortOnTurnCancel, { once: true });
 
   return {
-    accept(toolCall) {
+    accept(toolCall, providerContentIndex) {
       // model.ts 已完成 runtime admission。这里必须保留空名原值，使正常 finish
       // 走 end-of-stream registry miss，同时让 finish 前断流保留 synthetic interrupted error。
       const normalizedToolCall = { ...toolCall };
@@ -78,12 +82,19 @@ export function createStreamingToolCoordinator(
       acceptedToolCalls.set(normalizedToolCall.id, normalizedToolCall);
       if (!shouldExecuteToolDuringStream(runtime, normalizedToolCall)) return;
       if (handles.has(normalizedToolCall.id)) return;
+      const providerReplay: ProviderReplayMetadata = {
+        ...(normalizedToolCall.providerOptions
+          ? { providerOptions: normalizedToolCall.providerOptions }
+          : {}),
+        ...(providerContentIndex === undefined ? {} : { providerContentIndex }),
+      };
       const promise = executeDuringStream(runtime, state, {
         abortSignal: abortController.signal,
         assistantMessageId: options.assistantMessageId,
         // model admission 已去重；只读工具可能先落盘，序号必须来自全部本地声明。
         declarationIndex: acceptedToolCalls.size - 1,
         model: options.model,
+        providerReplay,
         toolCall: normalizedToolCall,
         traceContext: options.traceContext,
       }).catch(async (error) => {
@@ -227,6 +238,7 @@ async function executeDuringStream(
     assistantMessageId: MessageId;
     declarationIndex: number;
     model: Model;
+    providerReplay: ProviderReplayMetadata;
     toolCall: ModelToolCall;
     traceContext: TraceContext;
   },
@@ -257,6 +269,7 @@ async function executeDuringStream(
     metadata,
     model: options.model,
     partID,
+    providerReplay: options.providerReplay,
     toolCall,
     traceContext: options.traceContext,
   });
@@ -302,6 +315,7 @@ async function executeDuringStream(
           callID: toolCall.id,
           declarationIndex: options.declarationIndex,
           tool: toolCall.name,
+          metadata: mergeProviderReplayMetadata(undefined, options.providerReplay),
           state: {
             status: "running",
             input,

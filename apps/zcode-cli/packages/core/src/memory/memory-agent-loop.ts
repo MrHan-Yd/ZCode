@@ -3,6 +3,7 @@ import { isAbsolute } from "node:path";
 import type {
   ModelInputMessage,
   ModelMessageContent,
+  ModelMessageContentBlock,
   Model,
   ModelReasoningContentBlock,
   ModelRequest,
@@ -75,7 +76,14 @@ export async function runMemoryAgentLoop(input: {
     input.abortSignal?.throwIfAborted();
 
     const toolCalls = response.toolCalls ?? [];
-    messages.push(createAssistantMessage(response.text, response.reasoning, toolCalls));
+    messages.push(
+      createAssistantMessage(
+        response.text,
+        response.reasoning,
+        toolCalls,
+        response.assistantContent,
+      ),
+    );
     if (toolCalls.length === 0) {
       turns += 1;
       break;
@@ -231,12 +239,39 @@ function createAssistantMessage(
   text: string,
   reasoning: readonly ModelReasoningContentBlock[] | undefined,
   toolCalls: readonly ModelToolCall[],
+  orderedContent: ModelInputMessage["assistantContent"],
 ): ModelInputMessage {
+  const clonedContent = orderedContent?.map((part) => ({
+    ...part,
+    ...(part.providerOptions ? { providerOptions: structuredClone(part.providerOptions) } : {}),
+  }));
   return {
-    content: assistantContent(text, reasoning),
+    // Memory 多轮工具循环必须保留逐 part 顺序与签名，而不是只重放聚合 text。
+    content: clonedContent
+      ? assistantContentContent(clonedContent)
+      : assistantContent(text, reasoning),
+    ...(clonedContent ? { assistantContent: clonedContent } : {}),
     role: "assistant",
-    toolCalls: toolCalls.map((call) => ({ ...call })),
+    toolCalls: toolCalls.map((call) => ({
+      ...call,
+      ...(call.providerOptions ? { providerOptions: structuredClone(call.providerOptions) } : {}),
+    })),
   };
+}
+
+function assistantContentContent(
+  content: NonNullable<ModelInputMessage["assistantContent"]>,
+): ModelMessageContent {
+  const blocks: ModelMessageContentBlock[] = [];
+  for (const part of content) {
+    if (part.type === "tool_call") continue;
+    blocks.push({
+      type: part.type,
+      text: part.text,
+      ...(part.providerOptions ? { providerOptions: structuredClone(part.providerOptions) } : {}),
+    });
+  }
+  return blocks.length > 0 ? blocks : "";
 }
 
 function assistantContent(
@@ -247,7 +282,7 @@ function assistantContent(
   return [
     ...reasoning.map((block) => ({
       ...block,
-      providerOptions: block.providerOptions ? { ...block.providerOptions } : undefined,
+      providerOptions: block.providerOptions ? structuredClone(block.providerOptions) : undefined,
     })),
     ...(text ? [{ text, type: "text" as const }] : []),
   ];
@@ -260,7 +295,14 @@ function cloneModelMessage(message: ModelInputMessage): ModelInputMessage {
     content: Array.isArray(message.content)
       ? message.content.map((block) => ({ ...block }))
       : message.content,
-    toolCalls: message.toolCalls?.map((call) => ({ ...call })),
+    assistantContent: message.assistantContent?.map((part) => ({
+      ...part,
+      ...(part.providerOptions ? { providerOptions: structuredClone(part.providerOptions) } : {}),
+    })),
+    toolCalls: message.toolCalls?.map((call) => ({
+      ...call,
+      ...(call.providerOptions ? { providerOptions: structuredClone(call.providerOptions) } : {}),
+    })),
   };
 }
 

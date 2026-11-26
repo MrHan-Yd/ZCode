@@ -785,9 +785,11 @@ function PlanStatusSection({
 }
 
 function RunningWorkCancelButton({
+  ariaLabelId = "chat.summaryPanel.stopRunningBackgroundTask",
   workId,
   onCancel,
 }: {
+  ariaLabelId?: "chat.summaryPanel.stopRunningBackgroundTask" | "chat.statusPanel.stopSubagent";
   workId: string;
   onCancel?: (workId: string) => void;
 }) {
@@ -808,9 +810,7 @@ function RunningWorkCancelButton({
       variant="ghost"
       size="sm"
       data-testid={testId(TID_V4_BACKGROUND_WORK_CANCEL, workId)}
-      aria-label={intl.formatMessage({
-        id: "chat.summaryPanel.stopRunningBackgroundTask",
-      })}
+      aria-label={intl.formatMessage({ id: ariaLabelId })}
       onClick={handleClick}
       className="pointer-events-auto relative z-[2] ml-auto h-6 shrink-0 px-1.5 text-ui-base text-[var(--color-foreground)]"
     >
@@ -1770,6 +1770,7 @@ function SubagentStatusSection({
                   )}
                   {subagent.controlWorkId && subagent.cancellable !== false ? (
                     <RunningWorkCancelButton
+                      ariaLabelId="chat.statusPanel.stopSubagent"
                       workId={subagent.controlWorkId}
                       onCancel={onCancelBackgroundWork}
                     />
@@ -1817,7 +1818,10 @@ function EndedDirectoryRow({
 }) {
   if (count <= 0 || !onOpen) return null;
   return (
-    <div className={cn(separated && "border-t border-[var(--color-border)] pt-2")}>
+    // 页脚行在「只有已结束」时是分区里唯一的内容：没有前一条运行行，就没有 separated
+    // 的 border-t，按钮的 hover 底会直接贴上分区头分隔线，看起来像被挤住。这里无论
+    // 有没有分隔都保留同样的 8px 上间距，两种形态录得同一种呼吸感。
+    <div className={cn("pt-2", separated && "border-t border-[var(--color-border)]")}>
       <button
         type="button"
         data-testid={testId}

@@ -259,6 +259,7 @@ export class AiSdkModelAdapter {
       providerId: resolved.providerId,
       modelId: resolved.modelId,
       displayName: options.displayName,
+      providerKind: resolved.providerKind,
       properties,
       optionSpecs: {
         maxOutputTokens: optionSpecs.maxOutputTokens,

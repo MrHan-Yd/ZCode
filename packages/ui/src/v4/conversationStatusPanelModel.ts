@@ -31,6 +31,10 @@ export interface ConversationStatusPanelSessionPlansModel {
 }
 
 export interface ConversationStatusPanelRunningSubagent extends RunningSubagentSummary {
+  /**
+   * 停止句柄（≡ `cancelBackgroundWork` 的 workId）：优先匹配到的后台 work，
+   * 没有时回退到本行 `agentId`。缺席即不渲染 Stop（见 specs/status-panel-subagent-stop.md）。
+   */
   controlWorkId?: string;
   cancellable?: boolean;
 }
@@ -296,11 +300,23 @@ export function buildConversationStatusPanelModel(
     input.runningSubagents ?? []
   ).map((subagent) => {
     const controlWork = subagentControlByChildSessionId.get(subagent.childSessionId);
-    if (!controlWork) return subagent;
+    if (controlWork) {
+      return {
+        ...subagent,
+        controlWorkId: controlWork.workId,
+        cancellable: controlWork.cancellable !== false,
+      };
+    }
+    // 编排调度与其它直接进入 subagent port 的启动不经过 Agent 工具执行器，
+    // 没有 BackgroundTaskStarted，backgroundWorks 里也就没有可联接的 work；
+    // 但 running 投影里的 agentId ≡ runtime taskId ≡ cancelBackgroundWork 的 workId
+    // （后台输出 backgroundTaskId ≡ agentId），这是行自己的权威身份，不是猜测。
+    // 缺 agentId 的旧投影宁可不给按钮：点了没反应的 Stop 比没有更糟。
+    if (!subagent.agentId) return subagent;
     return {
       ...subagent,
-      controlWorkId: controlWork.workId,
-      cancellable: controlWork.cancellable !== false,
+      controlWorkId: subagent.agentId,
+      cancellable: true,
     };
   });
   const projectedChildSessionIds = new Set(

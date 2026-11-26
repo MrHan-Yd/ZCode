@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   BUILT_IN_SUBAGENT_DEFINITIONS,
+  BUILT_IN_SUBAGENT_NAMES,
   createAgentStateId,
   ZCODE_AGENT_PROVIDER,
 } from "@zcode/shared";
@@ -32,8 +33,8 @@ const BUILT_IN_PROFILES = BUILT_IN_SUBAGENT_DEFINITIONS.map((definition) =>
   }),
 );
 
-test("全部八个内置角色在首帧、旧 red 元数据和配置加载后使用目录身份色", () => {
-  assert.equal(BUILT_IN_SUBAGENT_DEFINITIONS.length, 8);
+test("全部内置角色在首帧、旧 red 元数据和配置加载后使用目录身份色", () => {
+  assert.equal(BUILT_IN_SUBAGENT_DEFINITIONS.length, BUILT_IN_SUBAGENT_NAMES.length);
   for (const definition of BUILT_IN_SUBAGENT_DEFINITIONS) {
     for (const profiles of [undefined, BUILT_IN_PROFILES]) {
       assert.equal(
@@ -49,7 +50,7 @@ test("全部八个内置角色在首帧、旧 red 元数据和配置加载后使
   }
 });
 
-test("八角色的稳定 built-in ID 由公开构造器识别，不按任意 ID 末段猜角色", () => {
+test("内置角色的稳定 built-in ID 由公开构造器识别，不按任意 ID 末段猜角色", () => {
   for (const definition of BUILT_IN_SUBAGENT_DEFINITIONS) {
     const id = createAgentStateId({ name: definition.name, scope: "built-in", source: "built-in" });
     assert.equal(resolveSubagentIdentityColor({ name: id, color: "red" }), definition.color);

@@ -15,9 +15,12 @@ import type {
 import { buildTurnChangeSummary, toWorkspaceRelativePath } from "@/lib/taskChangeSummary.js";
 import { logger } from "@/logger.js";
 import { shouldEnableWorkspaceRpc } from "@/lib/workspaceRpcAvailability.js";
+import { nextGitRepositoryHealDelayMs } from "@/lib/gitRepositoryHeal.js";
 import {
   createGitRepositoryRefreshCoordinator,
   GitRepositoryRefreshInvalidatedError,
+  isGitRefreshTimeoutError,
+  shouldKeepGitRepositorySnapshot,
   type GitRepositoryRefresh,
 } from "@/lib/gitRepositoryRefresh.js";
 import { useServices } from "@/hooks/useServices.js";
@@ -413,6 +416,15 @@ export function useGitRepository(options: {
   const [repositoryState, setRepositoryState] = useState<GitPaneRepositoryState>(() =>
     createInitialState(workspacePath, { workspaceKey }),
   );
+  // 冷启动补偿刷新：内联重试没赶上（连续超时）时，按 10s/30s/60s 再试一次。
+  // 只有「本轮 workspace 从未成功读到仓库」才需要它；成功后由 publish 关闭。
+  const [healSignal, setHealSignal] = useState<{ scopeKey: string; count: number }>({
+    scopeKey: workspaceKey,
+    count: 0,
+  });
+  const publishedSnapshotRef = useRef(false);
+  const healAttemptRef = useRef(0);
+  const healScopeRef = useRef(workspaceKey);
   const requestVersionRef = useRef(0);
   const includeExtendedDataRef = useRef(includeExtendedData);
   includeExtendedDataRef.current = includeExtendedData;
@@ -473,6 +485,8 @@ export function useGitRepository(options: {
           "last-turn": createEmptyDataset("last-turn", true),
         };
         publishedScopeRef.current = refreshScope;
+        // 只要有任意一次成功发布，本 scope 就不再需要冷启动补偿刷新。
+        publishedSnapshotRef.current = true;
         // 弹窗 await 返回前先发布这次完整基线；不再独立读取后用第二次请求补外层。
         setRepositoryState({
           workspaceKey,
@@ -490,14 +504,38 @@ export function useGitRepository(options: {
         const message = getErrorMessage(error);
         logger.warn("[useGitRepository] 读取 Git 仓库状态失败", { workspacePath, error: message });
         publishedScopeRef.current = refreshScope;
-        setRepositoryState((current) =>
-          createInitialState(workspacePath, {
+        setRepositoryState((current) => {
+          // 修复：一次读取失败不代表「不是仓库」。沿用上一次成功快照，标题栏 Git 入口、
+          // 徽标与面板数据保持可用；打开入口或文件变更都会再次触发刷新
+          // （specs/git-tools-entry-visibility.md 规则 10）。
+          if (
+            current.workspaceKey === workspaceKey &&
+            shouldKeepGitRepositorySnapshot(current.summary)
+          ) {
+            return { ...current, loading: false, error: message };
+          }
+          return createInitialState(workspacePath, {
             workspaceKey,
             loading: false,
             error: message,
             revision: current.revision,
-          }),
-        );
+          });
+        });
+        // 从未成功读过仓库时，排一次低频补偿刷新（规则 11）。已确认的仓库不需要：
+        // 保留的旧快照与 watcher 仍在，下一次文件变更/打开入口就会刷新。
+        if (!publishedSnapshotRef.current) {
+          setHealSignal((previous) =>
+            previous.scopeKey === workspaceKey
+              ? { scopeKey: workspaceKey, count: previous.count + 1 }
+              : { scopeKey: workspaceKey, count: 1 },
+          );
+        }
+      },
+      retry: {
+        // 冷启动/杀毒扫描会把单条 git 命令拖过 15s 超时。一次超时就清空状态会让 Git
+        // 入口永久消失（只能切 workspace 恢复），因此只对超时类错误做两次短退避重读。
+        delaysMs: [1_500, 4_000],
+        isRetryable: isGitRefreshTimeoutError,
       },
     });
     coordinatorRef.current = { scope: refreshScope, coordinator };
@@ -508,6 +546,9 @@ export function useGitRepository(options: {
   useLayoutEffect(() => {
     committedScopeRef.current = refreshScope;
     lastLiveRefreshInputRef.current = null;
+    // 新 scope 从未成功读过仓库，补偿刷新计数也从头开始。
+    publishedSnapshotRef.current = false;
+    healAttemptRef.current = 0;
     return () => {
       committedScopeRef.current = null;
       if (coordinatorRef.current?.scope === refreshScope) {
@@ -570,6 +611,32 @@ export function useGitRepository(options: {
     workspacePath,
     workspaceRpcEnabled,
   ]);
+
+  // 冷启动连续超时（内联重试也没赶上）时的低频补偿刷新。只调度、不 await：
+  // 已经在等 refresh 的调用方不会被拉长，成功率由 `nextGitRepositoryHealDelayMs` 封顶。
+  useEffect(() => {
+    if (healScopeRef.current !== workspaceKey) {
+      healScopeRef.current = workspaceKey;
+      healAttemptRef.current = 0;
+    }
+    if (!workspaceRpcEnabled || healSignal.scopeKey !== workspaceKey || healSignal.count === 0) {
+      return;
+    }
+    const delayMs = nextGitRepositoryHealDelayMs(healAttemptRef.current);
+    if (delayMs === null) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      // 定时器 armed 之后可能已有其它入口成功发布（打开侧栏、scope 重建）；
+      // 此时不再补读，避免健康仓库多闪一次 loading / 错误。
+      if (publishedSnapshotRef.current) {
+        return;
+      }
+      healAttemptRef.current += 1;
+      void refresh().catch(() => {});
+    }, delayMs);
+    return () => clearTimeout(timer);
+  }, [healSignal, refresh, workspaceKey, workspaceRpcEnabled]);
 
   return useMemo(() => {
     // 同路径的远端 identity 或服务切换也不能沿用旧机器 watcher 路径。

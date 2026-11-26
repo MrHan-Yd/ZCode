@@ -8,6 +8,10 @@ import type {
 } from "../deps.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { requireRuntimeToolCallName } from "../helpers/index.js";
+import {
+  mergeProviderReplayMetadata,
+  type ProviderReplayMetadata,
+} from "../../agent/assistant-part-replay.js";
 
 const EMPTY_TOOL_NAME_PLACEHOLDER = "empty_tool_name";
 const PROVIDER_TOOL_NAME_METADATA_KEY = "providerToolName";
@@ -38,6 +42,7 @@ export async function persistPendingToolPart(
     traceContext: TraceContext;
     metadata?: CompletedToolPartMetadata;
     model: Model;
+    providerReplay?: ProviderReplayMetadata;
   },
 ): Promise<void> {
   const projected =
@@ -60,10 +65,13 @@ export async function persistPendingToolPart(
       callID: options.toolCall.id,
       declarationIndex: options.declarationIndex,
       tool: projected.toolName,
-      metadata: {
-        ...projected.metadata,
-        ...options.metadata,
-      },
+      metadata: mergeProviderReplayMetadata(
+        {
+          ...projected.metadata,
+          ...options.metadata,
+        },
+        options.providerReplay,
+      ),
       state: {
         status: "pending",
         input: options.input,
