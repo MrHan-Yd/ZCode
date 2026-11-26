@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.1.1](https://github.com/MrHan-Yd/ZCode/compare/v4.0.3...v4.1.1) (2026-11-26)
+
+### Features
+
+* **adapters:** 支持 Google 模型并完善推理与工具调用流处理 ([a9bb8c0](https://github.com/MrHan-Yd/ZCode/commit/a9bb8c0325bf3b3aa1e04ce5ee8534fe07465791))
+
+
+### Bug Fixes
+
+* **ci:** 使用标准 macos-26 runner 恢复桌面发行 ([2ff106b](https://github.com/MrHan-Yd/ZCode/commit/2ff106b015f95ed069653fb86f5b305dd6deda24))
+
 ## [4.0.3](https://github.com/MrHan-Yd/ZCode/compare/v4.0.2...v4.0.3) (2026-11-25)
 
 ### Features
