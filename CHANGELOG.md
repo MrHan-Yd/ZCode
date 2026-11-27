@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.1.2](https://github.com/MrHan-Yd/ZCode/compare/v4.1.1...v4.1.2) (2026-11-27)
+
+### Bug Fixes
+
+* 将有序内容回放限定为 Gemini 并恢复旧格式兼容 ([041b013](https://github.com/MrHan-Yd/ZCode/commit/041b013d10677124ae5512675470d2fa77ca3c37))
+
 ## [4.1.1](https://github.com/MrHan-Yd/ZCode/compare/v4.0.3...v4.1.1) (2026-11-26)
 
 ### Features
