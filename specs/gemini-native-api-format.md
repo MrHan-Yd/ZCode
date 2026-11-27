@@ -199,6 +199,7 @@ parallel tool input start(id) -> reserve declaration position (display only)
 6. shared 既有 transcript metadata record 接受 text/tool 签名与声明序号，strict UI streaming 拒绝新增 providerMetadata/providerOptions；正式 shared 测试位于 src 并纳入根 typecheck。
 7. 先写正式契约测试并实际确认 red，再实现字段/schema；contracts 测试纳入该包真实 typecheck，build 后公开 dist 声明供下游使用。
 8. 旧三种格式的 wire 不因 Gemini 能力而变化：`legacyProviderReplay.test.ts` 断言 OpenAI Responses 请求体不含 `item_reference`、Chat Completions 与 Anthropic 的 assistant 消息不带 text/tool_call 级 `providerOptions`，同时 Gemini 仍逐 part 保留签名。
+9. 流式结果的兼容视图按 provider 分流：只有持有有序 part 的 Gemini 从 `assistantContent` 投影 text/reasoning/toolCalls；其它格式必须返回流内聚合并已归一化的 text/reasoning/toolCalls。`toolCalls` 不能因为关闭有序视图而变成空数组，否则 `turn-model-step` 会跳过工具执行，UI 把未终态工具行收口成 “Tool call ended without a terminal event”。规则由 `core/src/runtime/helpers/streamed-result-views.ts` 单独持有，`upstreamStreamedToolCalls.test.ts` 覆盖非 Gemini 聚合、空结果与 Gemini 有序优先。
 
 ### 完整实现验收（后续各责任步骤，不以本阶段单测冒充）
 

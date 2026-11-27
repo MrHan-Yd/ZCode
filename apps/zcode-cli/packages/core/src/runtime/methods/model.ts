@@ -1,4 +1,4 @@
-import { beginLocalTurnPreparation, projectModelAssistantContent } from "@zcode/contracts";
+import { beginLocalTurnPreparation } from "@zcode/contracts";
 import { runWithModelInvocationContext, traceContextToLogContext } from "../deps.js";
 import type { ModelReasoningContentBlock, ModelToolCall, ModelUsage, ToolCallId } from "../deps.js";
 import {
@@ -16,6 +16,7 @@ import {
   projectMessagesForInputFormat,
   projectMessagesForMediaBudget,
   readRawFinishReason,
+  resolveStreamedModelResultViews,
 } from "../helpers/index.js";
 import type { RunModelTextRequestOptions, RuntimeModelTextResult } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
@@ -577,24 +578,26 @@ export async function runModelTextRequest(
   const assistantContent = orderedAssistantContentEnabled
     ? assistantAccumulator.snapshot()
     : [];
-  // assistantContent 是唯一权威；兼容视图只能从同一数组派生，不能分别累积。
-  const projectedContent =
-    assistantContent.length > 0 ? projectModelAssistantContent(assistantContent) : undefined;
+  // Bug 原因：041b013d 关闭非 Gemini 的 assistantContent 后，这里仍只从
+  // projectedContent 派生 reasoning/toolCalls；聚合数组被直接丢弃，模型返回的
+  // 工具调用在 turn-model-step 变成空数组，工具不执行，UI 把未终态行收口成
+  // “Tool call ended without a terminal event”。有序视图只给持有 part 的 provider，
+  // 其余格式恢复改动前的聚合视图。
+  const views = resolveStreamedModelResultViews({
+    ...(assistantContent.length > 0 ? { orderedAssistantContent: assistantContent } : {}),
+    aggregatedText: text,
+    aggregatedReasoning: reasoning,
+    aggregatedToolCalls: toolCalls,
+  });
 
   return {
     ...(contextUsageBreakdown.length > 0 ? { contextUsageBreakdown } : {}),
     ...(assistantContent.length > 0 ? { assistantContent } : {}),
     finishReason,
     providerMetadata,
-    reasoning:
-      projectedContent && projectedContent.reasoning.length > 0
-        ? projectedContent.reasoning
-        : undefined,
-    text: projectedContent ? projectedContent.text : text,
-    toolCalls:
-      projectedContent && projectedContent.toolCalls.length > 0
-        ? projectedContent.toolCalls
-        : undefined,
+    reasoning: views.reasoning,
+    text: views.text,
+    toolCalls: views.toolCalls,
     usage,
   };
 }
