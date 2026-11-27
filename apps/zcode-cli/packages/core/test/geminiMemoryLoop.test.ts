@@ -21,6 +21,9 @@ function memoryModel(scripts: readonly (readonly ModelStreamEvent[])[]): {
   const requests: ModelRequest[] = [];
   const model: Model = {
     providerId: createModelProviderId("google-native"),
+    // 有序 assistantContent 只在 Gemini providerKind 下启用；手写 Model 必须显式声明，
+    // 否则会走旧格式聚合视图，无法覆盖 Memory 多轮签名回放。
+    providerKind: "google",
     modelId: createModelId("gemini-3.5-flash"),
     properties: {
       requiresMfjsToolSchema: false,
