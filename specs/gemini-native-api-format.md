@@ -109,8 +109,9 @@ web-remote-replayable -- snapshot + replay + gap repair +
 | text_start / text_delta / text_end | 每种事件增加 `providerMetadata?: Record<string, unknown>`          |
 | `projectModelAssistantContent`     | 无状态地派生 content、text、reasoning、toolCalls，不缓存、不改输入 |
 
-- 新 normalization 和 history 路径存在 `assistantContent` 时，该数组是消息 provider 内容的唯一权威；`text`、`reasoning`、`toolCalls` 及输入 `content` 是兼容视图，不分别累积或接受独立更新。空数组是显式空结果，不按 falsy 降为旧视图。
-- 旧数据无 assistantContent 时沿用旧 content/reasoning/toolCalls 的导入边界；不能编造已丢失的签名或原始 interleaving。新增原生调用必须产生有序数组，不能永久只走旧视图。
+- 有序 `assistantContent` 的采集、持久化与回放只在 `providerKind === "google"` 时启用；`openai-responses`、`openai-chat-completions`、`anthropic-messages` 继续只使用 `content` / `reasoning` / `toolCalls` 聚合视图，回放时不透传 text / tool_call 的 `providerOptions`。这样 Responses 的 `itemId` 不会被 SDK 展开成 `item_reference`，旧格式的请求体保持改动前的形状。
+- Google 边界内存在 `assistantContent` 时，该数组是消息 provider 内容的唯一权威；`text`、`reasoning`、`toolCalls` 及输入 `content` 是兼容视图，不分别累积或接受独立更新。空数组是显式空结果，不按 falsy 降为旧视图。边界外仍由聚合视图回放，`assistantContent` 即使存在也不参与 wire。
+- 旧数据无 assistantContent 时沿用旧 content/reasoning/toolCalls 的导入边界；不能编造已丢失的签名或原始 interleaving。新增原生 Google 调用必须产生有序数组，不能永久只走旧视图。
 - 兼容 text 是依次拼接 text block 原文，不加入分隔符；兼容 content 保留 text/reasoning 顺序；toolCalls 从 tool_call 派生并仅去掉 type，保留全部调用字段。展示/日志字符串不能替代回放内容。
 - 结果顶层 providerMetadata 是请求/finish 元数据，不是任何 text、reasoning 或 tool part 的签名所有者。
 - SDK part 的 `providerMetadata.google.thoughtSignature` 按原值进入该 block 的 `providerOptions.google.thoughtSignature`。字段名不改，不解码/重编码，不 trim，不合并到 aggregate text，不从 neighbouring part 复制。
@@ -197,6 +198,7 @@ parallel tool input start(id) -> reserve declaration position (display only)
 5. 无新可选字段的旧三种格式消息/结果/流继续通过，无新 schemaVersion 或必需签名。
 6. shared 既有 transcript metadata record 接受 text/tool 签名与声明序号，strict UI streaming 拒绝新增 providerMetadata/providerOptions；正式 shared 测试位于 src 并纳入根 typecheck。
 7. 先写正式契约测试并实际确认 red，再实现字段/schema；contracts 测试纳入该包真实 typecheck，build 后公开 dist 声明供下游使用。
+8. 旧三种格式的 wire 不因 Gemini 能力而变化：`legacyProviderReplay.test.ts` 断言 OpenAI Responses 请求体不含 `item_reference`、Chat Completions 与 Anthropic 的 assistant 消息不带 text/tool_call 级 `providerOptions`，同时 Gemini 仍逐 part 保留签名。
 
 ### 完整实现验收（后续各责任步骤，不以本阶段单测冒充）
 

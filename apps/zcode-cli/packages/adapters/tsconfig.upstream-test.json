@@ -15,6 +15,7 @@
     "test/sessionPerformance.test.ts",
     "test/gemini*.test.ts",
     "test/geminiTestSupport.ts",
+    "test/legacyProviderReplay.test.ts",
     "test/signatureRepairRetry.test.ts"
   ],
   "exclude": ["node_modules", "dist"]

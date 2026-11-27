@@ -215,9 +215,12 @@ export async function runGenerateText(input: {
         throw providerBusinessFinishError;
       }
       const usage = normalizeUsage(result.totalUsage ?? result.usage);
-      // 原生 signed part 的顺序与签名只存在于 SDK 原始 content；
-      // 兼容视图必须从 assistantContent 派生，不能各自累积。
-      const assistantContent = normalizeAssistantContent(result, input.logger);
+      // 原生 signed part 的顺序与签名只存在于 Gemini 的 SDK 原始 content；
+      // 其它格式继续使用改动前的聚合视图，避免新增 provider 私有回放字段。
+      const assistantContent =
+        resolved.providerKind === "google"
+          ? normalizeAssistantContent(result, input.logger)
+          : undefined;
       const projected =
         assistantContent === undefined ? undefined : projectModelAssistantContent(assistantContent);
       const toolCalls = projected

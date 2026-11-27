@@ -264,9 +264,10 @@ function toAiSdkAssistantContent(
   message: ModelInputMessage,
   options: AiSdkAssistantTransformOptions,
 ): AiSdkAssistantContent {
-  // assistantContent 存在时是 provider 回放的唯一权威，包括显式空数组；
-  // 不能再从 content/toolCalls 兼容视图重建顺序或签名。
-  if (message.assistantContent !== undefined) {
+  // Gemini 的 thoughtSignature 按 part 归属，回放必须保留原始顺序与逐 part 元数据；
+  // 其余格式继续使用聚合视图，避免把 provider 不认识的 part 级字段带到 wire
+  //（例如 OpenAI Responses 会把 itemId 展开成 item_reference）。
+  if (message.assistantContent !== undefined && options.providerKind === "google") {
     return toAiSdkAssistantContentFromParts(message.assistantContent, options);
   }
 
@@ -278,8 +279,10 @@ function toAiSdkAssistantContent(
           toolCallId: toolCall.id,
           toolName: projectToolNameForProvider(toolCall.name, options),
           input: toolCall.input,
-          // 旧视图也可能携带调用级回放参数（例如 signed tool-call），原样保留。
-          ...(toolCall.providerOptions ? { providerOptions: toolCall.providerOptions } : {}),
+          // 仅 Gemini 需要调用级回放参数；其它格式维持改动前的 wire。
+          ...(options.providerKind === "google" && toolCall.providerOptions
+            ? { providerOptions: toolCall.providerOptions }
+            : {}),
         }) as AiSdkAssistantContentPart,
     ) ?? [];
 

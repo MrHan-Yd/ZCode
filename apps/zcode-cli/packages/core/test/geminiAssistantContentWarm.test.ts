@@ -146,7 +146,9 @@ test("辅助收集器合并 delta/end 元数据并保留有序 assistantContent"
     yield { type: "finish", finishReason: "tool-calls", usage: {} };
   }
 
-  const result = await collectAuxiliaryStreamResult(stream());
+  const result = await collectAuxiliaryStreamResult(stream(), {
+    orderedAssistantContent: true,
+  });
   assert.equal(result.text, "答案");
   assert.deepEqual(result.assistantContent, [
     {

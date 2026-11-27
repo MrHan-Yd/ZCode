@@ -25,6 +25,7 @@ const groups = [
     name: "adapters",
     project: "apps/zcode-cli/packages/adapters/tsconfig.upstream-test.json",
     files: [
+      "apps/zcode-cli/packages/adapters/test/legacyProviderReplay.test.ts",
       "apps/zcode-cli/packages/adapters/test/geminiNativeWire.test.ts",
       "apps/zcode-cli/packages/adapters/test/geminiSignedReplay.test.ts",
       "apps/zcode-cli/packages/adapters/test/signatureRepairRetry.test.ts",

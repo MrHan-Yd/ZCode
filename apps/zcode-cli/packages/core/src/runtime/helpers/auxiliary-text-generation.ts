@@ -27,7 +27,10 @@ export function generateAuxiliaryText(
   model: Model,
   request: ModelRequest,
 ): Promise<ModelTextResult> {
-  return collectAuxiliaryStreamResult(model.streamText(request));
+  // 有序 part 回放只属于 Gemini；其它格式保持聚合视图与旧的 reasoning 过滤。
+  return collectAuxiliaryStreamResult(model.streamText(request), {
+    orderedAssistantContent: model.providerKind === "google",
+  });
 }
 
 /**
@@ -36,6 +39,7 @@ export function generateAuxiliaryText(
  */
 export async function collectAuxiliaryStreamResult(
   events: AsyncIterable<ModelStreamEvent>,
+  options: { orderedAssistantContent?: boolean } = {},
 ): Promise<ModelTextResult> {
   let text = "";
   // 与既有流式消费（WebSearch）一致：没有 finish 事件时按 unknown 收口，不额外抛错。
@@ -77,17 +81,20 @@ export async function collectAuxiliaryStreamResult(
     }
   }
 
+  const orderedAssistantContent = options.orderedAssistantContent === true;
   const assistantContent: ModelAssistantContent = assistantAccumulator.snapshot();
   const projected =
     assistantContent.length > 0 ? projectModelAssistantContent(assistantContent) : undefined;
-  // 只保留有正文或回放元数据的段：reasoning_start/end 之间可能只有元数据。
-  const reasoning = projected?.reasoning ?? [];
+  // Gemini 保留带元数据的空 reasoning 段以回放签名；旧格式维持「只保留有正文的段」。
+  const reasoning = orderedAssistantContent
+    ? (projected?.reasoning ?? [])
+    : (projected?.reasoning ?? []).filter((block) => block.text.length > 0);
 
   return {
     finishReason,
-    text: projected ? projected.text : text,
+    text: orderedAssistantContent && projected ? projected.text : text,
     usage,
-    ...(assistantContent.length > 0 ? { assistantContent } : {}),
+    ...(orderedAssistantContent && assistantContent.length > 0 ? { assistantContent } : {}),
     ...(reasoning.length > 0 ? { reasoning } : {}),
     ...(toolCalls.length > 0 ? { toolCalls } : {}),
     ...(providerMetadata ? { providerMetadata } : {}),

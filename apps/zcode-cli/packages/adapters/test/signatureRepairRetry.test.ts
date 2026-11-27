@@ -94,7 +94,16 @@ function signedAssistantRequest(): AiSdkModelTextRequest {
           },
           { text: "answer", type: "text" },
         ],
-        content: "",
+        // 真实历史里 content 是 assistantContent 的派生兼容视图；旧格式 wire
+        // 只读 content，因此这里必须同步给出同一份 reasoning 签名。
+        content: [
+          {
+            providerOptions: { anthropic: { signature: REJECTED_SIGNATURE } },
+            text: "planning",
+            type: "reasoning",
+          },
+          { text: "answer", type: "text" },
+        ],
         modelId: createModelId(ANTHROPIC_MODEL_ID),
         providerId: createModelProviderId(ANTHROPIC_PROVIDER_ID),
         role: "assistant",

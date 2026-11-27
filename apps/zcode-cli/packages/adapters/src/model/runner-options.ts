@@ -81,7 +81,11 @@ export function createGenerateTextOptions(input: {
     frequencyPenalty: input.request.frequencyPenalty,
     stopSequences: input.request.stopSequences,
     seed: input.request.seed,
-    output: createStructuredOutput(input.resolved, input.request.responseJsonSchema),
+    // 非 Gemini 保持既有行为：有 schema 就交给 SDK 构造结构化输出。
+    output:
+      input.resolved.providerKind === "google"
+        ? createGoogleStructuredOutput(input.resolved, input.request.responseJsonSchema)
+        : createLegacyStructuredOutput(input.request.responseJsonSchema),
     providerOptions: requestProviderOptions,
     abortSignal: input.request.abortSignal,
     headers: mergeRequestHeaders(
@@ -144,8 +148,11 @@ export function createStreamTextOptions(input: {
     frequencyPenalty: input.request.frequencyPenalty,
     stopSequences: input.request.stopSequences,
     seed: input.request.seed,
-    // generate 与 stream 必须构造同一 output，否则流式请求会静默退化成普通文本请求。
-    output: createStructuredOutput(input.resolved, input.request.responseJsonSchema),
+    // 只有 Gemini 需要在 stream 侧构造结构化输出；其余格式维持改动前不构造 output 的行为。
+    output:
+      input.resolved.providerKind === "google"
+        ? createGoogleStructuredOutput(input.resolved, input.request.responseJsonSchema)
+        : undefined,
     providerOptions: requestProviderOptions,
     abortSignal: input.request.abortSignal,
     headers: mergeRequestHeaders(
@@ -183,7 +190,7 @@ function toAiSdkToolChoice(
   return toolChoice as AiSdkGenerateTextOptions["toolChoice"] | undefined;
 }
 
-function createStructuredOutput(
+function createGoogleStructuredOutput(
   resolved: ResolvedAiSdkModel,
   responseJsonSchema: AiSdkModelTextRequest["responseJsonSchema"],
 ): ReturnType<typeof Output.object> | undefined {
@@ -191,6 +198,13 @@ function createStructuredOutput(
     return undefined;
   }
   return Output.object({ schema: jsonSchema(responseJsonSchema) });
+}
+
+/** Gemini 之外的格式沿用改动前的 generate 构造方式，不做能力门禁。 */
+function createLegacyStructuredOutput(
+  responseJsonSchema: AiSdkModelTextRequest["responseJsonSchema"],
+): ReturnType<typeof Output.object> | undefined {
+  return responseJsonSchema ? Output.object({ schema: jsonSchema(responseJsonSchema) }) : undefined;
 }
 
 function mergeProviderOptions(

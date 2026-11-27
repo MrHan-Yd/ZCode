@@ -34,12 +34,33 @@ function hasToolInputLineBreak(value: string): boolean {
   );
 }
 
+/** 非 Gemini 不保留调用级 provider 回放参数，避免写入旧格式会话。 */
+function projectToolCallsForReplayPolicy<T extends { providerOptions?: Record<string, unknown> }>(
+  toolCalls: T[] | undefined,
+  orderedAssistantContentEnabled: boolean,
+): T[] | undefined {
+  if (orderedAssistantContentEnabled || toolCalls === undefined) {
+    return toolCalls;
+  }
+  return toolCalls.map((toolCall) => {
+    if (toolCall.providerOptions === undefined) {
+      return toolCall;
+    }
+    const copy = { ...toolCall };
+    delete copy.providerOptions;
+    return copy;
+  });
+}
+
 export async function runModelTextRequest(
   this: AgentRuntimeInternal,
   options: RunModelTextRequestOptions,
 ): Promise<RuntimeModelTextResult> {
   const finishAssembly = beginLocalTurnPreparation(options.traceContext, "request_assembly");
   const model = options.model;
+  // 有序 part 回放是 Gemini thoughtSignature 的专属能力；其它格式只保留聚合视图，
+  // 避免 provider 私有回放字段进入历史或下一次请求。
+  const orderedAssistantContentEnabled = model.providerKind === "google";
   const executionModelSelection = {
     providerId: model.providerId,
     modelId: model.modelId,
@@ -143,24 +164,30 @@ export async function runModelTextRequest(
     const result = await runWithModelInvocationContext(modelInvocationContext, () =>
       model.generateText(modelRequest),
     );
-    const normalizedToolCalls = normalizeModelToolCallsForRuntime(result.toolCalls, {
-      logger: this.logger,
-      model: executionModelSelection,
-      source: "generateText",
-      traceContext: projectedOptions.traceContext,
-    });
+    const normalizedToolCalls = projectToolCallsForReplayPolicy(
+      normalizeModelToolCallsForRuntime(result.toolCalls, {
+        logger: this.logger,
+        model: executionModelSelection,
+        source: "generateText",
+        traceContext: projectedOptions.traceContext,
+      }),
+      orderedAssistantContentEnabled,
+    );
     // 兼容视图与 assistantContent 必须来自同一次 runtime 名称归一化，不能让回放 part
     // 保留 adapter 层已修整前的空白名称。
     const normalizedNameById = new Map(
       (normalizedToolCalls ?? []).map((toolCall) => [toolCall.id, toolCall.name]),
     );
-    const assistantContent = result.assistantContent?.map((part) =>
-      part.type === "tool_call" && normalizedNameById.has(part.id)
-        ? { ...part, name: normalizedNameById.get(part.id)! }
-        : part,
-    );
+    const { assistantContent: rawAssistantContent, ...baseResult } = result;
+    const assistantContent = orderedAssistantContentEnabled
+      ? rawAssistantContent?.map((part) =>
+          part.type === "tool_call" && normalizedNameById.has(part.id)
+            ? { ...part, name: normalizedNameById.get(part.id)! }
+            : part,
+        )
+      : undefined;
     return {
-      ...result,
+      ...baseResult,
       ...(contextUsageBreakdown.length > 0 ? { contextUsageBreakdown } : {}),
       ...(assistantContent ? { assistantContent } : {}),
       toolCalls: normalizedToolCalls,
@@ -180,7 +207,9 @@ export async function runModelTextRequest(
   const assistantAccumulator = new AssistantContentAccumulator();
   const publishStreamSnapshot = () =>
     options.onStreamSnapshot?.({
-      assistantContent: assistantAccumulator.snapshot(),
+      ...(orderedAssistantContentEnabled
+        ? { assistantContent: assistantAccumulator.snapshot() }
+        : {}),
       reasoning,
       text,
     });
@@ -405,13 +434,17 @@ export async function runModelTextRequest(
         }
 
         case "tool_call": {
-          const [toolCall] =
+          const [normalizedToolCall] =
             normalizeModelToolCallsForRuntime([event.toolCall], {
               logger: this.logger,
               model: executionModelSelection,
               source: "streamText",
               traceContext: options.traceContext,
             }) ?? [];
+          const toolCall = projectToolCallsForReplayPolicy(
+            normalizedToolCall === undefined ? undefined : [normalizedToolCall],
+            orderedAssistantContentEnabled,
+          )?.[0];
           if (!toolCall) {
             break;
           }
@@ -421,7 +454,10 @@ export async function runModelTextRequest(
             // runtime 按 id 去重，避免同一次响应内重复执行。
             break;
           }
-          const providerContentIndex = assistantAccumulator.nextContentIndex();
+          // 只有 Gemini 需要 part 序号做签名回放；其它格式不写入该元数据。
+          const providerContentIndex = orderedAssistantContentEnabled
+            ? assistantAccumulator.nextContentIndex()
+            : undefined;
           toolCallIds.add(toolCall.id);
           toolCalls.push(toolCall);
           assistantAccumulator.handle({ type: "tool_call", toolCall });
@@ -537,7 +573,10 @@ export async function runModelTextRequest(
     });
   }
 
-  const assistantContent = assistantAccumulator.snapshot();
+  // 非 Gemini 保持聚合视图，不产出 provider 私有的有序 part 数组。
+  const assistantContent = orderedAssistantContentEnabled
+    ? assistantAccumulator.snapshot()
+    : [];
   // assistantContent 是唯一权威；兼容视图只能从同一数组派生，不能分别累积。
   const projectedContent =
     assistantContent.length > 0 ? projectModelAssistantContent(assistantContent) : undefined;
