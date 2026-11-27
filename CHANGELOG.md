@@ -1,5 +1,11 @@
 # Changelog
 
+## [4.1.3](https://github.com/MrHan-Yd/ZCode/compare/v4.1.2...v4.1.3) (2026-11-27)
+
+### Bug Fixes
+
+* **core:** 恢复非 Gemini 流式结果中的聚合工具调用 ([4e9e1ae](https://github.com/MrHan-Yd/ZCode/commit/4e9e1ae303719c59fcfc3928f82dfe8c3b7db344))
+
 ## [4.1.2](https://github.com/MrHan-Yd/ZCode/compare/v4.1.1...v4.1.2) (2026-11-27)
 
 ### Bug Fixes
